@@ -1,15 +1,15 @@
 import ast
-from typing import Tuple, List, Dict, Set
+from typing import Tuple, Dict, Set
 
 
 class Context:
     def __init__(self):
-        self.content = None
+        self.content: Tuple = None
 
 
 class HContext:
     def __init__(self):
-        self.content = None
+        self.content: Tuple = None
 
 
 class Var:
@@ -42,8 +42,8 @@ class Stmt:
 
 
 class Stack:
-    def __init__(self):
-        self.content: Dict[Var, ContSensAddr] = None
+    def __init__(self, content=None):
+        self.content: Dict[Var, ContSensAddr] = {} if content is None else content
 
 
 class Obj:
@@ -52,10 +52,19 @@ class Obj:
 
 
 class Store:
-    def __init__(self):
-        self.content: Dict[ContSensAddr, Set[Obj]] = None
+    def __init__(self, content=None):
+        self.content: Dict[ContSensAddr, Set[Obj]] = {} if content is None else content
 
 
 class CallStack:
     def __init__(self):
         self.content: Tuple[Stmt, Context, ContSensAddr] = None
+
+
+class AbstractState:
+    def __init__(self):
+        self.stmt = Stmt()
+        self.stack = Stack()
+        self.store = Store()
+        self.call_stack = CallStack()
+        self.context = Context()
