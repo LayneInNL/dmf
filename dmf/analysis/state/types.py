@@ -1,20 +1,32 @@
-class Num:
+class NumObjectAddress:
     name = 'Num'
     context = 0
     address = (name, context)
 
-    @classmethod
-    def get_num_name(cls):
-        return cls.name
 
-    @classmethod
-    def get_num_context(cls):
-        return cls.context
-
-    @classmethod
-    def get_num_object(cls):
-        return cls.address
+class BoolObjectAddress:
+    name = 'Bool'
+    context = 0
+    address = (name, context)
 
 
-class String:
-    pass
+class StrObjectAddress:
+    name = 'Str'
+    context = 0
+    address = (name, context)
+
+
+class BytesObjectAddress:
+    name = 'Bytes'
+    context = 0
+    address = (name, context)
+
+
+class NoneObjectAddress:
+    name = 'None'
+    context = 0
+    address = (name, context)
+
+
+class DefaultObject:
+    obj = (0, None)

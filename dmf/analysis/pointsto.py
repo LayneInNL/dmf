@@ -1,7 +1,7 @@
 import logging
 
-from .state.space import AbstractState, StmtID, DataStack, Store, CallStack, Context
-from .state.types import Num, String
+from .state.space import StmtID, DataStack, Store, CallStack, Context
+from .state.types import NumObjectAddress, BoolObjectAddress, StrObjectAddress, NoneObjectAddress
 
 import ast
 
@@ -13,7 +13,7 @@ class PointsToAnalysis:
         self.data_stack = DataStack()
         self.store = Store()
         self.call_stack = CallStack()
-        self.context = Context()
+        self.context: Context = Context(())
 
     def iteration(self):
         while self.stmt_id.curr_id is not None:
@@ -21,20 +21,27 @@ class PointsToAnalysis:
 
     def transition(self):
         stmt = self.stmt_id.curr_stmt()
-        next_stmt_id = self.stmt_id.next_stmt_id(self.stmt_id.curr_id)
-        if type(stmt) == ast.Assign:
-            left_var_name = stmt.targets[0].id
-            if type(stmt.value) == ast.Num:
-                left_var_address = self.data_stack.st(left_var_name, self.context)
-                right_var_address = self.data_stack.st(Num.name, self.context)
-                right_var_object = self.store.get(right_var_address)
-                self.store.insert(left_var_address, right_var_object)
-            elif type(stmt.value) == ast.Name:
-                right_var_name = stmt.value.id
-                left_var_address = self.data_stack.st(left_var_name, self.context)
-                right_var_address = self.data_stack.st(right_var_name, self.context)
-                right_var_object = self.store.get(right_var_address)
-                self.store.insert(left_var_address, right_var_object)
-        elif type(stmt) == ast.Pass:
+        self.stmt_id.goto_next_stmt_id(self.stmt_id.curr_id)
+        self.transfer(stmt)
+
+    def transfer(self, stmt: ast.AST):
+        type_of_stmt = type(stmt)
+        if type_of_stmt == ast.Assign:
+            self.do_assign(stmt)
+        elif type_of_stmt == ast.Pass:
             pass
-        self.stmt_id.curr_id = next_stmt_id
+
+    def do_assign(self, stmt: ast.Assign):
+        type_of_value = type(stmt.value)
+        if type_of_value == ast.Num:
+            right_addr = self.data_stack.st(NumObjectAddress.name, self.context)
+        elif type_of_value == ast.NameConstant:
+            if stmt.value.value in [True, False]:
+                right_addr = self.data_stack.st(BoolObjectAddress.name, self.context)
+            else:
+                right_addr = self.data_stack.st(NoneObjectAddress.name, self.context)
+        elif type_of_value == ast.Name:
+            right_addr = self.data_stack.st(stmt.value.id, self.context)
+        right_obj = self.store.get(right_addr)
+        left_address = self.data_stack.st(stmt.targets[0].id, self.context)
+        self.store.insert(left_address, right_obj)

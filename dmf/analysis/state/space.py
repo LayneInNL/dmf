@@ -1,6 +1,7 @@
 import logging
+import typing
 
-from .types import Num
+from .types import NumObjectAddress, StrObjectAddress, BytesObjectAddress, NoneObjectAddress, DefaultObject
 from collections import defaultdict
 from typing import Tuple, List, Dict, Set
 
@@ -22,20 +23,25 @@ class Stack:
         return len(self.stack)
 
 
-class Context:
-    def __init__(self):
-        self.context: List = []
-
-    def __repr__(self):
-        return self.context.__repr__()
-
-    def __str__(self):
-        return self.__repr__()
+Context = typing.NewType('Context', tuple)
+HContext = typing.NewType('HContext', tuple)
+Var = typing.NewType('Var', str)
 
 
-class HContext:
-    def __init__(self):
-        self.h_context: List = []
+# class Context:
+#     def __init__(self):
+#         self.context: List = []
+#
+#     def __repr__(self):
+#         return self.context.__repr__()
+#
+#     def __str__(self):
+#         return self.__repr__()
+#
+#
+# class HContext:
+#     def __init__(self):
+#         self.h_context: List = []
 
 
 class Var:
@@ -48,23 +54,24 @@ class FieldName:
         self.field_name: str = filed_name
 
 
-class ContSensAddr:
-    pass
-
-
-class VarContSensAddr(ContSensAddr):
-    def __init__(self):
-        self.address: Tuple[Var, Context] = None
-
-
-class FiledNameContSensAddr(ContSensAddr):
-    def __init__(self):
-        self.address: Tuple[FieldName, HContext] = None
-
+# class ContSensAddr:
+#     pass
+#
+#
+# class VarContSensAddr(ContSensAddr):
+#     def __init__(self):
+#         self.address: Tuple[Var, Context] = None
+#
+#
+# class FiledNameContSensAddr(ContSensAddr):
+#     def __init__(self):
+#         self.address: Tuple[FieldName, HContext] = None
+#
 
 class StmtID:
     def __init__(self, CFG):
-        self.curr_id: int = CFG.start.bid
+        self.start_id = CFG.start.bid
+        self.curr_id = self.start_id
         logging.debug('Curr id is {}'.format(self.curr_id))
         self.blocks = CFG.blocks
         self.flows = CFG.flows
@@ -75,21 +82,19 @@ class StmtID:
 
     def goto_next_stmt_id(self, bid):
         id_list = self.flows[bid]
-        if not id_list:
-            return None
+        next_id = None
         for val in id_list:
             next_id = val
-        return next_id
+        self.curr_id = next_id
 
 
 class DataStack:
     def __init__(self):
         # data_stack contains Dict[Var, ContSensAddr]
         self.data_stack: Stack = Stack()
-        initial_frame = self.create_frame()
-        self.push_frame(initial_frame)
+        self.create_push_frame()
 
-    def st(self, var, context):
+    def st(self, var: Var, context: Context):
         logging.debug('Test st: %s %s', var, context)
         top_frame = self.top_frame()
         if var not in top_frame:
@@ -106,11 +111,15 @@ class DataStack:
     def push_frame(self, frame):
         self.data_stack.push(frame)
 
-    def create_frame(self, default_init=True):
+    def create_push_frame(self, default_init=True):
         frame = {}
         if default_init:
-            frame[Num.name] = Num.address
-        return frame
+            frame[NumObjectAddress.name] = NumObjectAddress.address
+            frame[StrObjectAddress.name] = StrObjectAddress.address
+            frame[BytesObjectAddress.name] = BytesObjectAddress.address
+            frame[NoneObjectAddress.name] = NoneObjectAddress.address
+        self.push_frame(frame)
+        return self.top_frame()
 
     def __repr__(self):
         result = ''
@@ -121,16 +130,21 @@ class DataStack:
         return result
 
 
-class Obj:
-    def __init__(self, h_context, field_map):
-        self.obj: Tuple[HContext, Dict[FieldName, ContSensAddr]] = (h_context, field_map)
+# class Obj:
+#     def __init__(self, h_context, field_map):
+#         self.obj: Tuple[HContext, Dict[FieldName, ContSensAddr]] = (h_context, field_map)
 
 
 class Store:
-    def __init__(self):
-        self.store: Dict[ContSensAddr, Set[Obj]] = defaultdict(set)
-        obj = (0, None)
-        self.store[Num.address].add(obj)
+    def __init__(self, default_initialize=True):
+        self.store = defaultdict(set)
+        if default_initialize:
+            self._initialize()
+
+    def _initialize(self):
+        for address in [NumObjectAddress.address, StrObjectAddress.address,
+                        BytesObjectAddress.address, NoneObjectAddress.address]:
+            self.store[address].add(DefaultObject.obj)
 
     def insert(self, address, obj):
         self.store[address] = obj
@@ -151,12 +165,3 @@ class CallStack:
     def __init__(self):
         # call_stack contains Tuple[StmtID, Context, ContSensAddr]
         self.call_stack: Stack = Stack()
-
-
-class AbstractState:
-    def __init__(self, CFG):
-        self.stmt_id = StmtID(CFG)
-        self.data_stack = DataStack()
-        self.store = Store()
-        self.call_stack = CallStack()
-        self.context = Context()
