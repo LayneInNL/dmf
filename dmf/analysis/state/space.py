@@ -1,9 +1,10 @@
 import logging
 import typing
-
-from .types import NumObjectAddress, StrObjectAddress, BytesObjectAddress, NoneObjectAddress, DefaultObject
+from typing import Dict, Tuple, Set
 from collections import defaultdict
-from typing import Tuple, List, Dict, Set
+
+from .types import NumObjectAddress, BoolObjectAddress, StrObjectAddress, BytesObjectAddress, NoneObjectAddress, \
+    BUILTIN_CLASSES
 
 
 class Stack:
@@ -26,22 +27,6 @@ class Stack:
 Context = typing.NewType('Context', tuple)
 HContext = typing.NewType('HContext', tuple)
 Var = typing.NewType('Var', str)
-
-
-# class Context:
-#     def __init__(self):
-#         self.context: List = []
-#
-#     def __repr__(self):
-#         return self.context.__repr__()
-#
-#     def __str__(self):
-#         return self.__repr__()
-#
-#
-# class HContext:
-#     def __init__(self):
-#         self.h_context: List = []
 
 
 class Var:
@@ -91,39 +76,37 @@ class StmtID:
 class DataStack:
     def __init__(self):
         # data_stack contains Dict[Var, ContSensAddr]
-        self.data_stack: Stack = Stack()
-        self.create_push_frame()
+        self.data_stack = []
+        initial_frame = self.new_frame()
+        self.push(initial_frame)
 
     def st(self, var: Var, context: Context):
         logging.debug('Test st: %s %s', var, context)
-        top_frame = self.top_frame()
+        top_frame = self.top()
         if var not in top_frame:
             top_frame[var] = (var, context)
         return top_frame[var]
 
-    def top_frame(self):
-        return self.data_stack.top()
+    def top(self):
+        return self.data_stack[-1]
 
     def push_var(self, var, address):
-        top_frame = self.top_frame()
+        top_frame = self.top()
         top_frame[var] = address
 
-    def push_frame(self, frame):
-        self.data_stack.push(frame)
+    def push(self, frame):
+        self.data_stack.append(frame)
 
-    def create_push_frame(self, default_init=True):
+    def new_frame(self, default_init=True):
         frame = {}
         if default_init:
-            frame[NumObjectAddress.name] = NumObjectAddress.address
-            frame[StrObjectAddress.name] = StrObjectAddress.address
-            frame[BytesObjectAddress.name] = BytesObjectAddress.address
-            frame[NoneObjectAddress.name] = NoneObjectAddress.address
-        self.push_frame(frame)
-        return self.top_frame()
+            for cls in BUILTIN_CLASSES:
+                frame[cls.name] = cls.address
+        return frame
 
     def __repr__(self):
         result = ''
-        for key, value in self.top_frame().items():
+        for key, value in self.top().items():
             line = '{}, {}\n'.format(key, value)
             result += line
 
@@ -137,17 +120,19 @@ class DataStack:
 
 class Store:
     def __init__(self, default_initialize=True):
-        self.store = defaultdict(set)
+        self.store: Dict[Tuple, Set] = defaultdict(set)
         if default_initialize:
             self._initialize()
 
     def _initialize(self):
-        for address in [NumObjectAddress.address, StrObjectAddress.address,
-                        BytesObjectAddress.address, NoneObjectAddress.address]:
-            self.store[address].add(DefaultObject.obj)
+        for cls in BUILTIN_CLASSES:
+            self.insert(cls.address, cls.obj)
 
     def insert(self, address, obj):
-        self.store[address] = obj
+        self.store[address].add(obj)
+
+    def insert_into(self, address, objs):
+        self.store[address].update(objs)
 
     def get(self, address):
         return self.store[address]

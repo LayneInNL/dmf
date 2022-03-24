@@ -1,7 +1,7 @@
 import logging
 
 from .state.space import StmtID, DataStack, Store, CallStack, Context
-from .state.types import NumObjectAddress, BoolObjectAddress, StrObjectAddress, NoneObjectAddress
+from .state.types import NumObjectAddress, BoolObjectAddress, StrObjectAddress, BytesObjectAddress, NoneObjectAddress
 
 import ast
 
@@ -25,13 +25,14 @@ class PointsToAnalysis:
         self.transfer(stmt)
 
     def transfer(self, stmt: ast.AST):
+        # We would like to refactor the code with the strategy in ast.NodeVisitor
         type_of_stmt = type(stmt)
         if type_of_stmt == ast.Assign:
-            self.do_assign(stmt)
+            self.visit_assign(stmt)
         elif type_of_stmt == ast.Pass:
-            pass
+            self.visit_pass(stmt)
 
-    def do_assign(self, stmt: ast.Assign):
+    def visit_assign(self, stmt: ast.Assign):
         type_of_value = type(stmt.value)
         if type_of_value == ast.Num:
             right_addr = self.data_stack.st(NumObjectAddress.name, self.context)
@@ -40,8 +41,17 @@ class PointsToAnalysis:
                 right_addr = self.data_stack.st(BoolObjectAddress.name, self.context)
             else:
                 right_addr = self.data_stack.st(NoneObjectAddress.name, self.context)
+        elif type_of_value in [ast.Str, ast.FormattedValue, ast.JoinedStr]:
+            if type_of_value == ast.FormattedValue:
+                logging.warning('FormattedValue is encountered. Please double check...')
+            right_addr = self.data_stack.st(StrObjectAddress.name, self.context)
+        elif type_of_value == ast.Bytes:
+            right_addr = self.data_stack.st(BytesObjectAddress.name, self.context)
         elif type_of_value == ast.Name:
             right_addr = self.data_stack.st(stmt.value.id, self.context)
-        right_obj = self.store.get(right_addr)
+        right_objs = self.store.get(right_addr)
         left_address = self.data_stack.st(stmt.targets[0].id, self.context)
-        self.store.insert(left_address, right_obj)
+        self.store.insert_into(left_address, right_objs)
+
+    def visit_pass(self, stmt: ast.Pass):
+        pass
