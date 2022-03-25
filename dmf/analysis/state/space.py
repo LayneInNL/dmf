@@ -149,4 +149,4 @@ class Store:
 class CallStack:
     def __init__(self):
         # call_stack contains Tuple[StmtID, Context, ContSensAddr]
-        self.call_stack: Stack = Stack()
+        self.call_stack = []
