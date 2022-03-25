@@ -11,8 +11,8 @@ class BoolLattice(Enum):
         self.value = self.BOT
 
     # 2 BOT
-    # 3 4 FALSE
-    # 5 8 TRUE
+    # 3, 4 FALSE
+    # 5, 8 TRUE
     # 6, 9, 10, 12, 16 TOP
     def union(self, other):
         value = self.value + other

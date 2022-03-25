@@ -1,3 +1,4 @@
+from .lattice import BoolLattice
 from collections import defaultdict, deque
 
 
@@ -7,6 +8,7 @@ class MFP:
         self.extremal_labels = [CFG.start.bid]
         self.extremal_value = []
         self.labels = CFG.labels
+        self.bot = None
 
         self.initialize()
 
@@ -16,20 +18,8 @@ class MFP:
         self.analysis_list = {}
         for label in self.labels:
             # We use None to represent BOTTOM in analysis lattice
-            self.analysis_list[label] = [] if label in self.extremal_labels else None
+            self.analysis_list[label] = BoolLattice() if label in self.extremal_labels else self.bot
 
     def iterate(self):
         while self.work_list:
             fst_label, snd_label = self.work_list.popleft()
-
-    def is_subset(self, analysis1, analysis2):
-        if all(analysis is None for analysis in [analysis1, analysis2]):
-            return True
-
-        if analysis2 is None:
-            return False
-
-        if analysis1 is None:
-            return True
-
-
