@@ -2,6 +2,7 @@
 # b = a
 c = True
 d = c
+d = False
 # e = 'hello'
 # f = e
 # g = f'cat'

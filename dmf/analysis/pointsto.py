@@ -7,51 +7,45 @@ import ast
 
 
 class PointsToAnalysis:
-    def __init__(self, CFG):
+    def __init__(self, blocks):
+        self.blocks = blocks
         # Control flow graph, it contains program points and ast nodes.
-        self.stmt_id = StmtID(CFG)
         self.data_stack = DataStack()
         self.store = Store()
         self.call_stack = CallStack()
         self.context: Context = Context(())
 
-    def iteration(self):
-        while self.stmt_id.curr_id is not None:
-            self.transition()
-
-    def transition(self):
-        stmt = self.stmt_id.curr_stmt()
-        self.stmt_id.goto_next_stmt_id(self.stmt_id.curr_id)
-        self.transfer(stmt)
-
-    def transfer(self, stmt: ast.AST):
+    def transfer(self, label: int):
         # We would like to refactor the code with the strategy in ast.NodeVisitor
-        type_of_stmt = type(stmt)
-        if type_of_stmt == ast.Assign:
-            self.visit_assign(stmt)
-        elif type_of_stmt == ast.Pass:
-            self.visit_pass(stmt)
+        stmt = self.blocks[label].stmt
+        method = 'handle_' + stmt.__class__.__name__
+        handler = getattr(self, method)
+        return handler()
 
-    def visit_assign(self, stmt: ast.Assign):
+    def handle_Assign(self, stmt: ast.Assign):
         type_of_value = type(stmt.value)
+        right_address = None
         if type_of_value == ast.Num:
-            right_addr = self.data_stack.st(NumObjectAddress.name, self.context)
+            right_address = self.data_stack.st(NumObjectAddress.name, self.context)
         elif type_of_value == ast.NameConstant:
             if stmt.value.value in [True, False]:
-                right_addr = self.data_stack.st(BoolObjectAddress.name, self.context)
+                right_address = self.data_stack.st(BoolObjectAddress.name, self.context)
             else:
-                right_addr = self.data_stack.st(NoneObjectAddress.name, self.context)
+                right_address = self.data_stack.st(NoneObjectAddress.name, self.context)
         elif type_of_value in [ast.Str, ast.FormattedValue, ast.JoinedStr]:
             if type_of_value == ast.FormattedValue:
                 logging.warning('FormattedValue is encountered. Please double check...')
-            right_addr = self.data_stack.st(StrObjectAddress.name, self.context)
+            right_address = self.data_stack.st(StrObjectAddress.name, self.context)
         elif type_of_value == ast.Bytes:
-            right_addr = self.data_stack.st(BytesObjectAddress.name, self.context)
+            right_address = self.data_stack.st(BytesObjectAddress.name, self.context)
         elif type_of_value == ast.Name:
-            right_addr = self.data_stack.st(stmt.value.id, self.context)
-        right_objs = self.store.get(right_addr)
-        left_address = self.data_stack.st(stmt.targets[0].id, self.context)
+            right_address = self.data_stack.st(stmt.value.id, self.context)
+        assert right_address is not None
+        right_objs = self.store.get(right_address)
+        left_name = stmt.targets[0].id
+        left_address = self.data_stack.st(left_name, self.context)
         self.store.insert_into(left_address, right_objs)
+        return [(left_name, self.store.get(left_address))]
 
-    def visit_pass(self, stmt: ast.Pass):
-        pass
+    def handle_Pass(self, stmt: ast.Pass):
+        return []

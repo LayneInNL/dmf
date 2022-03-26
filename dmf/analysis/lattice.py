@@ -1,4 +1,7 @@
 from enum import Enum
+from .state.space import Store
+
+from typing import Set
 
 
 class BoolLattice(Enum):
@@ -27,3 +30,21 @@ class BoolLattice(Enum):
 
     def is_subset(self, other):
         return self.value < other
+
+    def merge(self, other):
+        self.union(other)
+
+    def transform(self, objects: Set):
+        for obj in objects:
+            self.union(obj)
+
+    def __eq__(self, other):
+        return self.value == other.value
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+
+class Lattice:
+    def __init__(self):
+        self.bool_lattice = BoolLattice()

@@ -113,11 +113,6 @@ class DataStack:
         return result
 
 
-# class Obj:
-#     def __init__(self, h_context, field_map):
-#         self.obj: Tuple[HContext, Dict[FieldName, ContSensAddr]] = (h_context, field_map)
-
-
 class Store:
     def __init__(self, default_initialize=True):
         self.store: Dict[Tuple, Set] = defaultdict(set)
