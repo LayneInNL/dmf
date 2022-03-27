@@ -17,13 +17,6 @@ class PrimitiveTypes:
     NONE = -2,
 
 
-# class NumObjectAddress:
-#     name = 'Num'
-#     context = -1
-#     address = (name, context)
-#     obj = (context, None)
-
-
 class BoolFalseObjectAddress:
     name = 'False'
     context = PrimitiveTypes.BOOL_FALSE
@@ -59,4 +52,4 @@ class BoolTrueObjectAddress:
 #     obj = (context, None)
 
 
-BUILTIN_CLASSES = (NumObjectAddress, BoolObjectAddress, StrObjectAddress, BytesObjectAddress, NoneObjectAddress)
+BUILTIN_CLASSES = (BoolFalseObjectAddress, BoolTrueObjectAddress)

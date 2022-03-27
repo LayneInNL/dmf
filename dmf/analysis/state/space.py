@@ -3,8 +3,7 @@ import typing
 from typing import Dict, Tuple, Set
 from collections import defaultdict
 
-from .types import NumObjectAddress, BoolObjectAddress, StrObjectAddress, BytesObjectAddress, NoneObjectAddress, \
-    BUILTIN_CLASSES
+from .types import BUILTIN_CLASSES
 
 
 class Stack:
@@ -84,6 +83,7 @@ class DataStack:
         logging.debug('Test st: %s %s', var, context)
         top_frame = self.top()
         if var not in top_frame:
+            logging.info('{} is not in data stack'.format(var))
             top_frame[var] = (var, context)
         return top_frame[var]
 
@@ -121,12 +121,12 @@ class Store:
 
     def _initialize(self):
         for cls in BUILTIN_CLASSES:
-            self.insert(cls.address, cls.obj)
+            self.insert_one(cls.address, cls.obj)
 
-    def insert(self, address, obj):
+    def insert_one(self, address, obj):
         self.store[address].add(obj)
 
-    def insert_into(self, address, objs):
+    def insert_many(self, address, objs):
         self.store[address].update(objs)
 
     def get(self, address):

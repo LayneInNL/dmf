@@ -1,8 +1,9 @@
 # a = 1
 # b = a
 c = True
-d = c
-d = False
+c = False
+# d = c
+# d = False
 # e = 'hello'
 # f = e
 # g = f'cat'
