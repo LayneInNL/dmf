@@ -1,6 +1,6 @@
 import logging
 
-from .state.space import StmtID, DataStack, Store, CallStack, Context
+from .state.space import DataStack, Store, CallStack, Context
 from .state.types import BoolFalseObjectAddress, BoolTrueObjectAddress
 
 import ast

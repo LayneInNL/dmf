@@ -1,20 +1,17 @@
-from enum import Enum
-
-
 class PrimitiveTypes:
-    NUM_NEGATIVE = -10,
-    NUM_ZERO = -9,
-    NUM_POSITIVE = -8,
+    NUM_NEGATIVE = -10
+    NUM_ZERO = -9
+    NUM_POSITIVE = -8
 
-    BOOL_FALSE = -7,
-    BOOL_TRUE = -6,
+    BOOL_FALSE = -7
+    BOOL_TRUE = -6
 
-    STR_EMPTY = -5,
-    STR_NON_EMPTY = -4,
+    STR_EMPTY = -5
+    STR_NON_EMPTY = -4
 
-    BYTES = -3,
+    BYTES = -3
 
-    NONE = -2,
+    NONE = -2
 
 
 class BoolFalseObjectAddress:

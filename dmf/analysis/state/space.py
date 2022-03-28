@@ -5,52 +5,10 @@ from collections import defaultdict
 
 from .types import BUILTIN_CLASSES
 
-
-class Stack:
-    def __init__(self):
-        self.stack = []
-
-    def push(self, elt):
-        self.stack.append(elt)
-
-    def pop(self):
-        self.stack.pop()
-
-    def top(self):
-        return self.stack[-1]
-
-    def len(self):
-        return len(self.stack)
-
-
 Context = typing.NewType('Context', tuple)
 HContext = typing.NewType('HContext', tuple)
 Var = typing.NewType('Var', str)
 
-
-class Var:
-    def __init__(self, var):
-        self.var: str = var
-
-
-class FieldName:
-    def __init__(self, filed_name):
-        self.field_name: str = filed_name
-
-
-# class ContSensAddr:
-#     pass
-#
-#
-# class VarContSensAddr(ContSensAddr):
-#     def __init__(self):
-#         self.address: Tuple[Var, Context] = None
-#
-#
-# class FiledNameContSensAddr(ContSensAddr):
-#     def __init__(self):
-#         self.address: Tuple[FieldName, HContext] = None
-#
 
 class StmtID:
     def __init__(self, CFG):
@@ -77,13 +35,13 @@ class DataStack:
         # data_stack contains Dict[Var, ContSensAddr]
         self.data_stack = []
         initial_frame = self.new_frame()
-        self.push(initial_frame)
+        self.push_frame(initial_frame)
 
     def st(self, var: Var, context: Context):
         logging.debug('Test st: %s %s', var, context)
         top_frame = self.top()
         if var not in top_frame:
-            logging.info('{} is not in data stack'.format(var))
+            logging.info('{} is not in data stack, make one'.format(var))
             top_frame[var] = (var, context)
         return top_frame[var]
 
@@ -94,7 +52,7 @@ class DataStack:
         top_frame = self.top()
         top_frame[var] = address
 
-    def push(self, frame):
+    def push_frame(self, frame):
         self.data_stack.append(frame)
 
     def new_frame(self, default_init=True):
@@ -122,6 +80,7 @@ class Store:
     def _initialize(self):
         for cls in BUILTIN_CLASSES:
             self.insert_one(cls.address, cls.obj)
+            print(cls.obj)
 
     def insert_one(self, address, obj):
         self.store[address].add(obj)
@@ -129,7 +88,7 @@ class Store:
     def insert_many(self, address, objs):
         self.store[address].update(objs)
 
-    def get(self, address):
+    def get(self, address) -> Set:
         return self.store[address]
 
     def __repr__(self):

@@ -8,3 +8,4 @@ if __name__ == '__main__':
     CFG = construct_CFG("../examples/test.py")
     mfp = MFP(CFG)
     mfp.compute_fixed_point()
+    mfp.pprint()
