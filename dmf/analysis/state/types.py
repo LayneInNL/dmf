@@ -28,6 +28,13 @@ class BoolTrueObjectAddress:
     obj = (context, None)
 
 
+class NoneObjectAddress:
+    name = 'None'
+    context = PrimitiveTypes.NONE
+    address = (name, context)
+    obj = (context, None)
+
+
 # class StrObjectAddress:
 #     name = 'Str'
 #     context = -3
@@ -42,11 +49,6 @@ class BoolTrueObjectAddress:
 #     obj = (context, None)
 #
 #
-# class NoneObjectAddress:
-#     name = 'None'
-#     context = -5
-#     address = (name, context)
-#     obj = (context, None)
 
 
-BUILTIN_CLASSES = (BoolFalseObjectAddress, BoolTrueObjectAddress)
+BUILTIN_CLASSES = (BoolFalseObjectAddress, BoolTrueObjectAddress, NoneObjectAddress)

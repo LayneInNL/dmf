@@ -1,7 +1,7 @@
-import logging
-
 from .state.space import DataStack, Store, CallStack, Context
-from .state.types import BoolFalseObjectAddress, BoolTrueObjectAddress
+from .state.types import BoolFalseObjectAddress, BoolTrueObjectAddress, NoneObjectAddress
+
+from typing import List, Tuple, Any
 
 import ast
 
@@ -10,19 +10,19 @@ class PointsToAnalysis:
     def __init__(self, blocks):
         self.blocks = blocks
         # Control flow graph, it contains program points and ast nodes.
-        self.data_stack = DataStack()
-        self.store = Store()
-        self.call_stack = CallStack()
+        self.data_stack: DataStack = DataStack()
+        self.store: Store = Store()
+        self.call_stack: CallStack = CallStack()
         self.context: Context = Context(())
 
-    def transfer(self, label: int):
+    def transfer(self, label: int) -> List[Tuple[str, Any]]:
         # We would like to refactor the code with the strategy in ast.NodeVisitor
         stmt = self.blocks[label].stmt[0]
         method = 'handle_' + stmt.__class__.__name__
         handler = getattr(self, method)
         return handler(stmt)
 
-    def handle_Assign(self, stmt: ast.Assign):
+    def handle_Assign(self, stmt: ast.Assign) -> List[Tuple[str, Any]]:
         type_of_value = type(stmt.value)
         right_address = None
         # if type_of_value == ast.Num:
@@ -41,10 +41,7 @@ class PointsToAnalysis:
         # elif type_of_value == ast.Name:
         #     right_address = self.data_stack.st(stmt.value.id, self.context)
         if type_of_value == ast.NameConstant:
-            if stmt.value.value in [True]:
-                right_address = self.data_stack.st(BoolTrueObjectAddress.name, self.context)
-            elif stmt.value.value in [False]:
-                right_address = self.data_stack.st(BoolFalseObjectAddress.name, self.context)
+            right_address = self.handle_NameConstant(stmt.value)
         elif type_of_value == ast.Name:
             right_address = self.data_stack.st(stmt.value.id, self.context)
         assert right_address is not None
@@ -53,6 +50,16 @@ class PointsToAnalysis:
         left_address = self.data_stack.st(left_name, self.context)
         self.store.insert_many(left_address, right_objs)
         return [(left_name, self.store.get(left_address))]
+
+    def handle_NameConstant(self, expr):
+        if expr.value:
+            right_address = self.data_stack.st(BoolTrueObjectAddress.name, None)
+        elif not expr.value:
+            right_address = self.data_stack.st(BoolFalseObjectAddress.name, None)
+        else:
+            right_address = self.data_stack.st(NoneObjectAddress.name, None)
+
+        return right_address
 
     def handle_Pass(self, stmt: ast.Pass):
         return []
