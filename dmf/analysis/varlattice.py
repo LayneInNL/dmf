@@ -98,7 +98,7 @@ class NoneLattice:
         return '{}'.format(rep)
 
 
-class Lattice:
+class VarLattice:
     def __init__(self):
         self.bool_lattice = BoolLattice()
         self.none_lattice = NoneLattice()
@@ -110,11 +110,11 @@ class Lattice:
             elif heap_context in [PrimitiveTypes.NONE]:
                 self.none_lattice.from_heap_context_to_lattice(heap_context)
 
-    def is_subset(self, other: Lattice):
+    def is_subset(self, other: VarLattice):
         return self.bool_lattice.is_subset(other.bool_lattice) and \
                self.none_lattice.is_subset(other.none_lattice)
 
-    def merge(self, other: Lattice):
+    def merge(self, other: VarLattice):
         self.bool_lattice.merge(other.bool_lattice)
         self.none_lattice.merge(other.none_lattice)
 

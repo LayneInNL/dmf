@@ -2,7 +2,8 @@
 # b = a
 c = True
 c = False
-# d = c
+d = None
+d = c
 # d = False
 # e = 'hello'
 # f = e

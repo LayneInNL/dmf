@@ -22,13 +22,6 @@ class StmtID:
         curr_block = self.blocks[self.curr_id]
         return curr_block.stmt[0]
 
-    def goto_next_stmt_id(self, bid):
-        id_list = self.flows[bid]
-        next_id = None
-        for val in id_list:
-            next_id = val
-        self.curr_id = next_id
-
 
 class DataStack:
     def __init__(self):
@@ -80,7 +73,6 @@ class Store:
     def _initialize(self):
         for cls in BUILTIN_CLASSES:
             self.insert_one(cls.address, cls.obj)
-            print(cls.obj)
 
     def insert_one(self, address, obj):
         self.store[address].add(obj)

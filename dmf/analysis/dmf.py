@@ -1,6 +1,6 @@
 import logging
 
-from .lattice import Lattice
+from .varlattice import VarLattice
 from .pointsto import PointsToAnalysis
 from ..py2flows.py2flows.cfg.flows import CFG
 from collections import defaultdict, deque
@@ -15,20 +15,12 @@ def condense_flows(flows: Set[Tuple[int, int]]):
     return condensed_flows
 
 
-def transform(store: List[Tuple[str, Any]]) -> Dict[str, Lattice]:
-    transferred_lattice = defaultdict(Lattice)
-    for name, objects in store:
-        transferred_lattice[name].transform(objects)
-
-    return transferred_lattice
-
-
-def merge(analysis: Dict[str, Lattice], transferred_lattice: Dict[str, Lattice]):
+def merge(analysis: Dict[str, VarLattice], transferred_lattice: Dict[str, VarLattice]):
     for k, _ in transferred_lattice.items():
         transferred_lattice[k].merge(analysis[k])
 
 
-def is_subset(left: Optional[Dict[str, Lattice]], right: Optional[Dict[str, Lattice]]):
+def is_subset(left: Optional[Dict[str, VarLattice]], right: Optional[Dict[str, VarLattice]]):
     for key, value in left.items():
         if key not in right:
             return False
@@ -47,7 +39,7 @@ class MFP:
         self.labels: Set[int] = cfg.labels
         self.extremal_labels: List[int] = [cfg.start.bid]
         # Note: passed by address
-        self.extremal_value: Dict[str, Lattice] = defaultdict(Lattice)
+        self.extremal_value: Dict[str, VarLattice] = defaultdict(VarLattice)
 
         # Use None as Bottom
         self.bot: None = None
@@ -56,11 +48,11 @@ class MFP:
 
         # used for iteration
         self.work_list: Optional[Deque[Tuple[int, int]]] = None
-        self.analysis_list: Optional[Dict[int, Dict[str, Lattice]]] = None
+        self.analysis_list: Optional[Dict[int, Dict[str, VarLattice]]] = None
 
         # used for final result
-        self.mfp_content: Optional[Dict[int, Dict[str, Lattice]]] = None
-        self.mfp_effect: Optional[Dict[int, Dict[str, Lattice]]] = None
+        self.mfp_content: Optional[Dict[int, Dict[str, VarLattice]]] = None
+        self.mfp_effect: Optional[Dict[int, Dict[str, VarLattice]]] = None
 
     def compute_fixed_point(self) -> None:
         self.initialize()
@@ -77,11 +69,10 @@ class MFP:
             # We use None to represent BOTTOM in analysis lattice
             self.analysis_list[label] = self.extremal_value if label in self.extremal_labels else self.bot
 
-    def transfer(self, label: int) -> Dict[str, Lattice]:
-        transferred = self.points_to_analysis.transfer(label)
-        logging.debug('transferred {}'.format(transferred))
-        transferred_lattice = transform(transferred)
-        logging.debug('transferred lattice {}'.format(transferred_lattice))
+        self.points_to_analysis.link_analysis_list(self.analysis_list)
+
+    def transfer(self, label: int) -> Dict[str, VarLattice]:
+        transferred_lattice = self.points_to_analysis.transfer(label)
         return transferred_lattice
 
     def iterate(self) -> None:
