@@ -52,3 +52,4 @@ class NoneObjectAddress:
 
 
 BUILTIN_CLASSES = (BoolFalseObjectAddress, BoolTrueObjectAddress, NoneObjectAddress)
+BUILTIN_CLASS_NAMES = {a.name: a.obj for a in BUILTIN_CLASSES}

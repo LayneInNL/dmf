@@ -11,7 +11,7 @@ import ast
 Lattice = NewType('Lattice', Dict[str, VarLattice])
 
 
-def transform(store: List[Tuple[str, Any]]) -> Lattice:
+def transform(store: List[Tuple[str, Any]]) -> Dict[str, VarLattice]:
     transferred_lattice = defaultdict(VarLattice)
     for name, objects in store:
         transferred_lattice[name].transform(objects)
@@ -19,7 +19,7 @@ def transform(store: List[Tuple[str, Any]]) -> Lattice:
     return transferred_lattice
 
 
-def merge(original_lattice: Dict[str, VarLattice], added_lattice: Dict[str, VarLattice]):
+def merge(original_lattice: Dict[str, VarLattice], added_lattice: Dict[str, VarLattice]) -> Dict[str, VarLattice]:
     in_original: Set[str] = set(original_lattice.keys())
     in_added: Set[str] = set(added_lattice.keys())
     mixed: Set[str] = in_original | in_added
@@ -42,14 +42,13 @@ class PointsToAnalysis:
 
         self.analysis_list: Optional[Dict[int, Lattice]] = None
 
-    def link_analysis_list(self, analysis_list):
+    def link_analysis_list(self, analysis_list: Dict[int, Lattice]):
         self.analysis_list = analysis_list
 
     def transfer(self, label: int) -> Dict[str, VarLattice]:
         # We would like to refactor the code with the strategy in ast.NodeVisitor
-        stmt = self.blocks[label].stmt[0]
-
         original_lattice: Lattice = self.analysis_list[label]
+        stmt = self.blocks[label].stmt[0]
 
         method = 'handle_' + stmt.__class__.__name__
         handler = getattr(self, method)

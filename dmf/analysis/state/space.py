@@ -1,37 +1,32 @@
 import logging
 import typing
-from typing import Dict, Tuple, Set
+from typing import Dict, Tuple, Set, Any, List
 from collections import defaultdict
 
-from .types import BUILTIN_CLASSES
+from .types import BUILTIN_CLASSES, BUILTIN_CLASS_NAMES
 
 Context = typing.NewType('Context', tuple)
 HContext = typing.NewType('HContext', tuple)
 Var = typing.NewType('Var', str)
 
 
-class StmtID:
-    def __init__(self, CFG):
-        self.start_id = CFG.start.bid
-        self.curr_id = self.start_id
-        logging.debug('Curr id is {}'.format(self.curr_id))
-        self.blocks = CFG.blocks
-        self.flows = CFG.flows
-
-    def curr_stmt(self):
-        curr_block = self.blocks[self.curr_id]
-        return curr_block.stmt[0]
+def new_frame():
+    frame = {}
+    return frame
 
 
 class DataStack:
     def __init__(self):
         # data_stack contains Dict[Var, ContSensAddr]
-        self.data_stack = []
-        initial_frame = self.new_frame()
+        self.data_stack: List = []
+        initial_frame = new_frame()
         self.push_frame(initial_frame)
 
-    def st(self, var: Var, context: Context):
-        logging.debug('Test st: %s %s', var, context)
+    def st(self, var: Var, context: Context = None) -> Tuple[HContext, Any]:
+        if var in BUILTIN_CLASS_NAMES:
+            return BUILTIN_CLASS_NAMES[var]
+
+        logging.debug('Test st: {} {}'.format(var, context))
         top_frame = self.top()
         if var not in top_frame:
             logging.info('{} is not in data stack, make one'.format(var))
@@ -47,13 +42,6 @@ class DataStack:
 
     def push_frame(self, frame):
         self.data_stack.append(frame)
-
-    def new_frame(self, default_init=True):
-        frame = {}
-        if default_init:
-            for cls in BUILTIN_CLASSES:
-                frame[cls.name] = cls.address
-        return frame
 
     def __repr__(self):
         result = ''

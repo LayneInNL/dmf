@@ -37,12 +37,6 @@ class BoolLattice:
     def from_heap_context_to_lattice(self, heap_context):
         self.join(self.mapping[heap_context])
 
-    def __eq__(self, other: BoolLattice):
-        return self.value == other.value
-
-    def __ne__(self, other: BoolLattice):
-        return not self.__eq__(other)
-
     def is_subset(self, other: BoolLattice):
         if self.value == self.FALSE and other.value == self.TRUE:
             return False
@@ -100,8 +94,8 @@ class NoneLattice:
 
 class VarLattice:
     def __init__(self):
-        self.bool_lattice = BoolLattice()
-        self.none_lattice = NoneLattice()
+        self.bool_lattice: BoolLattice = BoolLattice()
+        self.none_lattice: NoneLattice = NoneLattice()
 
     def transform(self, objs: Set[Tuple[int, Any]]):
         for heap_context, fields in objs:
