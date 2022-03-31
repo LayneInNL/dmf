@@ -51,5 +51,7 @@ class NoneObjectAddress:
 #
 
 
+# a mapping used in store
 BUILTIN_CLASSES = (BoolFalseObjectAddress, BoolTrueObjectAddress, NoneObjectAddress)
-BUILTIN_CLASS_NAMES = {a.name: a.obj for a in BUILTIN_CLASSES}
+# a mapping from names to addresses, used in data stack
+BUILTIN_CLASS_NAMES = {a.name: a.address for a in BUILTIN_CLASSES}

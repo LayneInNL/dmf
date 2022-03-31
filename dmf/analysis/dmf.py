@@ -104,6 +104,8 @@ class MFP:
             self.mfp_effect[label] = self.transfer(label)
 
     def pprint(self):
+        logging.debug('data stack:\n{}'.format(self.points_to_analysis.data_stack))
+        logging.debug('store:\n{}'.format(self.points_to_analysis.store))
         for label in self.labels:
             logging.debug('content label: {}, value: {}'.format(label, self.mfp_content[label]))
             logging.debug('effect label: {}, value: {}'.format(label, self.mfp_effect[label]))
