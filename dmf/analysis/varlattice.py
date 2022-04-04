@@ -97,12 +97,12 @@ class VarLattice:
         self.bool_lattice: BoolLattice = BoolLattice()
         self.none_lattice: NoneLattice = NoneLattice()
 
-    def transform(self, objs: Set[Tuple[int, Any]]):
-        for heap_context, fields in objs:
-            if heap_context in [PrimitiveTypes.BOOL_TRUE, PrimitiveTypes.BOOL_FALSE]:
-                self.bool_lattice.from_heap_context_to_lattice(heap_context)
-            elif heap_context in [PrimitiveTypes.NONE]:
-                self.none_lattice.from_heap_context_to_lattice(heap_context)
+    def transform(self, obj: Tuple[int, Any]):
+        heap_context, fields = obj
+        if heap_context in [PrimitiveTypes.BOOL_TRUE, PrimitiveTypes.BOOL_FALSE]:
+            self.bool_lattice.from_heap_context_to_lattice(heap_context)
+        elif heap_context in [PrimitiveTypes.NONE]:
+            self.none_lattice.from_heap_context_to_lattice(heap_context)
 
     def is_subset(self, other: VarLattice):
         return self.bool_lattice.is_subset(other.bool_lattice) and \

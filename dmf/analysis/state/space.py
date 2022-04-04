@@ -1,6 +1,6 @@
 import logging
 import typing
-from typing import Dict, Tuple, Set, Any, List
+from typing import Dict, Tuple, Set, Any, List, Union
 from collections import defaultdict
 
 from .types import BUILTIN_CLASSES, BUILTIN_CLASS_NAMES
@@ -8,6 +8,10 @@ from .types import BUILTIN_CLASSES, BUILTIN_CLASS_NAMES
 Context = typing.NewType('Context', tuple)
 HContext = typing.NewType('HContext', tuple)
 Var = typing.NewType('Var', str)
+FieldName = typing.NewType('FieldName', str)
+VarAddress = typing.NewType('VarAddress', Tuple[Var, Context])
+FieldNameAddress = typing.NewType('FieldNameAddress', Tuple[FieldName, HContext])
+Obj = typing.NewType('Obj', Tuple[HContext, Dict[FieldName, Union[VarAddress, FieldNameAddress]]])
 
 
 def new_frame():
@@ -54,7 +58,7 @@ class DataStack:
 
 class Store:
     def __init__(self, default_initialize=True):
-        self.store: Dict[Tuple, Set] = defaultdict(set)
+        self.store: Dict[Tuple, Obj] = {}
         if default_initialize:
             self._initialize()
 
@@ -63,12 +67,12 @@ class Store:
             self.insert_one(cls.address, cls.obj)
 
     def insert_one(self, address, obj):
-        self.store[address].add(obj)
+        self.store[address] = obj
 
-    def insert_many(self, address, objs):
-        self.store[address].update(objs)
+    # def insert_many(self, address, objs):
+    #     self.store[address].update(objs)
 
-    def get(self, address) -> Set:
+    def get(self, address) -> Obj:
         return self.store[address]
 
     def __repr__(self):

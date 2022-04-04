@@ -21,6 +21,10 @@ def merge(analysis: Dict[str, VarLattice], transferred_lattice: Dict[str, VarLat
 
 
 def is_subset(left: Optional[Dict[str, VarLattice]], right: Optional[Dict[str, VarLattice]]):
+    # left is not None, right is None. So is_subset = False
+    if right is None:
+        return False
+
     for key, value in left.items():
         if key not in right:
             return False
@@ -89,11 +93,8 @@ class MFP:
             transferred_lattice = self.transfer(fst_label)
             snd_label_lattice = self.analysis_list[snd_label]
 
-            if snd_label_lattice == self.bot:
+            if not is_subset(transferred_lattice, snd_label_lattice):
                 self.analysis_list[snd_label] = transferred_lattice
-                self.work_list.extendleft([(snd_label, l3) for l3 in self.flows_mapping[snd_label]])
-            elif not is_subset(transferred_lattice, snd_label_lattice):
-                merge(snd_label_lattice, transferred_lattice)
                 self.work_list.extendleft([(snd_label, l3) for l3 in self.flows_mapping[snd_label]])
 
     def present(self) -> None:
