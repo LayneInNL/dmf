@@ -1,10 +1,10 @@
 import logging
 
 from .varlattice import VarLattice
-from .pointsto import PointsToAnalysis
+from .pointsto import PointsToAnalysis, Lattice
 from ..py2flows.py2flows.cfg.flows import CFG
 from collections import defaultdict, deque
-from typing import Dict, Set, Tuple, List, Optional, Deque, DefaultDict, Any
+from typing import Dict, Set, Tuple, List, Optional, Deque, DefaultDict
 
 
 def condense_flows(flows: Set[Tuple[int, int]]):
@@ -15,12 +15,12 @@ def condense_flows(flows: Set[Tuple[int, int]]):
     return condensed_flows
 
 
-def merge(analysis: Dict[str, VarLattice], transferred_lattice: Dict[str, VarLattice]):
+def merge(analysis: Lattice, transferred_lattice: Lattice):
     for k, _ in transferred_lattice.items():
         transferred_lattice[k].merge(analysis[k])
 
 
-def is_subset(left: Optional[Dict[str, VarLattice]], right: Optional[Dict[str, VarLattice]]):
+def is_subset(left: Optional[Lattice], right: Optional[Lattice]):
     # left is not None, right is None. So is_subset = False
     if right is None:
         return False
@@ -43,7 +43,7 @@ class MFP:
         self.labels: Set[int] = cfg.labels
         self.extremal_labels: List[int] = [cfg.start.bid]
         # Note: passed by address
-        self.extremal_value: Dict[str, VarLattice] = defaultdict(VarLattice)
+        self.extremal_value: Lattice = defaultdict(VarLattice)
 
         # Use None as Bottom
         self.bot: None = None

@@ -1,16 +1,35 @@
-from .state.space import DataStack, Store, CallStack, Context, Obj, Address
-from .state.types import BoolFalseObjectAddress, BoolTrueObjectAddress, NoneObjectAddress, \
-    NumPosObjectAddress, NumZeroObjectAddress, NumNegObjectAddress, \
-    StrEmptyObjectAddress, StrNonEmptyObjectAddress
-from .varlattice import VarLattice
-
-import logging
-from typing import List, Tuple, Any, Dict, NewType, Optional, Set
-from collections import defaultdict
+#  Copyright 2022 Layne Liu
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
 
 import ast
+import logging
+from collections import defaultdict
+from typing import List, Tuple, Dict, NewType, Optional, Set
 
-Lattice = NewType('Lattice', Dict[str, VarLattice])
+from .state.space import DataStack, Store, CallStack, Context, Obj, Address
+from .state.types import (
+    BoolFalseObjectAddress,
+    BoolTrueObjectAddress,
+    NoneObjectAddress,
+    NumPosObjectAddress,
+    NumZeroObjectAddress,
+    StrEmptyObjectAddress,
+    StrNonEmptyObjectAddress,
+)
+from .varlattice import VarLattice
+
+Lattice = NewType("Lattice", Dict[str, VarLattice])
 
 
 def transform(store: List[Tuple[str, Obj]]) -> Dict[str, VarLattice]:
@@ -21,7 +40,9 @@ def transform(store: List[Tuple[str, Obj]]) -> Dict[str, VarLattice]:
     return transferred_lattice
 
 
-def merge(original_lattice: Dict[str, VarLattice], added_lattice: Dict[str, VarLattice]) -> Dict[str, VarLattice]:
+def merge(
+    original_lattice: Dict[str, VarLattice], added_lattice: Dict[str, VarLattice]
+) -> Dict[str, VarLattice]:
     in_original: Set[str] = set(original_lattice.keys())
     in_added: Set[str] = set(added_lattice.keys())
     mixed: Set[str] = in_original | in_added
@@ -51,15 +72,15 @@ class PointsToAnalysis:
         # We would like to refactor the code with the strategy in ast.NodeVisitor
         stmt = self.blocks[label].stmt[0]
 
-        method = 'handle_' + stmt.__class__.__name__
+        method = "handle_" + stmt.__class__.__name__
         handler = getattr(self, method)
         transferred = handler(stmt)
-        logging.debug('transferred {}'.format(transferred))
+        logging.debug("transferred {}".format(transferred))
 
         new_lattice = transform(transferred)
         if not new_lattice:
             new_lattice = self.analysis_list[label]
-        logging.debug('transferred lattice {}'.format(new_lattice))
+        logging.debug("transferred lattice {}".format(new_lattice))
 
         return new_lattice
 

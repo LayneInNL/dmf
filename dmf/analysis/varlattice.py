@@ -1,8 +1,24 @@
+#  Copyright 2022 Layne Liu
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 from __future__ import annotations
+
 import logging
-from typing import Set, Tuple, Any
-from .state.types import PrimitiveTypes
+from typing import Set
+
 from .state.space import Obj
+from .state.types import PrimitiveTypes
 
 
 class BoolLattice:
@@ -22,7 +38,7 @@ class BoolLattice:
     # 6, 9, 10, 12, 16 TOP
     def join(self, other: int):
         value = self.value + other
-        logging.debug('value is {}'.format(value))
+        logging.debug("value is {}".format(value))
         if value in [2]:
             self.value = self.BOT
         elif value in [3, 4]:
@@ -47,14 +63,14 @@ class BoolLattice:
     def __repr__(self):
         rep = None
         if self.value == self.TOP:
-            rep = 'TOP'
+            rep = "TOP"
         elif self.value == self.TRUE:
-            rep = 'TRUE'
+            rep = "TRUE"
         elif self.value == self.FALSE:
-            rep = 'FALSE'
+            rep = "FALSE"
         elif self.value == self.BOT:
-            rep = 'BOT'
-        return '{}'.format(rep)
+            rep = "BOT"
+        return "{}".format(rep)
 
 
 class NoneLattice:
@@ -87,10 +103,10 @@ class NoneLattice:
     def __repr__(self):
         rep = None
         if self.value == self.NONE:
-            rep = 'None'
+            rep = "None"
         elif self.value == self.BOT:
-            rep = 'BOT'
-        return '{}'.format(rep)
+            rep = "BOT"
+        return "{}".format(rep)
 
 
 class NumLattice:
@@ -100,11 +116,11 @@ class NumLattice:
     POS = {4}
     POS_ZERO = {2, 4}
     NEG_ZERO_POS = {1, 2, 4}
-    symbol_mapping = {1: '-', 2: '0', 4: '+'}
+    symbol_mapping = {1: "-", 2: "0", 4: "+"}
     mapping = {
         PrimitiveTypes.NUM_NEGATIVE: NEG,
         PrimitiveTypes.NUM_ZERO: ZERO,
-        PrimitiveTypes.NUM_POSITIVE: POS
+        PrimitiveTypes.NUM_POSITIVE: POS,
     }
 
     def __init__(self):
@@ -123,10 +139,10 @@ class NumLattice:
         return self.value.issubset(other.value)
 
     def __repr__(self):
-        rep = '(Symbol: '
+        rep = "(Symbol: "
         for elt in self.value:
-            rep += '{} '.format(self.symbol_mapping[elt])
-        rep += ')'
+            rep += "{} ".format(self.symbol_mapping[elt])
+        rep += ")"
         return rep
 
 
@@ -135,10 +151,7 @@ class StrLattice:
     EMPTY = 2
     NON_EMPTY = 4
     TOP = 8
-    mapping = {
-        PrimitiveTypes.STR_EMPTY: EMPTY,
-        PrimitiveTypes.STR_NON_EMPTY: NON_EMPTY
-    }
+    mapping = {PrimitiveTypes.STR_EMPTY: EMPTY, PrimitiveTypes.STR_NON_EMPTY: NON_EMPTY}
 
     def __init__(self):
         self.value: int = self.BOT
@@ -173,10 +186,10 @@ class StrLattice:
 
     def __repr__(self):
         print_mapping = {
-            self.BOT: 'Bot',
-            self.EMPTY: 'Empty',
-            self.NON_EMPTY: 'NonEmpty',
-            self.TOP: 'Top'
+            self.BOT: "Bot",
+            self.EMPTY: "Empty",
+            self.NON_EMPTY: "NonEmpty",
+            self.TOP: "Top",
         }
         return print_mapping[self.value]
 
@@ -194,16 +207,22 @@ class VarLattice:
             self.bool_lattice.from_heap_context_to_lattice(heap_context)
         elif heap_context in [PrimitiveTypes.NONE]:
             self.none_lattice.from_heap_context_to_lattice(heap_context)
-        elif heap_context in [PrimitiveTypes.NUM_NEGATIVE, PrimitiveTypes.NUM_ZERO, PrimitiveTypes.NUM_POSITIVE]:
+        elif heap_context in [
+            PrimitiveTypes.NUM_NEGATIVE,
+            PrimitiveTypes.NUM_ZERO,
+            PrimitiveTypes.NUM_POSITIVE,
+        ]:
             self.num_lattice.from_heap_context_to_lattice(heap_context)
         elif heap_context in [PrimitiveTypes.STR_EMPTY, PrimitiveTypes.STR_NON_EMPTY]:
             self.str_lattice.from_heap_context_to_lattice(heap_context)
 
     def is_subset(self, other: VarLattice):
-        return self.bool_lattice.is_subset(other.bool_lattice) and \
-               self.none_lattice.is_subset(other.none_lattice) and \
-               self.num_lattice.is_subset(other.num_lattice) and \
-               self.str_lattice.is_subset(other.str_lattice)
+        return (
+            self.bool_lattice.is_subset(other.bool_lattice)
+            and self.none_lattice.is_subset(other.none_lattice)
+            and self.num_lattice.is_subset(other.num_lattice)
+            and self.str_lattice.is_subset(other.str_lattice)
+        )
 
     def merge(self, other: VarLattice):
         self.bool_lattice.merge(other.bool_lattice)
@@ -216,5 +235,6 @@ class VarLattice:
         none_lattice_str = self.none_lattice.__repr__()
         num_lattice_str = self.num_lattice.__repr__()
         str_lattice_str = self.str_lattice.__repr__()
-        return 'Lattice: Bool x None x Num x Str: {} x {} x {} x {}'.format(
-            bool_lattice_str, none_lattice_str, num_lattice_str, str_lattice_str)
+        return "Lattice: Bool x None x Num x Str: {} x {} x {} x {}".format(
+            bool_lattice_str, none_lattice_str, num_lattice_str, str_lattice_str
+        )
