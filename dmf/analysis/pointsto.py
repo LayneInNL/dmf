@@ -68,7 +68,7 @@ class PointsToAnalysis:
     def link_analysis_list(self, analysis_list: Dict[int, Lattice]):
         self.analysis_list = analysis_list
 
-    def transfer(self, label: int) -> Dict[str, VarLattice]:
+    def transfer(self, label: int) -> Lattice:
         # We would like to refactor the code with the strategy in ast.NodeVisitor
         stmt = self.blocks[label].stmt[0]
 
@@ -109,7 +109,7 @@ class PointsToAnalysis:
         if type(expr.value) == bool:
             if expr.value:
                 right_address = self.data_stack.st(BoolTrueObjectAddress.name, None)
-            elif not expr.value:
+            else:
                 right_address = self.data_stack.st(BoolFalseObjectAddress.name, None)
         assert right_address is not None
         return right_address

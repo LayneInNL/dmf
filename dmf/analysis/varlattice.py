@@ -28,6 +28,12 @@ class BoolLattice:
     TOP = 8
 
     mapping = {PrimitiveTypes.BOOL_TRUE: TRUE, PrimitiveTypes.BOOL_FALSE: FALSE}
+    format_mapping = {
+        BOT: "Top",
+        FALSE: "False",
+        TRUE: "True",
+        TOP: "Top",
+    }
 
     def __init__(self):
         self.value = self.BOT
@@ -61,22 +67,14 @@ class BoolLattice:
         return self.value <= other.value
 
     def __repr__(self):
-        rep = None
-        if self.value == self.TOP:
-            rep = "TOP"
-        elif self.value == self.TRUE:
-            rep = "TRUE"
-        elif self.value == self.FALSE:
-            rep = "FALSE"
-        elif self.value == self.BOT:
-            rep = "BOT"
-        return "{}".format(rep)
+        return "{}".format(self.format_mapping[self.value])
 
 
 class NoneLattice:
     BOT = 1
     NONE = 2
     mapping = {PrimitiveTypes.NONE: NONE}
+    format_mapping = {NONE: "None", BOT: "Bot"}
 
     def __init__(self):
         self.value = self.BOT
@@ -101,12 +99,7 @@ class NoneLattice:
         return self.value <= other.value
 
     def __repr__(self):
-        rep = None
-        if self.value == self.NONE:
-            rep = "None"
-        elif self.value == self.BOT:
-            rep = "BOT"
-        return "{}".format(rep)
+        return "{}".format(self.format_mapping[self.value])
 
 
 class NumLattice:
@@ -152,6 +145,12 @@ class StrLattice:
     NON_EMPTY = 4
     TOP = 8
     mapping = {PrimitiveTypes.STR_EMPTY: EMPTY, PrimitiveTypes.STR_NON_EMPTY: NON_EMPTY}
+    format_mapping = {
+        BOT: "Bot",
+        EMPTY: "Empty",
+        NON_EMPTY: "NonEmpty",
+        TOP: "Top",
+    }
 
     def __init__(self):
         self.value: int = self.BOT
@@ -185,13 +184,39 @@ class StrLattice:
         return self.value <= other.value
 
     def __repr__(self):
-        print_mapping = {
-            self.BOT: "Bot",
-            self.EMPTY: "Empty",
-            self.NON_EMPTY: "NonEmpty",
-            self.TOP: "Top",
-        }
-        return print_mapping[self.value]
+        return self.format_mapping[self.value]
+
+
+class UndefLattice:
+    BOT = 1
+    UNDEF = 2
+    mapping = {PrimitiveTypes.UNDEF: UNDEF}
+    format_mapping = {UNDEF: "Undef", BOT: "Bot"}
+
+    def __init__(self):
+        self.value = self.BOT
+
+    # V  1   2
+    # 1  2   3
+    # 2  3   4
+    def join(self, other: int):
+        value = self.value + other
+        if value in [2]:
+            self.value = self.BOT
+        elif value in [3, 4]:
+            self.value = self.UNDEF
+
+    def merge(self, other: UndefLattice):
+        self.join(other.value)
+
+    def from_heap_context_to_lattice(self, heap_context: int):
+        self.join(self.mapping[heap_context])
+
+    def is_subset(self, other: UndefLattice):
+        return self.value <= other.value
+
+    def __repr__(self):
+        return "{}".format(self.format_mapping[self.value])
 
 
 class VarLattice:
