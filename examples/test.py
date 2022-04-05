@@ -1,11 +1,11 @@
-# a = 1
-# b = a
+a = 1
+b = 0
 c = True
 c = False
 d = None
 d = c
 # d = False
-# e = 'hello'
+e = 'hello'
 # f = e
 # g = f'cat'
 # h = g

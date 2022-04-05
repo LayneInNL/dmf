@@ -1,5 +1,7 @@
-from .state.space import DataStack, Store, CallStack, Context, Obj
-from .state.types import BoolFalseObjectAddress, BoolTrueObjectAddress, NoneObjectAddress
+from .state.space import DataStack, Store, CallStack, Context, Obj, Address
+from .state.types import BoolFalseObjectAddress, BoolTrueObjectAddress, NoneObjectAddress, \
+    NumPosObjectAddress, NumZeroObjectAddress, NumNegObjectAddress, \
+    StrEmptyObjectAddress, StrNonEmptyObjectAddress
 from .varlattice import VarLattice
 
 import logging
@@ -68,6 +70,10 @@ class PointsToAnalysis:
             right_address = self.handle_NameConstant(stmt.value)
         elif type_of_value == ast.Name:
             right_address = self.data_stack.st(stmt.value.id, self.context)
+        elif type_of_value == ast.Num:
+            right_address = self.handle_Num(stmt.value)
+        elif type_of_value == ast.Str:
+            right_address = self.handle_Str(stmt.value)
         assert right_address is not None
         right_obj = self.store.get(right_address)
         left_name = stmt.targets[0].id
@@ -75,7 +81,7 @@ class PointsToAnalysis:
         self.store.insert_one(left_address, right_obj)
         return [(left_name, self.store.get(left_address))]
 
-    def handle_NameConstant(self, expr):
+    def handle_NameConstant(self, expr) -> Address:
         right_address = None
         if expr.value is None:
             right_address = self.data_stack.st(NoneObjectAddress.name, None)
@@ -84,6 +90,27 @@ class PointsToAnalysis:
                 right_address = self.data_stack.st(BoolTrueObjectAddress.name, None)
             elif not expr.value:
                 right_address = self.data_stack.st(BoolFalseObjectAddress.name, None)
+        assert right_address is not None
+        return right_address
+
+    def handle_Num(self, expr: ast.Num) -> Address:
+        right_address = None
+
+        if expr.n == 0:
+            right_address = self.data_stack.st(NumZeroObjectAddress.name, None)
+        else:
+            right_address = self.data_stack.st(NumPosObjectAddress.name, None)
+
+        assert right_address is not None
+        return right_address
+
+    def handle_Str(self, expr: ast.Str) -> Address:
+        right_address = None
+        if not expr.s:
+            right_address = self.data_stack.st(StrEmptyObjectAddress.name, None)
+        else:
+            right_address = self.data_stack.st(StrNonEmptyObjectAddress.name, None)
+
         assert right_address is not None
         return right_address
 

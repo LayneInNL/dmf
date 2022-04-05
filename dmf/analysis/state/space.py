@@ -11,43 +11,44 @@ Var = typing.NewType('Var', str)
 FieldName = typing.NewType('FieldName', str)
 VarAddress = typing.NewType('VarAddress', Tuple[Var, Context])
 FieldNameAddress = typing.NewType('FieldNameAddress', Tuple[FieldName, HContext])
-Obj = typing.NewType('Obj', Tuple[HContext, Dict[FieldName, Union[VarAddress, FieldNameAddress]]])
+Address = typing.NewType('Address', Union[VarAddress, FieldNameAddress])
+DataStackFrame = typing.NewType('DataStackFrame', Dict[Var, Address])
+Obj = typing.NewType('Obj', Tuple[HContext, Dict[FieldName, Address]])
 
 
-def new_frame():
-    frame = {}
+def new_frame() -> DataStackFrame:
+    frame: DataStackFrame = DataStackFrame({})
     return frame
 
 
 class DataStack:
     def __init__(self):
-        # data_stack contains Dict[Var, ContSensAddr]
-        self.data_stack: List = []
-        initial_frame = new_frame()
+        self.data_stack: List[DataStackFrame] = []
+        initial_frame: DataStackFrame = new_frame()
         self.push_frame(initial_frame)
 
-    def st(self, var: Var, context: Context = None) -> Tuple[HContext, Any]:
+    def st(self, var: Var, context: Context = None) -> Address:
         if var in BUILTIN_CLASS_NAMES:
             return BUILTIN_CLASS_NAMES[var]
 
         logging.debug('Test st: {} {}'.format(var, context))
-        top_frame = self.top()
+        top_frame: DataStackFrame = self.top()
         if var not in top_frame:
             logging.info('{} is not in data stack, make one'.format(var))
             top_frame[var] = (var, context)
         return top_frame[var]
 
-    def top(self):
+    def top(self) -> DataStackFrame:
         return self.data_stack[-1]
 
-    def push_var(self, var, address):
-        top_frame = self.top()
+    def push_var(self, var, address) -> None:
+        top_frame: DataStackFrame = self.top()
         top_frame[var] = address
 
-    def push_frame(self, frame):
+    def push_frame(self, frame) -> None:
         self.data_stack.append(frame)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         result = ''
         for key, value in self.top().items():
             line = '{}, {}\n'.format(key, value)
@@ -58,7 +59,7 @@ class DataStack:
 
 class Store:
     def __init__(self, default_initialize=True):
-        self.store: Dict[Tuple, Obj] = {}
+        self.store: Dict[Address, Obj] = {}
         if default_initialize:
             self._initialize()
 
@@ -72,10 +73,10 @@ class Store:
     # def insert_many(self, address, objs):
     #     self.store[address].update(objs)
 
-    def get(self, address) -> Obj:
+    def get(self, address: Address) -> Obj:
         return self.store[address]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         result = ''
         for key, value in self.store.items():
             line = '{}, {}\n'.format(key, value)
