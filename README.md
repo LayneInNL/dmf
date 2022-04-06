@@ -9,3 +9,9 @@ An instance of a dynamic monotone framework for type analysis for Python.
 3. Construct a points-to analysis framework *P*
 4. Construct a monotone framework *MF* based on *P*
 5. Compute type information *T* by maximal fixed point algorithm
+
+## Supported language constructs
+- [] UnaryOp
+- [x] Unary assignments
+- [x] BoolOp
+- [] BinOp

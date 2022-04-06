@@ -11,20 +11,4 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
-import argparse
-import logging
-
-from dmf.analysis.dmf import MFP
-from dmf.py2flows.py2flows.main import construct_CFG
-
-parser = argparse.ArgumentParser()
-parser.add_argument("file_name", help="the file name")
-
-if __name__ == "__main__":
-    args = parser.parse_args()
-    logging.basicConfig(level=logging.DEBUG)
-    CFG = construct_CFG(args.file_name)
-    mfp = MFP(CFG)
-    mfp.compute_fixed_point()
-    mfp.pprint()
+a = 1 + 2

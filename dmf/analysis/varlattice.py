@@ -187,6 +187,38 @@ class StrLattice:
         return self.format_mapping[self.value]
 
 
+class BytesLattice:
+    BOT = 1
+    BYTES = 2
+    mapping = {PrimitiveTypes.BYTES: BYTES}
+    format_mapping = {BYTES: "Bytes", BOT: "Bot"}
+
+    def __init__(self):
+        self.value = self.BOT
+
+    # V  1   2
+    # 1  2   3
+    # 2  3   4
+    def join(self, other: int):
+        value = self.value + other
+        if value in [2]:
+            self.value = self.BOT
+        elif value in [3, 4]:
+            self.value = self.BYTES
+
+    def merge(self, other: BytesLattice):
+        self.join(other.value)
+
+    def from_heap_context_to_lattice(self, heap_context: int):
+        self.join(self.mapping[heap_context])
+
+    def is_subset(self, other: BytesLattice):
+        return self.value <= other.value
+
+    def __repr__(self):
+        return "{}".format(self.format_mapping[self.value])
+
+
 class UndefLattice:
     BOT = 1
     UNDEF = 2
@@ -225,6 +257,8 @@ class VarLattice:
         self.none_lattice: NoneLattice = NoneLattice()
         self.num_lattice: NumLattice = NumLattice()
         self.str_lattice: StrLattice = StrLattice()
+        self.bytes_lattice: BytesLattice = BytesLattice()
+        self.undef_lattice: UndefLattice = UndefLattice()
 
     def transform(self, obj: Obj):
         heap_context, fields = obj
@@ -240,6 +274,10 @@ class VarLattice:
             self.num_lattice.from_heap_context_to_lattice(heap_context)
         elif heap_context in [PrimitiveTypes.STR_EMPTY, PrimitiveTypes.STR_NON_EMPTY]:
             self.str_lattice.from_heap_context_to_lattice(heap_context)
+        elif heap_context in [PrimitiveTypes.BYTES]:
+            self.bytes_lattice.from_heap_context_to_lattice(heap_context)
+        elif heap_context in [PrimitiveTypes.UNDEF]:
+            self.undef_lattice.from_heap_context_to_lattice(heap_context)
 
     def is_subset(self, other: VarLattice):
         return (
@@ -247,6 +285,8 @@ class VarLattice:
             and self.none_lattice.is_subset(other.none_lattice)
             and self.num_lattice.is_subset(other.num_lattice)
             and self.str_lattice.is_subset(other.str_lattice)
+            and self.bytes_lattice.is_subset(other.bytes_lattice)
+            and self.undef_lattice.is_subset(other.undef_lattice)
         )
 
     def merge(self, other: VarLattice):
@@ -254,12 +294,21 @@ class VarLattice:
         self.none_lattice.merge(other.none_lattice)
         self.num_lattice.merge(other.num_lattice)
         self.str_lattice.merge(other.str_lattice)
+        self.bytes_lattice.merge(other.bytes_lattice)
+        self.undef_lattice.merge(other.undef_lattice)
 
     def __repr__(self):
         bool_lattice_str = self.bool_lattice.__repr__()
         none_lattice_str = self.none_lattice.__repr__()
         num_lattice_str = self.num_lattice.__repr__()
         str_lattice_str = self.str_lattice.__repr__()
-        return "Lattice: Bool x None x Num x Str: {} x {} x {} x {}".format(
-            bool_lattice_str, none_lattice_str, num_lattice_str, str_lattice_str
+        bytes_lattice_str = self.bytes_lattice.__repr__()
+        undef_lattice_str = self.undef_lattice.__repr__()
+        return "Lattice: Bool x None x Num x Str x Bytes x Undef: {} x {} x {} x {} x {} x {}".format(
+            bool_lattice_str,
+            none_lattice_str,
+            num_lattice_str,
+            str_lattice_str,
+            bytes_lattice_str,
+            undef_lattice_str,
         )

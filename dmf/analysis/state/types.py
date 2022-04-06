@@ -14,21 +14,24 @@
 
 
 class PrimitiveTypes:
-    NUM_NEGATIVE = -10
-    NUM_ZERO = -9
-    NUM_POSITIVE = -8
+    NUM_NEGATIVE = -100
+    NUM_ZERO = -99
+    NUM_NEG_ZERO = -98
+    NUM_POSITIVE = -97
+    NUM_POS_ZERO = -96
+    NUM_POS_ZERO_NEG = -95
 
-    BOOL_FALSE = -7
-    BOOL_TRUE = -6
+    BOOL_FALSE = -90
+    BOOL_TRUE = -89
 
-    STR_EMPTY = -5
-    STR_NON_EMPTY = -4
+    STR_EMPTY = -80
+    STR_NON_EMPTY = -79
 
-    BYTES = -3
+    BYTES = -70
 
-    NONE = -2
+    NONE = -60
 
-    UNDEF = -1
+    UNDEF = -50
 
 
 class BoolFalseObjectAddress:
@@ -66,11 +69,71 @@ class NumZeroObjectAddress:
     obj = (context, None)
 
 
+class NumNegZeroObjectAddress:
+    name = "NegZero"
+    context = PrimitiveTypes.NUM_NEG_ZERO
+    address = (name, context)
+    obj = (context, None)
+
+
 class NumPosObjectAddress:
     name = "Positive"
     context = PrimitiveTypes.NUM_POSITIVE
     address = (name, context)
     obj = (context, None)
+
+
+class NumPosZeroObjectAddress:
+    name = "PosZero"
+    context = PrimitiveTypes.NUM_POS_ZERO
+    address = (name, context)
+    obj = (context, None)
+
+
+class NumPosZeroNegObjectAddress:
+    name = "PosZeroNeg"
+    context = PrimitiveTypes.NUM_POS_ZERO_NEG
+    address = (name, context)
+    obj = (context, None)
+
+
+Num_Add = {
+    # - 0
+    (NumNegObjectAddress.obj, NumZeroObjectAddress.obj): NumNegObjectAddress.obj,
+    # - +
+    (NumNegObjectAddress.obj, NumPosObjectAddress.obj): NumPosZeroNegObjectAddress.obj,
+    # - (-,0)
+    (NumNegObjectAddress.obj, NumNegZeroObjectAddress.obj): NumNegObjectAddress.obj,
+    # - (0, +)
+    (
+        NumNegObjectAddress.obj,
+        NumPosZeroObjectAddress.obj,
+    ): NumPosZeroNegObjectAddress.obj,
+    # 0, (-, 0)
+    (
+        NumZeroObjectAddress.obj,
+        NumNegZeroObjectAddress.obj,
+    ): NumNegZeroObjectAddress.obj,
+    # 0, +
+    (NumZeroObjectAddress.obj, NumPosObjectAddress.obj): NumPosObjectAddress.obj,
+    # 0, (0, +)
+    (
+        NumZeroObjectAddress.obj,
+        NumPosZeroObjectAddress.obj,
+    ): NumPosZeroNegObjectAddress.obj,
+    # (-,0) +
+    (
+        NumNegZeroObjectAddress.obj,
+        NumPosObjectAddress.obj,
+    ): NumPosZeroNegObjectAddress.obj,
+    # (-, 0) (+, 0)
+    (
+        NumNegZeroObjectAddress.obj,
+        NumPosZeroObjectAddress.obj,
+    ): NumPosZeroNegObjectAddress.obj,
+    # +, (0, +)
+    (NumPosObjectAddress.obj, NumPosZeroObjectAddress.obj): NumPosZeroObjectAddress.obj,
+}
 
 
 class StrEmptyObjectAddress:
@@ -108,7 +171,10 @@ BUILTIN_CLASSES = (
     NoneObjectAddress,
     NumNegObjectAddress,
     NumZeroObjectAddress,
+    NumNegZeroObjectAddress,
     NumPosObjectAddress,
+    NumPosZeroObjectAddress,
+    NumPosZeroNegObjectAddress,
     StrEmptyObjectAddress,
     StrNonEmptyObjectAddress,
     BytesObjectAddress,
@@ -116,3 +182,21 @@ BUILTIN_CLASSES = (
 )
 # a mapping from names to addresses, used in data stack
 BUILTIN_CLASS_NAMES = {a.name: a.address for a in BUILTIN_CLASSES}
+ZERO_OBJECTS = (
+    NumZeroObjectAddress.obj,
+    BoolFalseObjectAddress.obj,
+    StrEmptyObjectAddress.obj,
+    NoneObjectAddress.obj,
+)
+BOOL_OBJS = {
+    BoolFalseObjectAddress.obj: NumZeroObjectAddress.obj,
+    BoolTrueObjectAddress.obj: NumPosObjectAddress.obj,
+}
+NUM_OBJS = {
+    NumPosObjectAddress.obj: {4},
+    NumZeroObjectAddress.obj: {2},
+    NumNegObjectAddress.obj: {1},
+    NumNegZeroObjectAddress: {1, 2},
+    NumPosZeroObjectAddress: {2, 4},
+    NumPosZeroNegObjectAddress: {1, 2, 4},
+}

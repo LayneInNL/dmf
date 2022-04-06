@@ -12,19 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import argparse
-import logging
+a = True
+b = False
 
-from dmf.analysis.dmf import MFP
-from dmf.py2flows.py2flows.main import construct_CFG
-
-parser = argparse.ArgumentParser()
-parser.add_argument("file_name", help="the file name")
-
-if __name__ == "__main__":
-    args = parser.parse_args()
-    logging.basicConfig(level=logging.DEBUG)
-    CFG = construct_CFG(args.file_name)
-    mfp = MFP(CFG)
-    mfp.compute_fixed_point()
-    mfp.pprint()
+c1 = a and b
+c2 = b and a
+c3 = a or b
+c4 = b or a

@@ -17,22 +17,31 @@ import logging
 from collections import defaultdict
 from typing import List, Tuple, Dict, NewType, Optional, Set
 
-from .state.space import DataStack, Store, CallStack, Context, Obj, Address
+from .state.space import DataStack, Store, CallStack, Context, Obj, Address, Var
 from .state.types import (
     BoolFalseObjectAddress,
     BoolTrueObjectAddress,
     NoneObjectAddress,
     NumPosObjectAddress,
     NumZeroObjectAddress,
+    NumPosZeroNegObjectAddress,
+    NumNegZeroObjectAddress,
+    NumNegObjectAddress,
+    NumPosZeroObjectAddress,
     StrEmptyObjectAddress,
     StrNonEmptyObjectAddress,
+    ZERO_OBJECTS,
+    BOOL_OBJS,
+    NUM_OBJS,
+    Num_Add,
 )
 from .varlattice import VarLattice
 
 Lattice = NewType("Lattice", Dict[str, VarLattice])
+UpdatedAnalysisInfo = NewType("UpdatedAnalysisInfo", List[Tuple[str, Obj]])
 
 
-def transform(store: List[Tuple[str, Obj]]) -> Dict[str, VarLattice]:
+def transform(store: UpdatedAnalysisInfo) -> Lattice:
     transferred_lattice = defaultdict(VarLattice)
     for name, objects in store:
         transferred_lattice[name].transform(objects)
@@ -68,13 +77,20 @@ class PointsToAnalysis:
     def link_analysis_list(self, analysis_list: Dict[int, Lattice]):
         self.analysis_list = analysis_list
 
+    def st(self, var: Var, context: Optional[Context]) -> Address:
+        return self.data_stack.st(var, context)
+
+    def sigma(self, address: Address) -> Obj:
+        return self.store.get(address)
+
+    def insert(self, address: Address, obj: Obj):
+        self.store.insert_one(address, obj)
+
     def transfer(self, label: int) -> Lattice:
         # We would like to refactor the code with the strategy in ast.NodeVisitor
         stmt = self.blocks[label].stmt[0]
 
-        method = "handle_" + stmt.__class__.__name__
-        handler = getattr(self, method)
-        transferred = handler(stmt)
+        transferred = self.visit(stmt)
         logging.debug("transferred {}".format(transferred))
 
         new_lattice = transform(transferred)
@@ -84,56 +100,93 @@ class PointsToAnalysis:
 
         return new_lattice
 
-    def handle_Assign(self, stmt: ast.Assign) -> List[Tuple[str, Obj]]:
-        type_of_value = type(stmt.value)
-        right_address = None
-        if type_of_value == ast.NameConstant:
-            right_address = self.handle_NameConstant(stmt.value)
-        elif type_of_value == ast.Name:
-            right_address = self.data_stack.st(stmt.value.id, self.context)
-        elif type_of_value == ast.Num:
-            right_address = self.handle_Num(stmt.value)
-        elif type_of_value == ast.Str:
-            right_address = self.handle_Str(stmt.value)
-        assert right_address is not None
-        right_obj = self.store.get(right_address)
+    def visit(self, stmt) -> UpdatedAnalysisInfo:
+        method = "handle_" + stmt.__class__.__name__
+        handler = getattr(self, method)
+        return handler(stmt)
+
+    def get_obj(self, expr: ast.expr) -> Obj:
+        method = "get_obj_of_" + expr.__class__.__name__
+        handler = getattr(self, method)
+        return handler(expr)
+
+    def handle_Assign(self, stmt: ast.Assign) -> UpdatedAnalysisInfo:
+        updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
+        right_obj = self.get_obj(stmt.value)
+
         left_name = stmt.targets[0].id
-        left_address = self.data_stack.st(left_name, self.context)
-        self.store.insert_one(left_address, right_obj)
-        return [(left_name, self.store.get(left_address))]
+        left_address = self.st(left_name, self.context)
+        self.insert(left_address, right_obj)
+        updated.append((left_name, self.sigma(left_address)))
+        return updated
 
-    def handle_NameConstant(self, expr) -> Address:
-        right_address = None
-        if expr.value is None:
-            right_address = self.data_stack.st(NoneObjectAddress.name, None)
-        if type(expr.value) == bool:
-            if expr.value:
-                right_address = self.data_stack.st(BoolTrueObjectAddress.name, None)
+    # expr #
+
+    # In a CFG, we make sure it has the form of left op right
+    # TODO
+    def get_obj_of_BoolOp(self, expr: ast.BoolOp) -> Obj:
+        op: ast.boolop = expr.op
+        values: List[ast.expr] = expr.values
+        left: Obj = self.get_obj(values[0])
+        right: Obj = self.get_obj(values[1])
+        if type(op) == ast.And:
+            if left in ZERO_OBJECTS:
+                return left
             else:
-                right_address = self.data_stack.st(BoolFalseObjectAddress.name, None)
-        assert right_address is not None
-        return right_address
+                return right
+        elif type(op) == ast.Or:
+            if left in ZERO_OBJECTS:
+                return right
+            else:
+                return left
 
-    def handle_Num(self, expr: ast.Num) -> Address:
-        right_address = None
+    def get_obj_of_BinOp(self, expr: ast.BinOp) -> Obj:
+        op: ast.operator = expr.op
 
+        left: ast.expr = expr.left
+        left_obj: Obj = self.get_obj(left)
+        if type(left) == bool:
+            left_obj = BOOL_OBJS[left_obj]
+        right: ast.expr = expr.right
+        right_obj: Obj = self.get_obj(right)
+        if type(right) == bool:
+            right_obj = BOOL_OBJS[right_obj]
+
+        if left_obj in NUM_OBJS and right_obj in NUM_OBJS:
+            if type(op) == ast.Add:
+                if left_obj == right_obj:
+                    return left_obj
+
+                if (
+                    left_obj == NumPosZeroNegObjectAddress.obj
+                    or right_obj == NumPosZeroNegObjectAddress.obj
+                ):
+                    return NumPosZeroNegObjectAddress.obj
+                else:
+                    return Num_Add[tuple(sorted((left_obj, right_obj)))]
+
+    def get_obj_of_Num(self, expr: ast.Num) -> Obj:
         if expr.n == 0:
-            right_address = self.data_stack.st(NumZeroObjectAddress.name, None)
+            return self.sigma(self.st(NumZeroObjectAddress.name, None))
         else:
-            right_address = self.data_stack.st(NumPosObjectAddress.name, None)
+            return self.sigma(self.st(NumPosObjectAddress.name, None))
 
-        assert right_address is not None
-        return right_address
-
-    def handle_Str(self, expr: ast.Str) -> Address:
-        right_address = None
+    def get_obj_of_Str(self, expr: ast.Str) -> Obj:
         if not expr.s:
-            right_address = self.data_stack.st(StrEmptyObjectAddress.name, None)
+            return self.sigma(self.st(StrEmptyObjectAddress.name, None))
         else:
-            right_address = self.data_stack.st(StrNonEmptyObjectAddress.name, None)
+            return self.sigma(self.st(StrNonEmptyObjectAddress.name, None))
 
-        assert right_address is not None
-        return right_address
+    def get_obj_of_NameConstant(self, expr: ast.NameConstant) -> Obj:
+        if expr.value is None:
+            return self.sigma(self.st(NoneObjectAddress.name, None))
+        elif expr.value:
+            return self.sigma(self.st(BoolTrueObjectAddress.name, None))
+        else:
+            return self.sigma(self.st(BoolFalseObjectAddress.name, None))
 
-    def handle_Pass(self, stmt: ast.Pass = None) -> List:
+    def get_obj_of_Name(self, expr: ast.Name) -> Obj:
+        return self.sigma(self.st(Var(expr.id), self.context))
+
+    def handle_Pass(self, stmt: ast.Pass = None) -> UpdatedAnalysisInfo:
         return []
