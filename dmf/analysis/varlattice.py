@@ -113,7 +113,10 @@ class NumLattice:
     mapping = {
         PrimitiveTypes.NUM_NEGATIVE: NEG,
         PrimitiveTypes.NUM_ZERO: ZERO,
+        PrimitiveTypes.NUM_NEG_ZERO: NEG_ZERO,
         PrimitiveTypes.NUM_POSITIVE: POS,
+        PrimitiveTypes.NUM_POS_ZERO: POS_ZERO,
+        PrimitiveTypes.NUM_POS_ZERO_NEG: NEG_ZERO_POS,
     }
 
     def __init__(self):
@@ -269,7 +272,10 @@ class VarLattice:
         elif heap_context in [
             PrimitiveTypes.NUM_NEGATIVE,
             PrimitiveTypes.NUM_ZERO,
+            PrimitiveTypes.NUM_NEG_ZERO,
             PrimitiveTypes.NUM_POSITIVE,
+            PrimitiveTypes.NUM_POS_ZERO,
+            PrimitiveTypes.NUM_POS_ZERO_NEG,
         ]:
             self.num_lattice.from_heap_context_to_lattice(heap_context)
         elif heap_context in [PrimitiveTypes.STR_EMPTY, PrimitiveTypes.STR_NON_EMPTY]:

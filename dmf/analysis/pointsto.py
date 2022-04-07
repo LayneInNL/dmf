@@ -34,6 +34,7 @@ from .state.types import (
     BOOL_OBJS,
     NUM_OBJS,
     Num_Add,
+    num_sub,
 )
 from .varlattice import VarLattice
 
@@ -164,6 +165,8 @@ class PointsToAnalysis:
                     return NumPosZeroNegObjectAddress.obj
                 else:
                     return Num_Add[tuple(sorted((left_obj, right_obj)))]
+            elif type(op) == ast.Sub:
+                return num_sub(left_obj, right_obj)
 
     def get_obj_of_Num(self, expr: ast.Num) -> Obj:
         if expr.n == 0:
