@@ -13,20 +13,20 @@
 #  limitations under the License.
 
 import logging
-import typing
-from typing import Dict, Tuple, List, Union
+from collections import defaultdict
+from typing import Dict, Tuple, List, Union, Set, NewType, DefaultDict
 
 from .types import BUILTIN_CLASSES, BUILTIN_CLASS_NAMES
 
-Context = typing.NewType("Context", tuple)
-HContext = typing.NewType("HContext", tuple)
-Var = typing.NewType("Var", str)
-FieldName = typing.NewType("FieldName", str)
-VarAddress = typing.NewType("VarAddress", Tuple[Var, Context])
-FieldNameAddress = typing.NewType("FieldNameAddress", Tuple[FieldName, HContext])
-Address = typing.NewType("Address", Union[VarAddress, FieldNameAddress])
-DataStackFrame = typing.NewType("DataStackFrame", Dict[Var, Address])
-Obj = typing.NewType("Obj", Tuple[HContext, Dict[FieldName, Address]])
+Context = NewType("Context", tuple)
+HContext = NewType("HContext", tuple)
+Var = NewType("Var", str)
+FieldName = NewType("FieldName", str)
+VarAddress = NewType("VarAddress", Tuple[Var, Context])
+FieldNameAddress = NewType("FieldNameAddress", Tuple[FieldName, HContext])
+Address = NewType("Address", Union[VarAddress, FieldNameAddress])
+DataStackFrame = NewType("DataStackFrame", Dict[Var, Address])
+Obj = NewType("Obj", Tuple[HContext, Dict[FieldName, Address]])
 
 
 def new_frame() -> DataStackFrame:
@@ -72,7 +72,7 @@ class DataStack:
 
 class Store:
     def __init__(self, default_initialize: bool = True):
-        self.store: Dict[Address, Obj] = {}
+        self.store: DefaultDict[Address, Set[Obj]] = defaultdict(set)
         if default_initialize:
             self._initialize()
 
@@ -81,9 +81,12 @@ class Store:
             self.insert_one(cls.address, cls.obj)
 
     def insert_one(self, address: Address, obj: Obj):
-        self.store[address] = obj
+        self.store[address].add(obj)
 
-    def get(self, address: Address) -> Obj:
+    def insert_many(self, address: Address, objs: Set[Obj]):
+        self.store[address].update(objs)
+
+    def get(self, address: Address) -> Set[Obj]:
         return self.store[address]
 
     def __repr__(self) -> str:

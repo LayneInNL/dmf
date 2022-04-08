@@ -27,7 +27,7 @@ from .state.types import (
 from .varlattice import VarLattice
 
 Lattice = NewType("Lattice", Dict[str, VarLattice])
-UpdatedAnalysisInfo = NewType("UpdatedAnalysisInfo", List[Tuple[str, Obj]])
+UpdatedAnalysisInfo = NewType("UpdatedAnalysisInfo", List[Tuple[str, Set[Obj]]])
 
 
 def transform(store: UpdatedAnalysisInfo) -> Lattice:
@@ -69,11 +69,14 @@ class PointsToAnalysis:
     def st(self, var: Var, context: Optional[Context]) -> Address:
         return self.data_stack.st(var, context)
 
-    def sigma(self, address: Address) -> Obj:
+    def sigma(self, address: Address) -> Set[Obj]:
         return self.store.get(address)
 
-    def insert(self, address: Address, obj: Obj):
+    def insert_one(self, address: Address, obj: Obj):
         self.store.insert_one(address, obj)
+
+    def insert_many(self, address: Address, objs: Set[Obj]):
+        self.store.insert_many(address, objs)
 
     def transfer(self, label: int) -> Lattice:
         # We would like to refactor the code with the strategy in ast.NodeVisitor
@@ -94,18 +97,19 @@ class PointsToAnalysis:
         handler = getattr(self, method)
         return handler(stmt)
 
-    def get_obj(self, expr: ast.expr) -> Obj:
-        method = "get_obj_of_" + expr.__class__.__name__
+    def get_objs(self, expr: ast.expr) -> Set[Obj]:
+        method = "get_objs_of_" + expr.__class__.__name__
         handler = getattr(self, method)
         return handler(expr)
 
     def handle_Assign(self, stmt: ast.Assign) -> UpdatedAnalysisInfo:
         updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
-        right_obj = self.get_obj(stmt.value)
+        right_objs = self.get_objs(stmt.value)
 
+        # FIXME: Now we assume left has only one var.
         left_name: Var = stmt.targets[0].id
         left_address: Address = self.st(left_name, self.context)
-        self.insert(left_address, right_obj)
+        self.insert_many(left_address, right_objs)
         updated.append((left_name, self.sigma(left_address)))
         return updated
 
@@ -113,61 +117,58 @@ class PointsToAnalysis:
     # FIXME: In python, BoolOp doesn't return True or False. It returns the
     #  corresponding object. But it's hard to do this in static analysis.
     #  So we use subtyping to translate it to Bool.
-    def get_obj_of_BoolOp(self, expr: ast.BoolOp) -> Obj:
-        return BoolObjectInfo.obj
+    def get_objs_of_BoolOp(self, expr: ast.BoolOp) -> Set[Obj]:
+        return {BoolObjectInfo.obj}
 
-    def get_obj_of_BinOp(self, expr: ast.BinOp) -> Obj:
-        op: ast.operator = expr.op
+    def get_objs_of_BinOp(self, expr: ast.BinOp) -> Set[Obj]:
 
         left: ast.expr = expr.left
         right: ast.expr = expr.right
-        left_obj: Obj = self.get_obj(left)
-        right_obj: Obj = self.get_obj(right)
+        left_objs: Set[Obj] = self.get_objs(left)
+        right_objs: Set[Obj] = self.get_objs(right)
 
-        if left_obj == StrObjectInfo.obj or right_obj == StrObjectInfo.obj:
-            return StrObjectInfo.obj
+        if StrObjectInfo.obj in left_objs or StrObjectInfo.obj in right_objs:
+            return {StrObjectInfo.obj}
 
-        if left_obj == BoolObjectInfo.obj:
-            left_obj = NumObjectInfo.obj
-        if right_obj == BoolObjectInfo.obj:
-            right_obj = NumObjectInfo.obj
+        return {NumObjectInfo.obj}
 
-        if left_obj == NumObjectInfo.obj and right_obj == NumObjectInfo.obj:
-            return NumObjectInfo.obj
-
-    def get_obj_of_UnaryOp(self, expr: ast.UnaryOp) -> Obj:
-        if isinstance(expr.op, ast.Invert):
-            return NumObjectInfo.obj
+    def get_objs_of_UnaryOp(self, expr: ast.UnaryOp) -> Set[Obj]:
+        if isinstance(expr.op, (ast.Invert, ast.UAdd, ast.USub)):
+            return {NumObjectInfo.obj}
         elif isinstance(expr.op, ast.Not):
-            return BoolObjectInfo.obj
-        elif isinstance(expr.op, ast.UAdd):
-            return NumObjectInfo.obj
-        elif isinstance(expr.op, ast.USub):
-            return NumObjectInfo.obj
+            return {BoolObjectInfo.obj}
 
-    def get_obj_of_Num(self, expr: ast.Num) -> Obj:
-        return NumObjectInfo.obj
+    def get_objs_of_Lambda(self, expr: ast.Lambda) -> Set[Obj]:
+        assert False, "Lambda is encountered."
 
-    def get_obj_of_Str(self, expr: ast.Str) -> Obj:
-        return StrObjectInfo.obj
+    # TODO
+    def get_objs_of_IfExp(self, expr: ast.IfExp) -> Set[Obj]:
+        body_objs: Set[Obj] = self.get_objs(expr.body)
+        orelse_objs: Set[Obj] = self.get_objs(expr.orelse)
+        return body_objs | orelse_objs
 
-    def get_obj_of_FormattedValue(self, expr: ast.FormattedValue) -> Obj:
+    def get_objs_of_Num(self, expr: ast.Num) -> Set[Obj]:
+        return {NumObjectInfo.obj}
+
+    def get_objs_of_Str(self, expr: ast.Str) -> Set[Obj]:
+        return {StrObjectInfo.obj}
+
+    def get_objs_of_FormattedValue(self, expr: ast.FormattedValue) -> Set[Obj]:
         assert False, "FormattedValue is encountered."
-        return StrObjectInfo.obj
 
-    def get_obj_of_JoinedStr(self, expr: ast.JoinedStr) -> Obj:
-        return StrObjectInfo.obj
+    def get_objs_of_JoinedStr(self, expr: ast.JoinedStr) -> Set[Obj]:
+        return {StrObjectInfo.obj}
 
-    def get_obj_of_Bytes(self, expr: ast.Bytes) -> Obj:
-        return StrObjectInfo.obj
+    def get_objs_of_Bytes(self, expr: ast.Bytes) -> Set[Obj]:
+        return {StrObjectInfo.obj}
 
-    def get_obj_of_NameConstant(self, expr: ast.NameConstant) -> Obj:
+    def get_objs_of_NameConstant(self, expr: ast.NameConstant) -> Set[Obj]:
         if expr.value is None:
-            return NoneObjectInfo.obj
+            return {NoneObjectInfo.obj}
         else:
-            return BoolObjectInfo.obj
+            return {BoolObjectInfo.obj}
 
-    def get_obj_of_Name(self, expr: ast.Name) -> Obj:
+    def get_objs_of_Name(self, expr: ast.Name) -> Set[Obj]:
         return self.sigma(self.st(Var(expr.id), self.context))
 
     def handle_Pass(self, stmt: ast.Pass = None) -> UpdatedAnalysisInfo:

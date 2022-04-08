@@ -18,6 +18,7 @@ import logging
 
 from .state.space import Obj
 from .state.types import PrimitiveTypes
+from typing import Set
 
 
 class BoolLattice:
@@ -211,7 +212,7 @@ class VarLattice:
         # self.bytes_lattice: BytesLattice = BytesLattice()
         self.undef_lattice: UndefLattice = UndefLattice()
 
-    def transform(self, obj: Obj):
+    def transform_one(self, obj: Obj):
         heap_context, fields = obj
         if heap_context in [PrimitiveTypes.BOOL]:
             self.bool_lattice.from_heap_context_to_lattice(heap_context)
@@ -225,6 +226,10 @@ class VarLattice:
         #     self.bytes_lattice.from_heap_context_to_lattice(heap_context)
         elif heap_context in [PrimitiveTypes.UNDEF]:
             self.undef_lattice.from_heap_context_to_lattice(heap_context)
+
+    def transform(self, objs: Set[Obj]):
+        for obj in objs:
+            self.transform_one(obj)
 
     def is_subset(self, other: VarLattice):
         return (
