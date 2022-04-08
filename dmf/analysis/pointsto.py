@@ -33,8 +33,7 @@ from .state.types import (
     ZERO_OBJECTS,
     BOOL_OBJS,
     NUM_OBJS,
-    Num_Add,
-    num_sub,
+    get_num_type,
 )
 from .varlattice import VarLattice
 
@@ -154,19 +153,11 @@ class PointsToAnalysis:
             right_obj = BOOL_OBJS[right_obj]
 
         if left_obj in NUM_OBJS and right_obj in NUM_OBJS:
-            if type(op) == ast.Add:
-                if left_obj == right_obj:
-                    return left_obj
+            return get_num_type(left_obj, right_obj, op)
 
-                if (
-                    left_obj == NumPosZeroNegObjectAddress.obj
-                    or right_obj == NumPosZeroNegObjectAddress.obj
-                ):
-                    return NumPosZeroNegObjectAddress.obj
-                else:
-                    return Num_Add[tuple(sorted((left_obj, right_obj)))]
-            elif type(op) == ast.Sub:
-                return num_sub(left_obj, right_obj)
+    def get_obj_of_UnaryOp(self, expr: ast.UnaryOp):
+        if isinstance(expr.op, ast.UAdd):
+            return self.get_obj(expr.operand)
 
     def get_obj_of_Num(self, expr: ast.Num) -> Obj:
         if expr.n == 0:

@@ -11,6 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import ast
 
 
 class PrimitiveTypes:
@@ -97,45 +98,6 @@ class NumPosZeroNegObjectAddress:
     obj = (context, None)
 
 
-Num_Add = {
-    # - 0
-    (NumNegObjectAddress.obj, NumZeroObjectAddress.obj): NumNegObjectAddress.obj,
-    # - +
-    (NumNegObjectAddress.obj, NumPosObjectAddress.obj): NumPosZeroNegObjectAddress.obj,
-    # - (-,0)
-    (NumNegObjectAddress.obj, NumNegZeroObjectAddress.obj): NumNegObjectAddress.obj,
-    # - (0, +)
-    (
-        NumNegObjectAddress.obj,
-        NumPosZeroObjectAddress.obj,
-    ): NumPosZeroNegObjectAddress.obj,
-    # 0, (-, 0)
-    (
-        NumZeroObjectAddress.obj,
-        NumNegZeroObjectAddress.obj,
-    ): NumNegZeroObjectAddress.obj,
-    # 0, +
-    (NumZeroObjectAddress.obj, NumPosObjectAddress.obj): NumPosObjectAddress.obj,
-    # 0, (0, +)
-    (
-        NumZeroObjectAddress.obj,
-        NumPosZeroObjectAddress.obj,
-    ): NumPosZeroNegObjectAddress.obj,
-    # (-,0) +
-    (
-        NumNegZeroObjectAddress.obj,
-        NumPosObjectAddress.obj,
-    ): NumPosZeroNegObjectAddress.obj,
-    # (-, 0) (+, 0)
-    (
-        NumNegZeroObjectAddress.obj,
-        NumPosZeroObjectAddress.obj,
-    ): NumPosZeroNegObjectAddress.obj,
-    # +, (0, +)
-    (NumPosObjectAddress.obj, NumPosZeroObjectAddress.obj): NumPosZeroObjectAddress.obj,
-}
-
-
 def num_template(fst, snd):
     if fst == NumNegObjectAddress.obj:
         if snd == NumNegObjectAddress.obj:
@@ -207,13 +169,16 @@ def destruct_num(obj):
         return [obj]
 
 
-def num_sub(fst, snd):
+def get_num_type(fst, snd, op):
     l1 = destruct_num(fst)
     l2 = destruct_num(snd)
     res = set()
     for elt1 in l1:
         for elt2 in l2:
-            res.update(do_num_sub(elt1, elt2))
+            if type(op) == ast.Add:
+                res.update(do_num_add(elt1, elt2))
+            if type(op) == ast.Sub:
+                res.update(do_num_sub(elt1, elt2))
     value = 0
     for elt in res:
         if elt == NumNegObjectAddress.obj:
@@ -237,6 +202,40 @@ def num_sub(fst, snd):
         return NumPosZeroNegObjectAddress.obj
     else:
         raise
+
+
+def do_num_add(fst, snd):
+    if fst == NumNegObjectAddress.obj:
+        if snd == NumNegObjectAddress.obj:
+            return {NumNegObjectAddress.obj}
+        elif snd == NumZeroObjectAddress.obj:
+            return {NumNegObjectAddress.obj}
+        elif snd == NumPosObjectAddress.obj:
+            return {
+                NumNegObjectAddress.obj,
+                NumZeroObjectAddress.obj,
+                NumPosObjectAddress.obj,
+            }
+
+    elif fst == NumZeroObjectAddress.obj:
+        if snd == NumNegZeroObjectAddress.obj:
+            return {NumNegObjectAddress.obj}
+        elif snd == NumZeroObjectAddress.obj:
+            return {NumZeroObjectAddress.obj}
+        elif snd == NumPosObjectAddress.obj:
+            return {NumPosObjectAddress.obj}
+
+    elif fst == NumPosObjectAddress.obj:
+        if snd == NumNegObjectAddress.obj:
+            return {
+                NumNegObjectAddress.obj,
+                NumZeroObjectAddress.obj,
+                NumPosObjectAddress.obj,
+            }
+        elif snd == NumZeroObjectAddress.obj:
+            return {NumPosObjectAddress.obj}
+        elif snd == NumPosObjectAddress.obj:
+            return {NumPosObjectAddress.obj}
 
 
 def do_num_sub(fst, snd):
@@ -330,10 +329,10 @@ BOOL_OBJS = {
     BoolTrueObjectAddress.obj: NumPosObjectAddress.obj,
 }
 NUM_OBJS = {
-    NumPosObjectAddress.obj: {4},
-    NumZeroObjectAddress.obj: {2},
-    NumNegObjectAddress.obj: {1},
-    NumNegZeroObjectAddress: {1, 2},
-    NumPosZeroObjectAddress: {2, 4},
-    NumPosZeroNegObjectAddress: {1, 2, 4},
+    NumPosObjectAddress.obj,
+    NumZeroObjectAddress.obj,
+    NumNegObjectAddress.obj,
+    NumNegZeroObjectAddress,
+    NumPosZeroObjectAddress,
+    NumPosZeroNegObjectAddress,
 }
