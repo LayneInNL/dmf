@@ -26,6 +26,14 @@ class PrimitiveTypes:
 
     UNDEF = -50
 
+    DICT = -40
+
+    SET = -30
+
+    LIST = -20
+
+    TUPLE = -10
+
 
 class BoolObjectInfo:
     name = "Bool"
@@ -69,6 +77,34 @@ class UndefObjectInfo:
     obj = (context, None)
 
 
+class DictObjectInfo:
+    name = "Dict"
+    context = PrimitiveTypes.DICT
+    address = (name, context)
+    obj = (context, None)
+
+
+class SetObjectInfo:
+    name = "Set"
+    context = PrimitiveTypes.SET
+    address = (name, context)
+    obj = (context, None)
+
+
+class ListObjectInfo:
+    name = "List"
+    context = PrimitiveTypes.LIST
+    address = (name, context)
+    obj = (context, None)
+
+
+class TupleObjectInfo:
+    name = "Tuple"
+    context = PrimitiveTypes.TUPLE
+    address = (name, context)
+    obj = (context, None)
+
+
 # a mapping used in store
 BUILTIN_CLASSES = (
     BoolObjectInfo,
@@ -76,6 +112,10 @@ BUILTIN_CLASSES = (
     NumObjectInfo,
     BytesObjectInfo,
     UndefObjectInfo,
+    DictObjectInfo,
+    SetObjectInfo,
+    ListObjectInfo,
+    TupleObjectInfo,
 )
 # a mapping from names to addresses, used in data stack
 BUILTIN_CLASS_NAMES = {a.name: a.address for a in BUILTIN_CLASSES}

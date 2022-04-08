@@ -11,7 +11,59 @@ An instance of a dynamic monotone framework for type analysis for Python.
 5. Compute type information *T* by maximal fixed point algorithm
 
 ## Supported language constructs
-- [] UnaryOp
-- [x] Unary assignments
+- [] Module
+- [] FunctionDef
+- [] AsyncFunctionDef
+- [] ClassDef
+- [] Return
+- [] Delete
+- [] Assign
+- [] AugAssign
+- [] AnnAssign
+- [] For
+- [] AsyncFor
+- [] While
+- [] If
+- [] with
+- [] AsyncWith
+- [] Raise
+- [] Try
+- [] Assert
+- [] Import
+- [] ImportFrom
+- [] Global
+- [] Nonlocal
+- [] Expr
+- [] Pass
+- [] Break
+- [] Continue
+
 - [x] BoolOp
-- [] BinOp
+- [x] BinOp
+- [x] UnaryOp
+- [x] Lambda
+- [x] Dict
+- [x] Set
+- [x] ListComp
+- [x] SetComp
+- [x] DictComp
+- [] GeneratorExp
+- [] Await
+- [] Yield
+- [] YieldFrom
+- [] Compare
+- [] Call
+- [x] Num
+- [x] Str
+- [x] FormattedValue
+- [x] JoinedStr
+- [x] Bytes
+- [x] NameConstant
+- [] Ellipsis
+- [] Constant
+- [] Attribute
+- [] Subscript
+- [] Starred
+- [x] Name
+- [x] List
+- [x] Tuple

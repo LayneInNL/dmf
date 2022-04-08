@@ -23,6 +23,10 @@ from .state.types import (
     NoneObjectInfo,
     StrObjectInfo,
     NumObjectInfo,
+    DictObjectInfo,
+    SetObjectInfo,
+    ListObjectInfo,
+    TupleObjectInfo,
 )
 from .varlattice import VarLattice
 
@@ -147,6 +151,12 @@ class PointsToAnalysis:
         orelse_objs: Set[Obj] = self.get_objs(expr.orelse)
         return body_objs | orelse_objs
 
+    def get_objs_of_Dict(self, expr: ast.Dict) -> Set[Obj]:
+        return {DictObjectInfo.obj}
+
+    def get_objs_of_Set(self, expr: ast.Set) -> Set[Obj]:
+        return {SetObjectInfo.obj}
+
     def get_objs_of_Num(self, expr: ast.Num) -> Set[Obj]:
         return {NumObjectInfo.obj}
 
@@ -170,6 +180,12 @@ class PointsToAnalysis:
 
     def get_objs_of_Name(self, expr: ast.Name) -> Set[Obj]:
         return self.sigma(self.st(Var(expr.id), self.context))
+
+    def get_objs_of_List(self, expr: ast.List) -> Set[Obj]:
+        return {ListObjectInfo.obj}
+
+    def get_objs_of_Tuple(self, expr: ast.Tuple) -> Set[Obj]:
+        return {TupleObjectInfo.obj}
 
     def handle_Pass(self, stmt: ast.Pass = None) -> UpdatedAnalysisInfo:
         return UpdatedAnalysisInfo([])
