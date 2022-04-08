@@ -54,11 +54,11 @@ class DataStack:
     def top(self) -> DataStackFrame:
         return self.data_stack[-1]
 
-    def push_var(self, var, address) -> None:
+    def push_var(self, var: Var, address: Address) -> None:
         top_frame: DataStackFrame = self.top()
         top_frame[var] = address
 
-    def push_frame(self, frame) -> None:
+    def push_frame(self, frame: DataStackFrame) -> None:
         self.data_stack.append(frame)
 
     def __repr__(self) -> str:
@@ -71,7 +71,7 @@ class DataStack:
 
 
 class Store:
-    def __init__(self, default_initialize=True):
+    def __init__(self, default_initialize: bool = True):
         self.store: Dict[Address, Obj] = {}
         if default_initialize:
             self._initialize()
@@ -80,11 +80,8 @@ class Store:
         for cls in BUILTIN_CLASSES:
             self.insert_one(cls.address, cls.obj)
 
-    def insert_one(self, address, obj):
+    def insert_one(self, address: Address, obj: Obj):
         self.store[address] = obj
-
-    # def insert_many(self, address, objs):
-    #     self.store[address].update(objs)
 
     def get(self, address: Address) -> Obj:
         return self.store[address]

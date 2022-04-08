@@ -15,25 +15,14 @@
 import ast
 import logging
 from collections import defaultdict
-from typing import List, Tuple, Dict, NewType, Optional, Set
+from typing import List, Tuple, Dict, NewType, Optional, Set, DefaultDict
 
 from .state.space import DataStack, Store, CallStack, Context, Obj, Address, Var
 from .state.types import (
-    BoolFalseObjectAddress,
-    BoolTrueObjectAddress,
-    NoneObjectAddress,
-    NumPosObjectAddress,
-    NumZeroObjectAddress,
-    NumPosZeroNegObjectAddress,
-    NumNegZeroObjectAddress,
-    NumNegObjectAddress,
-    NumPosZeroObjectAddress,
-    StrEmptyObjectAddress,
-    StrNonEmptyObjectAddress,
-    ZERO_OBJECTS,
-    BOOL_OBJS,
-    NUM_OBJS,
-    get_num_type,
+    BoolObjectInfo,
+    NoneObjectInfo,
+    StrObjectInfo,
+    NumObjectInfo,
 )
 from .varlattice import VarLattice
 
@@ -42,7 +31,7 @@ UpdatedAnalysisInfo = NewType("UpdatedAnalysisInfo", List[Tuple[str, Obj]])
 
 
 def transform(store: UpdatedAnalysisInfo) -> Lattice:
-    transferred_lattice = defaultdict(VarLattice)
+    transferred_lattice: DefaultDict[VarLattice] = defaultdict(VarLattice)
     for name, objects in store:
         transferred_lattice[name].transform(objects)
 
@@ -88,12 +77,12 @@ class PointsToAnalysis:
 
     def transfer(self, label: int) -> Lattice:
         # We would like to refactor the code with the strategy in ast.NodeVisitor
-        stmt = self.blocks[label].stmt[0]
+        stmt: ast.AST = self.blocks[label].stmt[0]
 
-        transferred = self.visit(stmt)
+        transferred: UpdatedAnalysisInfo = self.visit(stmt)
         logging.debug("transferred {}".format(transferred))
 
-        new_lattice = transform(transferred)
+        new_lattice: Lattice = transform(transferred)
         if not new_lattice:
             new_lattice = self.analysis_list[label]
         logging.debug("transferred lattice {}".format(new_lattice))
@@ -114,73 +103,72 @@ class PointsToAnalysis:
         updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
         right_obj = self.get_obj(stmt.value)
 
-        left_name = stmt.targets[0].id
-        left_address = self.st(left_name, self.context)
+        left_name: Var = stmt.targets[0].id
+        left_address: Address = self.st(left_name, self.context)
         self.insert(left_address, right_obj)
         updated.append((left_name, self.sigma(left_address)))
         return updated
 
     # expr #
-
-    # In a CFG, we make sure it has the form of left op right
-    # TODO
+    # FIXME: In python, BoolOp doesn't return True or False. It returns the
+    #  corresponding object. But it's hard to do this in static analysis.
+    #  So we use subtyping to translate it to Bool.
     def get_obj_of_BoolOp(self, expr: ast.BoolOp) -> Obj:
-        op: ast.boolop = expr.op
-        values: List[ast.expr] = expr.values
-        left: Obj = self.get_obj(values[0])
-        right: Obj = self.get_obj(values[1])
-        if type(op) == ast.And:
-            if left in ZERO_OBJECTS:
-                return left
-            else:
-                return right
-        elif type(op) == ast.Or:
-            if left in ZERO_OBJECTS:
-                return right
-            else:
-                return left
+        return BoolObjectInfo.obj
 
     def get_obj_of_BinOp(self, expr: ast.BinOp) -> Obj:
         op: ast.operator = expr.op
 
         left: ast.expr = expr.left
-        left_obj: Obj = self.get_obj(left)
-        if type(left) == bool:
-            left_obj = BOOL_OBJS[left_obj]
         right: ast.expr = expr.right
+        left_obj: Obj = self.get_obj(left)
         right_obj: Obj = self.get_obj(right)
-        if type(right) == bool:
-            right_obj = BOOL_OBJS[right_obj]
 
-        if left_obj in NUM_OBJS and right_obj in NUM_OBJS:
-            return get_num_type(left_obj, right_obj, op)
+        if left_obj == StrObjectInfo.obj or right_obj == StrObjectInfo.obj:
+            return StrObjectInfo.obj
 
-    def get_obj_of_UnaryOp(self, expr: ast.UnaryOp):
-        if isinstance(expr.op, ast.UAdd):
-            return self.get_obj(expr.operand)
+        if left_obj == BoolObjectInfo.obj:
+            left_obj = NumObjectInfo.obj
+        if right_obj == BoolObjectInfo.obj:
+            right_obj = NumObjectInfo.obj
+
+        if left_obj == NumObjectInfo.obj and right_obj == NumObjectInfo.obj:
+            return NumObjectInfo.obj
+
+    def get_obj_of_UnaryOp(self, expr: ast.UnaryOp) -> Obj:
+        if isinstance(expr.op, ast.Invert):
+            return NumObjectInfo.obj
+        elif isinstance(expr.op, ast.Not):
+            return BoolObjectInfo.obj
+        elif isinstance(expr.op, ast.UAdd):
+            return NumObjectInfo.obj
+        elif isinstance(expr.op, ast.USub):
+            return NumObjectInfo.obj
 
     def get_obj_of_Num(self, expr: ast.Num) -> Obj:
-        if expr.n == 0:
-            return self.sigma(self.st(NumZeroObjectAddress.name, None))
-        else:
-            return self.sigma(self.st(NumPosObjectAddress.name, None))
+        return NumObjectInfo.obj
 
     def get_obj_of_Str(self, expr: ast.Str) -> Obj:
-        if not expr.s:
-            return self.sigma(self.st(StrEmptyObjectAddress.name, None))
-        else:
-            return self.sigma(self.st(StrNonEmptyObjectAddress.name, None))
+        return StrObjectInfo.obj
+
+    def get_obj_of_FormattedValue(self, expr: ast.FormattedValue) -> Obj:
+        assert False, "FormattedValue is encountered."
+        return StrObjectInfo.obj
+
+    def get_obj_of_JoinedStr(self, expr: ast.JoinedStr) -> Obj:
+        return StrObjectInfo.obj
+
+    def get_obj_of_Bytes(self, expr: ast.Bytes) -> Obj:
+        return StrObjectInfo.obj
 
     def get_obj_of_NameConstant(self, expr: ast.NameConstant) -> Obj:
         if expr.value is None:
-            return self.sigma(self.st(NoneObjectAddress.name, None))
-        elif expr.value:
-            return self.sigma(self.st(BoolTrueObjectAddress.name, None))
+            return NoneObjectInfo.obj
         else:
-            return self.sigma(self.st(BoolFalseObjectAddress.name, None))
+            return BoolObjectInfo.obj
 
     def get_obj_of_Name(self, expr: ast.Name) -> Obj:
         return self.sigma(self.st(Var(expr.id), self.context))
 
     def handle_Pass(self, stmt: ast.Pass = None) -> UpdatedAnalysisInfo:
-        return []
+        return UpdatedAnalysisInfo([])

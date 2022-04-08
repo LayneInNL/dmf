@@ -21,7 +21,7 @@ from .varlattice import VarLattice
 from ..py2flows.py2flows.cfg.flows import CFG
 
 
-def condense_flows(flows: Set[Tuple[int, int]]):
+def condense_flows(flows: Set[Tuple[int, int]]) -> DefaultDict[int, Set[int]]:
     condensed_flows: DefaultDict[int, Set[int]] = defaultdict(set)
     for fst, snd in flows:
         condensed_flows[fst].add(snd)
@@ -92,7 +92,7 @@ class MFP:
         self.points_to_analysis.link_analysis_list(self.analysis_list)
 
     def transfer(self, label: int) -> Lattice:
-        transferred_lattice = self.points_to_analysis.transfer(label)
+        transferred_lattice: Lattice = self.points_to_analysis.transfer(label)
         return transferred_lattice
 
     def iterate(self) -> None:
@@ -106,8 +106,8 @@ class MFP:
                 continue
 
             # since the result of points-to analysis is incremental, we just use the transferred result
-            transferred_lattice = self.transfer(fst_label)
-            snd_label_lattice = self.analysis_list[snd_label]
+            transferred_lattice: Lattice = self.transfer(fst_label)
+            snd_label_lattice: Lattice = self.analysis_list[snd_label]
 
             if not is_subset(transferred_lattice, snd_label_lattice):
                 self.analysis_list[snd_label] = transferred_lattice
