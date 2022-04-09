@@ -34,6 +34,8 @@ class PrimitiveTypes:
 
     TUPLE = -10
 
+    FUNC = -110
+
 
 class BoolObjectInfo:
     name = "Bool"
@@ -105,6 +107,13 @@ class TupleObjectInfo:
     obj = (context, None)
 
 
+class FuncObjectInfo:
+    name = "Func"
+    context = PrimitiveTypes.FUNC
+    address = (name, context)
+    obj = (context, None)
+
+
 # a mapping used in store
 BUILTIN_CLASSES = (
     BoolObjectInfo,
@@ -116,6 +125,7 @@ BUILTIN_CLASSES = (
     SetObjectInfo,
     ListObjectInfo,
     TupleObjectInfo,
+    FuncObjectInfo,
 )
 # a mapping from names to addresses, used in data stack
 BUILTIN_CLASS_NAMES = {a.name: a.address for a in BUILTIN_CLASSES}

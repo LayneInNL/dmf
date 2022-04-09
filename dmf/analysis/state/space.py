@@ -29,16 +29,10 @@ DataStackFrame = NewType("DataStackFrame", Dict[Var, Address])
 Obj = NewType("Obj", Tuple[HContext, Dict[FieldName, Address]])
 
 
-def new_frame() -> DataStackFrame:
-    frame: DataStackFrame = DataStackFrame({})
-    return frame
-
-
 class DataStack:
     def __init__(self):
         self.data_stack: List[DataStackFrame] = []
-        initial_frame: DataStackFrame = new_frame()
-        self.push_frame(initial_frame)
+        self.new_and_push_frame()
 
     def st(self, var: Var, context: Context = None) -> Address:
         if var in BUILTIN_CLASS_NAMES:
@@ -54,11 +48,12 @@ class DataStack:
     def top(self) -> DataStackFrame:
         return self.data_stack[-1]
 
-    def push_var(self, var: Var, address: Address) -> None:
+    def insert_var(self, var: Var, address: Address) -> None:
         top_frame: DataStackFrame = self.top()
         top_frame[var] = address
 
-    def push_frame(self, frame: DataStackFrame) -> None:
+    def new_and_push_frame(self) -> None:
+        frame: DataStackFrame = DataStackFrame({})
         self.data_stack.append(frame)
 
     def __repr__(self) -> str:
@@ -102,3 +97,22 @@ class CallStack:
     def __init__(self):
         # call_stack contains Tuple[StmtID, Context, ContSensAddr]
         self.call_stack = []
+
+
+FuncInfo = NewType("FuncInfo", Tuple[int, int])
+
+
+class FuncTable:
+    def __init__(self):
+        self.func_table: List[Dict[str, FuncInfo]] = []
+        self.new_and_push_frame()
+
+    def new_and_push_frame(self):
+        self.func_table.append({})
+
+    def insert_func(self, name: str, call_id: int, exit_id: int):
+        top: Dict[str, FuncInfo] = self.top()
+        top[name] = (call_id, exit_id)
+
+    def top(self) -> Dict[str, FuncInfo]:
+        return self.func_table[-1]

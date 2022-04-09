@@ -17,7 +17,16 @@ import logging
 from collections import defaultdict
 from typing import List, Tuple, Dict, NewType, Optional, Set, DefaultDict
 
-from .state.space import DataStack, Store, CallStack, Context, Obj, Address, Var
+from .state.space import (
+    DataStack,
+    Store,
+    CallStack,
+    Context,
+    Obj,
+    Address,
+    Var,
+    FuncTable,
+)
 from .state.types import (
     BoolObjectInfo,
     NoneObjectInfo,
@@ -27,8 +36,10 @@ from .state.types import (
     SetObjectInfo,
     ListObjectInfo,
     TupleObjectInfo,
+    FuncObjectInfo,
 )
 from .varlattice import VarLattice
+from ..py2flows.py2flows.cfg.flows import BasicBlock, CallAndAssignBlock, CFG
 
 Lattice = NewType("Lattice", Dict[str, VarLattice])
 UpdatedAnalysisInfo = NewType("UpdatedAnalysisInfo", List[Tuple[str, Set[Obj]]])
@@ -57,13 +68,16 @@ def merge(
 
 
 class PointsToAnalysis:
-    def __init__(self, blocks):
-        self.blocks = blocks
+    def __init__(self, blocks, func_cfgs, class_cfgs):
+        self.blocks: Dict[int, BasicBlock] = blocks
+        self.func_cfgs: Dict[str, CFG] = func_cfgs
+        self.class_cfgs: Dict[str, CFG] = class_cfgs
         # Control flow graph, it contains program points and ast nodes.
         self.data_stack: DataStack = DataStack()
         self.store: Store = Store()
         self.call_stack: CallStack = CallStack()
         self.context: Context = Context(())
+        self.func_table: FuncTable = FuncTable()
 
         self.analysis_list: Optional[Dict[int, Lattice]] = None
 
@@ -79,14 +93,13 @@ class PointsToAnalysis:
     def insert_one(self, address: Address, obj: Obj):
         self.store.insert_one(address, obj)
 
-    def insert_many(self, address: Address, objs: Set[Obj]):
+    def update_points_to(self, address: Address, objs: Set[Obj]):
         self.store.insert_many(address, objs)
 
     def transfer(self, label: int) -> Lattice:
         # We would like to refactor the code with the strategy in ast.NodeVisitor
-        stmt: ast.AST = self.blocks[label].stmt[0]
 
-        transferred: UpdatedAnalysisInfo = self.visit(stmt)
+        transferred: UpdatedAnalysisInfo = self.visit(label)
         logging.debug("transferred {}".format(transferred))
 
         new_lattice: Lattice = transform(transferred)
@@ -96,15 +109,40 @@ class PointsToAnalysis:
 
         return new_lattice
 
-    def visit(self, stmt) -> UpdatedAnalysisInfo:
-        method = "handle_" + stmt.__class__.__name__
-        handler = getattr(self, method)
-        return handler(stmt)
+    # stmt #
 
-    def get_objs(self, expr: ast.expr) -> Set[Obj]:
-        method = "get_objs_of_" + expr.__class__.__name__
-        handler = getattr(self, method)
-        return handler(expr)
+    def visit(self, label: int) -> UpdatedAnalysisInfo:
+        stmt = self.blocks[label].stmt[0]
+        # method = "handle_" + stmt.__class__.__name__
+        # handler = getattr(self, method)
+        if isinstance(stmt, ast.FunctionDef):
+            return self.handle_FunctionDef(stmt)
+        # return handler(stmt)
+        elif isinstance(stmt, ast.Assign):
+            return self.handle_Assign(stmt)
+        elif isinstance(stmt, ast.Pass):
+            return self.handle_Pass(stmt)
+
+    def handle_FunctionDef(self, stmt: ast.FunctionDef) -> UpdatedAnalysisInfo:
+        updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
+        name: Var = stmt.name
+        self.func_table.insert_func(
+            name,
+            self.func_cfgs[name][1].start_block.bid,
+            self.func_cfgs[name][1].final_block.bid,
+        )
+
+        address: Address = self.st(name, self.context)
+        self.update_points_to(address, {FuncObjectInfo.obj})
+
+        args = stmt.args
+        body = stmt.body
+        decorator_list = stmt.decorator_list
+        returns = stmt.returns
+
+        updated.append((name, {FuncObjectInfo.obj}))
+
+        return updated
 
     def handle_Assign(self, stmt: ast.Assign) -> UpdatedAnalysisInfo:
         updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
@@ -113,11 +151,16 @@ class PointsToAnalysis:
         # FIXME: Now we assume left has only one var.
         left_name: Var = stmt.targets[0].id
         left_address: Address = self.st(left_name, self.context)
-        self.insert_many(left_address, right_objs)
+        self.update_points_to(left_address, right_objs)
         updated.append((left_name, self.sigma(left_address)))
         return updated
 
     # expr #
+    def get_objs(self, expr: ast.expr) -> Set[Obj]:
+        method = "get_objs_of_" + expr.__class__.__name__
+        handler = getattr(self, method)
+        return handler(expr)
+
     # FIXME: In python, BoolOp doesn't return True or False. It returns the
     #  corresponding object. But it's hard to do this in static analysis.
     #  So we use subtyping to translate it to Bool.
@@ -157,6 +200,38 @@ class PointsToAnalysis:
     def get_objs_of_Set(self, expr: ast.Set) -> Set[Obj]:
         return {SetObjectInfo.obj}
 
+    def get_objs_of_ListComp(self, expr: ast.ListComp) -> Set[Obj]:
+        assert False
+
+    def get_objs_of_SetComp(self, expr: ast.SetComp) -> Set[Obj]:
+        assert False
+
+    def get_objs_of_DictComp(self, expr: ast.DictComp) -> Set[Obj]:
+        assert False
+
+    def get_objs_of_GeneratorExpr(self, expr: ast.GeneratorExp) -> Set[Obj]:
+        assert False
+
+    def get_objs_of_Await(self, expr: ast.Await) -> Set[Obj]:
+        return self.get_objs(expr.value)
+
+    # I remember we transform yield (empty) into yield None
+    def get_objs_of_Yield(self, expr: ast.Yield) -> Set[Obj]:
+        return self.get_objs(expr.value)
+
+    def get_objs_of_YieldFrom(self, expr: ast.YieldFrom) -> Set[Obj]:
+        return self.get_objs(expr.value)
+
+    def get_objs_of_Compare(self, expr: ast.Expr) -> Set[Obj]:
+        return {BoolObjectInfo.obj}
+
+    def get_objs_of_Call(self, expr: ast.Call) -> Set[Obj]:
+        func: ast.expr = expr.func
+        args: List[ast.expr] = expr.args
+        keywords: List[ast.keyword] = expr.keywords
+
+        return {NoneObjectInfo.obj}
+
     def get_objs_of_Num(self, expr: ast.Num) -> Set[Obj]:
         return {NumObjectInfo.obj}
 
@@ -177,6 +252,26 @@ class PointsToAnalysis:
             return {NoneObjectInfo.obj}
         else:
             return {BoolObjectInfo.obj}
+
+    def get_objs_of_Ellipsis(self, expr: ast.Ellipsis) -> Set[Obj]:
+        assert False
+
+    def get_objs_of_Constant(self, expr: ast.Constant) -> Set[Obj]:
+        assert False
+
+    def get_objs_of_Attribute(self, expr: ast.Attribute) -> Set[Obj]:
+        value: ast.expr = expr.value
+        attr = expr.attr
+        value_objs = self.get_objs(value)
+        assert False
+
+    def get_objs_of_Subscript(self, expr: ast.Subscript) -> Set[Obj]:
+        value: ast.expr = expr.value
+        assert False
+
+    def get_objs_of_Starred(self, expr: ast.Starred) -> Set[Obj]:
+        value: ast.expr = expr.value
+        assert False
 
     def get_objs_of_Name(self, expr: ast.Name) -> Set[Obj]:
         return self.sigma(self.st(Var(expr.id), self.context))

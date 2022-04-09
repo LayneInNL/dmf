@@ -47,11 +47,11 @@ An instance of a dynamic monotone framework for type analysis for Python.
 - [x] ListComp
 - [x] SetComp
 - [x] DictComp
-- [] GeneratorExp
-- [] Await
-- [] Yield
-- [] YieldFrom
-- [] Compare
+- [x] GeneratorExp
+- [x] Await
+- [x] Yield
+- [x] YieldFrom
+- [x] Compare
 - [] Call
 - [x] Num
 - [x] Str
@@ -59,8 +59,8 @@ An instance of a dynamic monotone framework for type analysis for Python.
 - [x] JoinedStr
 - [x] Bytes
 - [x] NameConstant
-- [] Ellipsis
-- [] Constant
+- [x] Ellipsis
+- [x] Constant
 - [] Attribute
 - [] Subscript
 - [] Starred

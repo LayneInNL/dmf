@@ -53,7 +53,8 @@ class MFP:
     def __init__(self, cfg: CFG):
         self.flows: Set[Tuple[int, int]] = cfg.flows
         self.flows_mapping: DefaultDict[int, Set[int]] = condense_flows(self.flows)
-
+        self.func_cfgs: Dict[str, CFG] = cfg.func_cfgs
+        self.class_cfgs: Dict[str, CFG] = cfg.class_cfgs
         self.labels: Set[int] = cfg.labels
         self.extremal_labels: List[int] = [cfg.start.bid]
         # Note: passed by address
@@ -62,7 +63,9 @@ class MFP:
         # Use None as Bottom
         self.bot: None = None
 
-        self.points_to_analysis: PointsToAnalysis = PointsToAnalysis(cfg.blocks)
+        self.points_to_analysis: PointsToAnalysis = PointsToAnalysis(
+            cfg.blocks, cfg.func_cfgs, cfg.class_cfgs
+        )
 
         # used for iteration
         self.work_list: Optional[Deque[Tuple[int, int]]] = None
