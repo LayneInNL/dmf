@@ -73,6 +73,7 @@ class PointsToAnalysis:
         self.func_cfgs: Dict[str, CFG] = func_cfgs
         self.class_cfgs: Dict[str, CFG] = class_cfgs
         # Control flow graph, it contains program points and ast nodes.
+        self.next_label: int = 0
         self.data_stack: DataStack = DataStack()
         self.store: Store = Store()
         self.call_stack: CallStack = CallStack()
@@ -123,6 +124,8 @@ class PointsToAnalysis:
         elif isinstance(stmt, ast.Pass):
             return self.handle_Pass(stmt)
 
+    # FIXME: at one time, only one name is visible.
+    #  But in flows, we need to consider the situation that later declaration rewrites previous declaration
     def handle_FunctionDef(self, stmt: ast.FunctionDef) -> UpdatedAnalysisInfo:
         updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
         name: Var = stmt.name
@@ -141,6 +144,28 @@ class PointsToAnalysis:
         returns = stmt.returns
 
         updated.append((name, {FuncObjectInfo.obj}))
+
+        return updated
+
+    # TODO: it's better to let return always return variable names
+    # TODO: better to add labels to points-to rather than dmf
+    def handle_Return(self, stmt: ast.Return) -> UpdatedAnalysisInfo:
+        updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
+
+        # get variable name
+        name: str = stmt.value.id
+
+        # update analysis components
+        next_label, next_store, next_address = self.call_stack.top()
+        self.update_points_to(next_address, self.sigma(self.st(name, self.context)))
+
+        self.next_label = next_label
+        self.call_stack.pop()
+        self.store = next_store
+
+        updated.append(
+            (next_address[0], self.sigma(self.st(next_address, self.context)))
+        )
 
         return updated
 
@@ -227,8 +252,14 @@ class PointsToAnalysis:
 
     def get_objs_of_Call(self, expr: ast.Call) -> Set[Obj]:
         func: ast.expr = expr.func
+        assert isinstance(func, ast.Name)
         args: List[ast.expr] = expr.args
         keywords: List[ast.keyword] = expr.keywords
+
+        self.data_stack.new_and_push_frame()
+        self.store = self.store
+        self.call_stack.emplace(self.next_label, self.context, self.call_stack)
+        self.next_label = None
 
         return {NoneObjectInfo.obj}
 

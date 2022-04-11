@@ -93,10 +93,27 @@ class Store:
         return result
 
 
+CallStackFrame = NewType("CallStackFrame", Tuple[int, Store, Address])
+
+
 class CallStack:
     def __init__(self):
         # call_stack contains Tuple[StmtID, Context, ContSensAddr]
-        self.call_stack = []
+        self.call_stack: List[CallStackFrame] = []
+
+    def top(self) -> CallStackFrame:
+        assert self.call_stack
+        return self.call_stack[-1]
+
+    def pop(self) -> None:
+        assert self.call_stack
+        self.call_stack = self.call_stack[:-1]
+
+    def push(self, frame: CallStackFrame):
+        self.call_stack.append(frame)
+
+    def emplace(self, label: int, context: Context, address: Address) -> None:
+        self.push((label, context, address))
 
 
 FuncInfo = NewType("FuncInfo", Tuple[int, int])

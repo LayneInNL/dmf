@@ -1,3 +1,4 @@
 [submodule "dmf/py2flows"]
 	path = dmf/py2flows
 	url = https://github.com/LayneInNL/py2flows.git
+    branch = analysis
