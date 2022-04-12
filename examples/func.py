@@ -17,4 +17,4 @@ def test():
     a = 1
 
 
-b = test
+b = test()

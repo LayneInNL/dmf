@@ -14,8 +14,8 @@
 
 import ast
 import logging
-from collections import defaultdict
-from typing import List, Tuple, Dict, NewType, Optional, Set, DefaultDict
+from collections import defaultdict, deque
+from typing import List, Tuple, Dict, NewType, Optional, Set, DefaultDict, Deque, Union
 
 from .state.space import (
     DataStack,
@@ -24,8 +24,8 @@ from .state.space import (
     Context,
     Obj,
     Address,
-    Var,
     FuncTable,
+    HContext,
 )
 from .state.types import (
     BoolObjectInfo,
@@ -39,7 +39,7 @@ from .state.types import (
     FuncObjectInfo,
 )
 from .varlattice import VarLattice
-from ..py2flows.py2flows.cfg.flows import BasicBlock, CallAndAssignBlock, CFG
+from ..py2flows.py2flows.cfg.flows import BasicBlock, CFG
 
 Lattice = NewType("Lattice", Dict[str, VarLattice])
 UpdatedAnalysisInfo = NewType("UpdatedAnalysisInfo", List[Tuple[str, Set[Obj]]])
@@ -67,43 +67,164 @@ def merge(
     return added_lattice
 
 
+# def condense_flows(flows: Set[Tuple[int, int]]) -> DefaultDict[int, Set[int]]:
+#     condensed_flows: DefaultDict[int, Set[int]] = defaultdict(set)
+#     for fst, snd in flows:
+#         condensed_flows[fst].add(snd)
+#
+#     return condensed_flows
+
+
+def is_subset(left: Optional[Lattice], right: Optional[Lattice]):
+    # left is not None, right is None. So is_subset = False
+    if right is None:
+        return False
+
+    for key, value in left.items():
+        if key not in right:
+            return False
+
+        if not value.is_subset(right[key]):
+            return False
+
+    return True
+
+
 class PointsToAnalysis:
-    def __init__(self, blocks, func_cfgs, class_cfgs):
-        self.blocks: Dict[int, BasicBlock] = blocks
-        self.func_cfgs: Dict[str, CFG] = func_cfgs
-        self.class_cfgs: Dict[str, CFG] = class_cfgs
+    def __init__(self, cfg: CFG):
+
+        self.flows: Set[Tuple[int, int]] = cfg.flows
+        self.inter_flows: Dict[
+            int, List[int, Optional[int], Optional[int], int]
+        ] = self.extend_inter_flows(cfg.inter_flows)
+
+        # self.flows_mapping: DefaultDict[int, Set[int]] = condense_flows(self.flows)
+        self.labels: Set[int] = cfg.labels
+        self.extremal_labels: List[int] = [cfg.start.bid]
+        # Note: passed by address
+        self.extremal_value: Lattice = defaultdict(VarLattice)
+        # Use None as Bottom
+        self.bot: None = None
+
+        # used for iteration
+        self.work_list: Optional[Deque[Tuple[int, int]]] = None
+        self.analysis_list: Optional[Dict[int, Lattice]] = None
+
+        # used for final result
+        self.mfp_content: Optional[Dict[int, Lattice]] = None
+        self.mfp_effect: Optional[Dict[int, Lattice]] = None
+
+        # used for computing
+        self.blocks: Dict[int, BasicBlock] = cfg.blocks
+        self.func_cfgs: Dict[str, (List[str, ast.AST], CFG)] = cfg.func_cfgs
+        self.class_cfgs: Dict[str, (List[str, ast.AST], CFG)] = cfg.class_cfgs
+
         # Control flow graph, it contains program points and ast nodes.
-        self.next_label: int = 0
+        self.curr_label = cfg.start.bid
         self.data_stack: DataStack = DataStack()
         self.store: Store = Store()
         self.call_stack: CallStack = CallStack()
         self.context: Context = Context(())
         self.func_table: FuncTable = FuncTable()
 
-        self.analysis_list: Optional[Dict[int, Lattice]] = None
+    def compute_fixed_point(self) -> None:
+        self.initialize()
+        self.iterate()
+        self.present()
 
-    def link_analysis_list(self, analysis_list: Dict[int, Lattice]):
-        self.analysis_list = analysis_list
+    def initialize(self) -> None:
+        # WorkList W
+        self.work_list = deque(self.flows)
+        logging.debug("work_list: {}".format(self.work_list))
+        self.analysis_list = defaultdict(lambda: self.bot)
+        for label in self.extremal_labels:
+            # We use None to represent BOTTOM in analysis lattice
+            self.analysis_list[label] = self.extremal_value
+        logging.debug("analysis_list: {}".format(self.analysis_list))
 
-    def st(self, var: Var, context: Optional[Context]) -> Address:
+    def iterate(self) -> None:
+        while self.work_list:
+            fst_label, snd_label = self.work_list.popleft()
+            self.curr_label = fst_label
+            logging.debug("Current flow({}, {})".format(fst_label, snd_label))
+
+            # If first one is BOT, we simply skip it.
+            # Since we flow information from known labels to unknown labels.
+            if self.analysis_list[fst_label] == self.bot:
+                logging.debug("{} is bot".format(fst_label))
+                continue
+
+            # since the result of points-to analysis is incremental, we just use the transferred result
+            transferred_lattice: Lattice = self.transfer(fst_label)
+            snd_label_lattice: Lattice = self.analysis_list[snd_label]
+
+            if not is_subset(transferred_lattice, snd_label_lattice):
+                self.analysis_list[snd_label] = transferred_lattice
+                if snd_label in self.inter_flows:
+                    if self.inter_flows[snd_label][0] == snd_label:
+                        # call
+                        stmt: ast.Assign = self.blocks[snd_label].stmt[0]
+                        name: str = stmt.value.func.id
+                        entry_label, exit_label = self.func_table.st(name)
+                        call2entry = (snd_label, entry_label)
+                        exit2return = (exit_label, self.inter_flows[snd_label][3])
+                        self.flows.add(call2entry)
+                        self.flows.add(exit2return)
+                        self.flows.update(self.func_cfgs[name][1].flows)
+                        # add function flows to self.flows
+
+                        # self.work_list.appendleft((snd_label, entry_label))
+                        # self.work_list.extendleft(self.func_cfgs[name][1].flows)
+                        # self.work_list.appendleft(
+                        #     (exit_label, self.inter_flows[snd_label][3])
+                        # )
+                    elif self.inter_flows[snd_label][3] == snd_label:
+                        # return
+                        pass
+                self.work_list.extendleft(
+                    [(l2, l3) for l2, l3 in self.flows if l2 == snd_label]
+                )
+
+    def present(self) -> None:
+        self.mfp_content = {}
+        self.mfp_effect = {}
+        for label in self.labels:
+            self.mfp_content[label] = self.analysis_list[label]
+            self.mfp_effect[label] = self.transfer(label)
+
+    def pprint(self):
+        logging.debug("data stack:\n{}".format(self.data_stack))
+        logging.debug("store:\n{}".format(self.store))
+        for label in self.labels:
+            logging.debug(
+                "content label: {}, value: {}".format(label, self.mfp_content[label])
+            )
+            logging.debug(
+                "effect label: {}, value: {}".format(label, self.mfp_effect[label])
+            )
+
+    def st(self, var: str, context: Optional[Context]) -> Address:
         return self.data_stack.st(var, context)
 
     def sigma(self, address: Address) -> Set[Obj]:
         return self.store.get(address)
 
-    def insert_one(self, address: Address, obj: Obj):
-        self.store.insert_one(address, obj)
-
-    def update_points_to(self, address: Address, objs: Set[Obj]):
-        self.store.insert_many(address, objs)
+    def update_points_to(self, address: Address, objs: Union[Set[Obj], Obj]):
+        if isinstance(objs, Set):
+            self.store.insert_many(address, objs)
+        else:
+            self.store.insert_many(address, {objs})
 
     def transfer(self, label: int) -> Lattice:
         # We would like to refactor the code with the strategy in ast.NodeVisitor
 
-        transferred: UpdatedAnalysisInfo = self.visit(label)
-        logging.debug("transferred {}".format(transferred))
+        if self.is_return_label(label):
+            new_lattice = self.handle_return_label(label)
+        else:
+            transferred: UpdatedAnalysisInfo = self.visit(label)
+            logging.debug("transferred {}".format(transferred))
+            new_lattice: Lattice = transform(transferred)
 
-        new_lattice: Lattice = transform(transferred)
         if not new_lattice:
             new_lattice = self.analysis_list[label]
         logging.debug("transferred lattice {}".format(new_lattice))
@@ -112,8 +233,33 @@ class PointsToAnalysis:
 
     # stmt #
 
+    def extend_inter_flows(self, inter_flows):
+        new_inter_flows = {}
+        for a, b, c, d in inter_flows:
+            temp = [a, b, c, d]
+            new_inter_flows[a] = temp
+            new_inter_flows[d] = temp
+        return new_inter_flows
+
+    def is_call_label(self, label: int) -> bool:
+        if label in self.inter_flows and label == self.inter_flows[label][0]:
+            return True
+        else:
+            return False
+
+    def is_return_label(self, label: int) -> bool:
+        if label in self.inter_flows and label == self.inter_flows[label][3]:
+            return True
+        else:
+            return False
+
     def visit(self, label: int) -> UpdatedAnalysisInfo:
+
         stmt = self.blocks[label].stmt[0]
+        if self.is_call_label(label):
+            return self.handle_call_label(label)
+        elif self.is_return_label(label):
+            return self.handle_return_label(label)
         # method = "handle_" + stmt.__class__.__name__
         # handler = getattr(self, method)
         if isinstance(stmt, ast.FunctionDef):
@@ -124,24 +270,64 @@ class PointsToAnalysis:
         elif isinstance(stmt, ast.Pass):
             return self.handle_Pass(stmt)
 
+    def merge(
+        self, curr_label: int, heap_context: Optional[HContext], context: Context
+    ) -> Tuple:
+        if heap_context is None:
+            return context[-1:] + (curr_label,)
+        else:
+            pass
+
+    def next_label_of_return_label(self, return_label: int) -> int:
+        for fst_label, snd_label in self.flows:
+            if fst_label == return_label:
+                return snd_label
+
+    def handle_call_label(self, label: int):
+
+        stmt: ast.Assign = self.blocks[label].stmt[0]
+
+        new_context = self.merge(label, None, self.context)
+        logging.debug("New context after merge is: {}".format(new_context))
+        next_label = self.next_label_of_return_label(self.inter_flows[label][3])
+        call_stack_frame = (
+            next_label,
+            self.context,
+            self.st(stmt.targets[0].id, self.context),
+        )
+        logging.debug("Next label is: {}".format(call_stack_frame))
+        self.data_stack.new_and_push_frame()
+        self.call_stack.push(call_stack_frame)
+        self.context = new_context
+
+        return []
+
+    def handle_return_label(self, return_label: int):
+        call_label: int = self.inter_flows[return_label][0]
+        call_label_content: Lattice = self.analysis_list[call_label]
+        return_label_content: Lattice = self.analysis_list[return_label]
+        return return_label_content
+
     # FIXME: at one time, only one name is visible.
     #  But in flows, we need to consider the situation that later declaration rewrites previous declaration
     def handle_FunctionDef(self, stmt: ast.FunctionDef) -> UpdatedAnalysisInfo:
         updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
-        name: Var = stmt.name
+        name: str = stmt.name
         self.func_table.insert_func(
             name,
             self.func_cfgs[name][1].start_block.bid,
             self.func_cfgs[name][1].final_block.bid,
         )
+        logging.debug(
+            "Add ({} {} {}) to function table".format(
+                name,
+                self.func_cfgs[name][1].start_block.bid,
+                self.func_cfgs[name][1].final_block.bid,
+            )
+        )
 
         address: Address = self.st(name, self.context)
         self.update_points_to(address, {FuncObjectInfo.obj})
-
-        args = stmt.args
-        body = stmt.body
-        decorator_list = stmt.decorator_list
-        returns = stmt.returns
 
         updated.append((name, {FuncObjectInfo.obj}))
 
@@ -152,8 +338,9 @@ class PointsToAnalysis:
     def handle_Return(self, stmt: ast.Return) -> UpdatedAnalysisInfo:
         updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
 
+        value: ast.Name = stmt.value
         # get variable name
-        name: str = stmt.value.id
+        name: str = value.id
 
         # update analysis components
         next_label, next_store, next_address = self.call_stack.top()
@@ -174,7 +361,7 @@ class PointsToAnalysis:
         right_objs = self.get_objs(stmt.value)
 
         # FIXME: Now we assume left has only one var.
-        left_name: Var = stmt.targets[0].id
+        left_name: str = stmt.targets[0].id
         left_address: Address = self.st(left_name, self.context)
         self.update_points_to(left_address, right_objs)
         updated.append((left_name, self.sigma(left_address)))
@@ -253,13 +440,13 @@ class PointsToAnalysis:
     def get_objs_of_Call(self, expr: ast.Call) -> Set[Obj]:
         func: ast.expr = expr.func
         assert isinstance(func, ast.Name)
+
+        entry_id, exit_id = self.func_table.st(func.id)
+        self.inter_flows[self.curr_label][1] = entry_id
+        self.inter_flows[self.curr_label][2] = exit_id
+
         args: List[ast.expr] = expr.args
         keywords: List[ast.keyword] = expr.keywords
-
-        self.data_stack.new_and_push_frame()
-        self.store = self.store
-        self.call_stack.emplace(self.next_label, self.context, self.call_stack)
-        self.next_label = None
 
         return {NoneObjectInfo.obj}
 
@@ -305,7 +492,7 @@ class PointsToAnalysis:
         assert False
 
     def get_objs_of_Name(self, expr: ast.Name) -> Set[Obj]:
-        return self.sigma(self.st(Var(expr.id), self.context))
+        return self.sigma(self.st(str(expr.id), self.context))
 
     def get_objs_of_List(self, expr: ast.List) -> Set[Obj]:
         return {ListObjectInfo.obj}

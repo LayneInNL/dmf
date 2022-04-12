@@ -20,12 +20,11 @@ from .types import BUILTIN_CLASSES, BUILTIN_CLASS_NAMES
 
 Context = NewType("Context", tuple)
 HContext = NewType("HContext", tuple)
-Var = NewType("Var", str)
 FieldName = NewType("FieldName", str)
-VarAddress = NewType("VarAddress", Tuple[Var, Context])
+VarAddress = NewType("VarAddress", Tuple[str, Context])
 FieldNameAddress = NewType("FieldNameAddress", Tuple[FieldName, HContext])
 Address = NewType("Address", Union[VarAddress, FieldNameAddress])
-DataStackFrame = NewType("DataStackFrame", Dict[Var, Address])
+DataStackFrame = NewType("DataStackFrame", Dict[str, Address])
 Obj = NewType("Obj", Tuple[HContext, Dict[FieldName, Address]])
 
 
@@ -34,7 +33,7 @@ class DataStack:
         self.data_stack: List[DataStackFrame] = []
         self.new_and_push_frame()
 
-    def st(self, var: Var, context: Context = None) -> Address:
+    def st(self, var: str, context: Context = None) -> Address:
         if var in BUILTIN_CLASS_NAMES:
             return BUILTIN_CLASS_NAMES[var]
 
@@ -48,7 +47,7 @@ class DataStack:
     def top(self) -> DataStackFrame:
         return self.data_stack[-1]
 
-    def insert_var(self, var: Var, address: Address) -> None:
+    def insert_var(self, var: str, address: Address) -> None:
         top_frame: DataStackFrame = self.top()
         top_frame[var] = address
 
@@ -93,12 +92,11 @@ class Store:
         return result
 
 
-CallStackFrame = NewType("CallStackFrame", Tuple[int, Store, Address])
+CallStackFrame = NewType("CallStackFrame", Tuple[int, Context, Address])
 
 
 class CallStack:
     def __init__(self):
-        # call_stack contains Tuple[StmtID, Context, ContSensAddr]
         self.call_stack: List[CallStackFrame] = []
 
     def top(self) -> CallStackFrame:
@@ -113,7 +111,7 @@ class CallStack:
         self.call_stack.append(frame)
 
     def emplace(self, label: int, context: Context, address: Address) -> None:
-        self.push((label, context, address))
+        self.push(CallStackFrame((label, context, address)))
 
 
 FuncInfo = NewType("FuncInfo", Tuple[int, int])
@@ -129,7 +127,10 @@ class FuncTable:
 
     def insert_func(self, name: str, call_id: int, exit_id: int):
         top: Dict[str, FuncInfo] = self.top()
-        top[name] = (call_id, exit_id)
+        top[name] = FuncInfo((call_id, exit_id))
 
     def top(self) -> Dict[str, FuncInfo]:
         return self.func_table[-1]
+
+    def st(self, name: str) -> Tuple[int, int]:
+        return self.top()[name]
