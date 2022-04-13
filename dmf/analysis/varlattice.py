@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import logging
 
-from .state.space import Obj
+from .state.space import Obj, Context
 from .state.types import PrimitiveTypes
-from typing import Set
+from typing import Set, NewType, Dict, Tuple
 
 
 class BoolLattice:
@@ -464,3 +464,7 @@ class VarLattice:
             # undef_lattice_str,
         )
         return res
+
+
+Lattice = NewType("Lattice", Dict[str, VarLattice])
+Context_Lattice = NewType("Context_Lattice", Dict[str, Tuple[Context, VarLattice]])

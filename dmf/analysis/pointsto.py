@@ -15,8 +15,18 @@
 import ast
 import logging
 from collections import defaultdict, deque
-from typing import List, Tuple, Dict, NewType, Optional, Set, DefaultDict, Deque, Union
+from typing import List, Tuple, Dict, NewType, Optional, Set, Deque, Union
 
+from .helpers import (
+    extend_inter_flows,
+    transform,
+    union_two_lattices_in_transfer,
+    union_two_lattices_in_iterate,
+    is_subset,
+    is_call_label,
+    is_exit_return_label,
+    merge_dynamic,
+)
 from .state.space import (
     DataStack,
     Store,
@@ -25,7 +35,6 @@ from .state.space import (
     Obj,
     Address,
     FuncTable,
-    HContext,
 )
 from .state.types import (
     BoolObjectInfo,
@@ -38,50 +47,10 @@ from .state.types import (
     TupleObjectInfo,
     FuncObjectInfo,
 )
-from .varlattice import VarLattice
-from ..py2flows.py2flows.cfg.flows import BasicBlock, CFG, CallAndAssignBlock
+from .varlattice import VarLattice, Lattice
+from ..py2flows.py2flows.cfg.flows import BasicBlock, CFG
 
-Lattice = NewType("Lattice", Dict[str, VarLattice])
 UpdatedAnalysisInfo = NewType("UpdatedAnalysisInfo", List[Tuple[str, Set[Obj]]])
-
-
-def transform(store: UpdatedAnalysisInfo) -> Lattice:
-    transferred_lattice: DefaultDict[VarLattice] = defaultdict(VarLattice)
-    for name, objects in store:
-        transferred_lattice[name].transform(objects)
-
-    return transferred_lattice
-
-
-def merge(
-    original_lattice: Dict[str, VarLattice], added_lattice: Dict[str, VarLattice]
-) -> Dict[str, VarLattice]:
-    in_original: Set[str] = set(original_lattice.keys())
-    in_added: Set[str] = set(added_lattice.keys())
-    mixed: Set[str] = in_original | in_added
-
-    for key in mixed:
-        if key in in_original:
-            added_lattice[key].merge(original_lattice[key])
-
-    return added_lattice
-
-
-# def condense_flows(flows: Set[Tuple[int, int]]) -> DefaultDict[int, Set[int]]:
-#     condensed_flows: DefaultDict[int, Set[int]] = defaultdict(set)
-#     for fst, snd in flows:
-#         condensed_flows[fst].add(snd)
-#
-#     return condensed_flows
-
-
-def extend_inter_flows(inter_flows):
-    new_inter_flows = {}
-    for a, b, c in inter_flows:
-        temp = [a, b, c]
-        new_inter_flows[a] = temp
-        new_inter_flows[c] = temp
-    return new_inter_flows
 
 
 class PointsToAnalysis:
@@ -148,14 +117,12 @@ class PointsToAnalysis:
         while self.work_list:
             fst_label, snd_label = self.work_list.popleft()
             logging.debug("Current flow({}, {})".format(fst_label, snd_label))
-            self.curr_label = fst_label
 
-            # since the result of points-to analysis is incremental, we just use the transferred result
-            transferred_lattice: Lattice = self.transfer(fst_label)
-            snd_label_lattice: Lattice = self.analysis_list[snd_label]
+            transferred_lattice: Lattice = self.type_analysis_transfer(fst_label)
+            logging.debug("Transferred lattice: {}".format(transferred_lattice))
 
-            if not self.is_subset(transferred_lattice, snd_label_lattice):
-                self.analysis_list[snd_label] = self.union_two_lattices_in_iterate(
+            if not is_subset(transferred_lattice, self.analysis_list[snd_label]):
+                self.analysis_list[snd_label] = union_two_lattices_in_iterate(
                     self.analysis_list[snd_label], transferred_lattice
                 )
 
@@ -186,19 +153,19 @@ class PointsToAnalysis:
                         logging.debug(
                             "add blocks {}".format(self.func_cfgs[name][1].blocks)
                         )
-                        # add function flows to self.flows
 
-                        # self.work_list.appendleft((snd_label, entry_label))
-                        # self.work_list.extendleft(self.func_cfgs[name][1].flows)
-                        # self.work_list.appendleft(
-                        #     (exit_label, self.inter_flows[snd_label][3])
-                        # )
                     # exit_return label
                     elif self.inter_flows[snd_label][-1] == snd_label:
                         # return
                         pass
+
                 added_flows = [(l2, l3) for l2, l3 in self.flows if l2 == snd_label]
                 self.work_list.extendleft(added_flows)
+
+            self.curr_label = fst_label
+
+            # since the result of points-to analysis is incremental, we just use the transferred result
+            self.points_to_transfer(fst_label)
 
     def present(self) -> None:
         self.all_labels = set()
@@ -209,7 +176,7 @@ class PointsToAnalysis:
         self.mfp_effect = {}
         for label in self.all_labels:
             self.mfp_content[label] = self.analysis_list[label]
-            # self.mfp_effect[label] = self.transfer(label)
+            self.mfp_effect[label] = self.type_analysis_transfer(label)
 
     def pprint(self):
         logging.debug("data stack:\n{}".format(self.data_stack))
@@ -218,45 +185,9 @@ class PointsToAnalysis:
             logging.debug(
                 "content label: {}, value:\n {}".format(label, self.mfp_content[label])
             )
-            # logging.debug(
-            #     "effect label: {}, value:\n {}".format(label, self.mfp_effect[label])
-            # )
-
-    def is_subset(self, left: Optional[Lattice], right: Optional[Lattice]):
-        # (None, None), (None, ?)
-        if left == self.bot:
-            return True
-
-        # (?, None)
-        if right == self.bot:
-            return False
-
-        left_vars = set(left)
-        right_vars = set(right)
-        if left_vars.issubset(right_vars):
-            for var in left_vars:
-                if not left[var].is_subset(right[var]):
-                    return False
-            return True
-
-        return False
-
-    def union_two_lattices_in_transfer(self, old: Lattice, new: Lattice) -> Lattice:
-        # if old is self.bot, we can't get any new info from it. So old can't be self.bot
-        diff_old_new = set(old).difference(new)
-        for var in diff_old_new:
-            new[var] = old[var]
-
-        return new
-
-    def union_two_lattices_in_iterate(self, old: Lattice, new: Lattice) -> Lattice:
-        if old == self.bot:
-            return new
-        diff_old_new = set(old).difference(new)
-        for var in diff_old_new:
-            new[var] = old[var]
-
-        return new
+            logging.debug(
+                "effect label: {}, value:\n {}".format(label, self.mfp_effect[label])
+            )
 
     def st(self, var: str, context: Optional[Context]) -> Address:
         return self.data_stack.st(var, context)
@@ -265,75 +196,74 @@ class PointsToAnalysis:
         return self.store.get(address)
 
     def update_points_to(self, address: Address, objs: Union[Set[Obj], Obj]):
-        if isinstance(objs, Set):
-            self.store.insert_many(address, objs)
-        else:
-            self.store.insert_many(address, {objs})
+        self.store.insert_many(address, objs)
 
-    def transfer(self, label: int) -> Lattice:
+    def type_analysis_transfer(self, label: int):
         if self.analysis_list[label] == self.bot:
             return self.bot
 
-            # We would like to refactor the code with the strategy in ast.NodeVisitor
+        stmt: ast.stmt = self.blocks[label].stmt[0]
 
-        transferred: UpdatedAnalysisInfo = self.visit(label)
-        logging.debug("transferred {}".format(transferred))
-        new_fst_lattice: Lattice = transform(transferred)
-        logging.debug("transferred lattice {}".format(new_fst_lattice))
-        old_fst_lattice = self.analysis_list[label]
-        new_fst_lattice = self.union_two_lattices_in_transfer(
-            old_fst_lattice, new_fst_lattice
+        method = "type_analysis_transfer_" + stmt.__class__.__name__
+        handler = getattr(self, method)
+        return handler(label)
+
+    def type_analysis_transfer_call(self, label: int) -> Lattice:
+        transferred_lattice: Lattice = transform([])
+        old_lattice = self.analysis_list[label]
+        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
+
+    def type_analysis_transfer_FunctionDef(self, label: int) -> Lattice:
+        stmt: ast.FunctionDef = self.blocks[label].stmt[0]
+        function_name: str = stmt.name
+        function_objs: Set[Obj] = {FuncObjectInfo.obj}
+
+        transferred_lattice: Lattice = transform([(function_name, function_objs)])
+        old_lattice = self.analysis_list[label]
+        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
+        return new_lattice
+
+    def type_analysis_transfer_Assign(self, label: int) -> Lattice:
+        stmt: ast.Assign = self.blocks[label].stmt[0]
+        name: str = stmt.targets[0].id
+        address: Address = (name, self.context)
+        objs: Set[Obj] = self.get_objs(stmt.value)
+
+        transferred_lattice: Lattice = transform([(name, objs)])
+        old_lattice = self.analysis_list[label]
+        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
+        return new_lattice
+
+    def type_analysis_transfer_Pass(self, label: int) -> Lattice:
+        transferred_lattice: Lattice = transform([])
+        old_lattice: Lattice = self.analysis_list[label]
+        new_lattice: Lattice = union_two_lattices_in_transfer(
+            old_lattice, transferred_lattice
         )
-        return new_fst_lattice
+        return new_lattice
+
+    def points_to_transfer(self, label: int):
+        if self.analysis_list[label] == self.bot:
+            return self.bot
+
+        stmt = self.blocks[label].stmt[0]
+        if is_call_label(self.inter_flows, label):
+            return self.points_to_transfer_call(label)
+        elif isinstance(stmt, ast.Return):
+            return self.points_to_transfer_exit_return(label)
+        elif is_exit_return_label(self.inter_flows, label):
+            return self.points_to_transfer_return_label(label)
+        method = "points_to_transfer_" + stmt.__class__.__name__
+        handler = getattr(self, method)
+        handler(stmt)
 
     # stmt #
 
-    def is_call_label(self, label: int) -> bool:
-        if label in self.inter_flows and label == self.inter_flows[label][0]:
-            return True
-        else:
-            return False
-
-    def is_exit_return_label(self, label: int) -> bool:
-        if label in self.inter_flows and label == self.inter_flows[label][-1]:
-            return True
-        else:
-            return False
-
-    def visit(self, label: int) -> UpdatedAnalysisInfo:
-
-        print(self.work_list)
-        print(label)
-        stmt = self.blocks[label].stmt[0]
-        if self.is_call_label(label):
-            return self.handle_call_label(label)
-        elif isinstance(stmt, ast.Return):
-            return self.handle_exit_return_label(label)
-        elif self.is_exit_return_label(label):
-            return self.handle_return_label(label)
-        # method = "handle_" + stmt.__class__.__name__
-        # handler = getattr(self, method)
-        if isinstance(stmt, ast.FunctionDef):
-            return self.handle_FunctionDef(stmt)
-        # return handler(stmt)
-        elif isinstance(stmt, ast.Assign):
-            return self.handle_Assign(stmt)
-        elif isinstance(stmt, ast.Pass):
-            return self.handle_Pass(stmt)
-
-    def merge(
-        self, curr_label: int, heap_context: Optional[HContext], context: Context
-    ) -> Tuple:
-        if heap_context is None:
-            return context[-1:] + (curr_label,)
-        else:
-            pass
-
-    def handle_call_label(self, label: int) -> UpdatedAnalysisInfo:
+    def points_to_transfer_call(self, label: int):
 
         stmt: ast.Assign = self.blocks[label].stmt[0]
 
-        new_context = self.merge(label, None, self.context)
+        new_context = merge_dynamic(label, None, self.context)
         logging.debug("New context after merge is: {}".format(new_context))
         next_label = self.inter_flows[label][-1]
         call_stack_frame = (
@@ -346,24 +276,20 @@ class PointsToAnalysis:
         self.call_stack.push(call_stack_frame)
         self.context = new_context
 
-        return UpdatedAnalysisInfo([])
-
-    def handle_exit_return_label(self, return_label: int) -> UpdatedAnalysisInfo:
+    def points_to_transfer_exit_return(self, return_label: int):
         return_label_content: Lattice = self.analysis_list[return_label]
         next_label, context, address = self.call_stack.top()
         self.call_stack.pop()
 
         stmt: ast.Return = self.blocks[return_label].stmt[0]
         self.update_points_to(address, self.get_objs(stmt.value))
-        return [(address[0], self.sigma(address))]
 
-    def handle_return_label(self, return_label: int) -> UpdatedAnalysisInfo:
-        return []
+    def points_to_transfer_return_label(self, return_label: int):
+        pass
 
     # FIXME: at one time, only one name is visible.
     #  But in flows, we need to consider the situation that later declaration rewrites previous declaration
-    def handle_FunctionDef(self, stmt: ast.FunctionDef) -> UpdatedAnalysisInfo:
-        updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
+    def points_to_transfer_FunctionDef(self, stmt: ast.FunctionDef):
         name: str = stmt.name
         self.func_table.insert_func(
             name,
@@ -381,35 +307,7 @@ class PointsToAnalysis:
         address: Address = self.st(name, self.context)
         self.update_points_to(address, {FuncObjectInfo.obj})
 
-        updated.append((name, {FuncObjectInfo.obj}))
-
-        return updated
-
-    # TODO: it's better to let return always return variable names
-    # TODO: better to add labels to points-to rather than dmf
-    # def handle_Return(self, stmt: ast.Return) -> UpdatedAnalysisInfo:
-    #     updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
-    #
-    #     value: ast.Name = stmt.value
-    #     # get variable name
-    #     name: str = value.id
-    #
-    #     # update analysis components
-    #     next_label, next_store, next_address = self.call_stack.top()
-    #     self.update_points_to(next_address, self.sigma(self.st(name, self.context)))
-    #
-    #     self.next_label = next_label
-    #     self.call_stack.pop()
-    #     self.store = next_store
-    #
-    #     updated.append(
-    #         (next_address[0], self.sigma(self.st(next_address, self.context)))
-    #     )
-    #
-    #     return updated
-
-    def handle_Assign(self, stmt: ast.Assign) -> UpdatedAnalysisInfo:
-        updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
+    def points_to_transfer_Assign(self, stmt: ast.Assign):
 
         right_objs = self.get_objs(stmt.value)
 
@@ -417,8 +315,9 @@ class PointsToAnalysis:
         left_name: str = stmt.targets[0].id
         left_address: Address = self.st(left_name, self.context)
         self.update_points_to(left_address, right_objs)
-        updated.append((left_name, self.sigma(left_address)))
-        return updated
+
+    def points_to_transfer_Pass(self, stmt: ast.Pass):
+        pass
 
     # expr #
     def get_objs(self, expr: ast.expr) -> Set[Obj]:
@@ -552,6 +451,3 @@ class PointsToAnalysis:
 
     def get_objs_of_Tuple(self, expr: ast.Tuple) -> Set[Obj]:
         return {TupleObjectInfo.obj}
-
-    def handle_Pass(self, stmt: ast.Pass = None) -> UpdatedAnalysisInfo:
-        return UpdatedAnalysisInfo([])
