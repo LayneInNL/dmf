@@ -448,7 +448,7 @@ class VarLattice:
         # undef_lattice_str = self.undef_lattice.__repr__()
         res = (
             "Lattice: Bool x None x Num x Str x Dict x Set x List x Tuple x Func:"
-            " {} x {} x {} x {} x {} x {} x {} x {} x {}"
+            " {} x {} x {} x {} x {} x {} x {} x {} x {} \n"
         )
         res = res.format(
             bool_lattice_str,

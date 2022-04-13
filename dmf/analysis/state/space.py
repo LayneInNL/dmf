@@ -78,6 +78,9 @@ class Store:
         self.store[address].add(obj)
 
     def insert_many(self, address: Address, objs: Set[Obj]):
+        # sometimes an object only points to one object, but sometimes points to lots of
+        # if one, clear and add new
+        # self.store[address].clear()
         self.store[address].update(objs)
 
     def get(self, address: Address) -> Set[Obj]:

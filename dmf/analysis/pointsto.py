@@ -39,7 +39,7 @@ from .state.types import (
     FuncObjectInfo,
 )
 from .varlattice import VarLattice
-from ..py2flows.py2flows.cfg.flows import BasicBlock, CFG
+from ..py2flows.py2flows.cfg.flows import BasicBlock, CFG, CallAndAssignBlock
 
 Lattice = NewType("Lattice", Dict[str, VarLattice])
 UpdatedAnalysisInfo = NewType("UpdatedAnalysisInfo", List[Tuple[str, Set[Obj]]])
@@ -75,19 +75,13 @@ def merge(
 #     return condensed_flows
 
 
-def is_subset(left: Optional[Lattice], right: Optional[Lattice]):
-    # left is not None, right is None. So is_subset = False
-    if right is None:
-        return False
-
-    for key, value in left.items():
-        if key not in right:
-            return False
-
-        if not value.is_subset(right[key]):
-            return False
-
-    return True
+def extend_inter_flows(inter_flows):
+    new_inter_flows = {}
+    for a, b, c, d in inter_flows:
+        temp = [a, b, c, d]
+        new_inter_flows[a] = temp
+        new_inter_flows[d] = temp
+    return new_inter_flows
 
 
 class PointsToAnalysis:
@@ -96,11 +90,11 @@ class PointsToAnalysis:
         self.flows: Set[Tuple[int, int]] = cfg.flows
         self.inter_flows: Dict[
             int, List[int, Optional[int], Optional[int], int]
-        ] = self.extend_inter_flows(cfg.inter_flows)
+        ] = extend_inter_flows(cfg.inter_flows)
 
         # self.flows_mapping: DefaultDict[int, Set[int]] = condense_flows(self.flows)
         self.labels: Set[int] = cfg.labels
-        self.extremal_labels: List[int] = [cfg.start.bid]
+        self.extremal_labels: Set[int] = {cfg.start.bid}
         # Note: passed by address
         self.extremal_value: Lattice = defaultdict(VarLattice)
         # Use None as Bottom
@@ -136,6 +130,8 @@ class PointsToAnalysis:
         # WorkList W
         self.work_list = deque(self.flows)
         logging.debug("work_list: {}".format(self.work_list))
+
+        # Analysis list
         self.analysis_list = defaultdict(lambda: self.bot)
         for label in self.extremal_labels:
             # We use None to represent BOTTOM in analysis lattice
@@ -145,21 +141,17 @@ class PointsToAnalysis:
     def iterate(self) -> None:
         while self.work_list:
             fst_label, snd_label = self.work_list.popleft()
-            self.curr_label = fst_label
             logging.debug("Current flow({}, {})".format(fst_label, snd_label))
-
-            # If first one is BOT, we simply skip it.
-            # Since we flow information from known labels to unknown labels.
-            if self.analysis_list[fst_label] == self.bot:
-                logging.debug("{} is bot".format(fst_label))
-                continue
+            self.curr_label = fst_label
 
             # since the result of points-to analysis is incremental, we just use the transferred result
             transferred_lattice: Lattice = self.transfer(fst_label)
             snd_label_lattice: Lattice = self.analysis_list[snd_label]
 
-            if not is_subset(transferred_lattice, snd_label_lattice):
-                self.analysis_list[snd_label] = transferred_lattice
+            if not self.is_subset(transferred_lattice, snd_label_lattice):
+                self.analysis_list[snd_label] = self.union_two_lattices_in_iterate(
+                    self.analysis_list[snd_label], transferred_lattice
+                )
                 if snd_label in self.inter_flows:
                     if self.inter_flows[snd_label][0] == snd_label:
                         # call
@@ -197,11 +189,47 @@ class PointsToAnalysis:
         logging.debug("store:\n{}".format(self.store))
         for label in self.labels:
             logging.debug(
-                "content label: {}, value: {}".format(label, self.mfp_content[label])
+                "content label: {}, value:\n {}".format(label, self.mfp_content[label])
             )
             logging.debug(
-                "effect label: {}, value: {}".format(label, self.mfp_effect[label])
+                "effect label: {}, value:\n {}".format(label, self.mfp_effect[label])
             )
+
+    def is_subset(self, left: Optional[Lattice], right: Optional[Lattice]):
+        # (None, None), (None, ?)
+        if left == self.bot:
+            return True
+
+        # (?, None)
+        if right == self.bot:
+            return False
+
+        left_vars = set(left)
+        right_vars = set(right)
+        if left_vars.issubset(right_vars):
+            for var in left_vars:
+                if not left[var].is_subset(right[var]):
+                    return False
+            return True
+
+        return False
+
+    def union_two_lattices_in_transfer(self, old: Lattice, new: Lattice) -> Lattice:
+        # if old is self.bot, we can't get any new info from it. So old can't be self.bot
+        diff_old_new = set(old).difference(new)
+        for var in diff_old_new:
+            new[var] = old[var]
+
+        return new
+
+    def union_two_lattices_in_iterate(self, old: Lattice, new: Lattice) -> Lattice:
+        if old == self.bot:
+            return new
+        diff_old_new = set(old).difference(new)
+        for var in diff_old_new:
+            new[var] = old[var]
+
+        return new
 
     def st(self, var: str, context: Optional[Context]) -> Address:
         return self.data_stack.st(var, context)
@@ -216,6 +244,9 @@ class PointsToAnalysis:
             self.store.insert_many(address, {objs})
 
     def transfer(self, label: int) -> Lattice:
+        if self.analysis_list[label] == self.bot:
+            return self.bot
+
         # We would like to refactor the code with the strategy in ast.NodeVisitor
 
         if self.is_return_label(label):
@@ -223,23 +254,17 @@ class PointsToAnalysis:
         else:
             transferred: UpdatedAnalysisInfo = self.visit(label)
             logging.debug("transferred {}".format(transferred))
-            new_lattice: Lattice = transform(transferred)
-
-        if not new_lattice:
-            new_lattice = self.analysis_list[label]
-        logging.debug("transferred lattice {}".format(new_lattice))
+            new_fst_lattice: Lattice = transform(transferred)
+            logging.debug("transferred lattice {}".format(new_fst_lattice))
+            old_fst_lattice = self.analysis_list[label]
+            new_fst_lattice = self.union_two_lattices_in_transfer(
+                old_fst_lattice, new_fst_lattice
+            )
+            return new_fst_lattice
 
         return new_lattice
 
     # stmt #
-
-    def extend_inter_flows(self, inter_flows):
-        new_inter_flows = {}
-        for a, b, c, d in inter_flows:
-            temp = [a, b, c, d]
-            new_inter_flows[a] = temp
-            new_inter_flows[d] = temp
-        return new_inter_flows
 
     def is_call_label(self, label: int) -> bool:
         if label in self.inter_flows and label == self.inter_flows[label][0]:
@@ -283,7 +308,7 @@ class PointsToAnalysis:
             if fst_label == return_label:
                 return snd_label
 
-    def handle_call_label(self, label: int):
+    def handle_call_label(self, label: int) -> UpdatedAnalysisInfo:
 
         stmt: ast.Assign = self.blocks[label].stmt[0]
 
@@ -300,7 +325,7 @@ class PointsToAnalysis:
         self.call_stack.push(call_stack_frame)
         self.context = new_context
 
-        return []
+        return UpdatedAnalysisInfo([])
 
     def handle_return_label(self, return_label: int):
         call_label: int = self.inter_flows[return_label][0]
@@ -358,6 +383,7 @@ class PointsToAnalysis:
 
     def handle_Assign(self, stmt: ast.Assign) -> UpdatedAnalysisInfo:
         updated: UpdatedAnalysisInfo = UpdatedAnalysisInfo([])
+
         right_objs = self.get_objs(stmt.value)
 
         # FIXME: Now we assume left has only one var.
