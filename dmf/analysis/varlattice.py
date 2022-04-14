@@ -365,6 +365,7 @@ class UndefLattice:
 
 class VarLattice:
     def __init__(self):
+        self.context = ()
         self.bool_lattice: BoolLattice = BoolLattice()
         self.none_lattice: NoneLattice = NoneLattice()
         self.num_lattice: NumLattice = NumLattice()
@@ -376,6 +377,9 @@ class VarLattice:
         self.func_lattice: FuncLattice = FuncLattice()
         # self.bytes_lattice: BytesLattice = BytesLattice()
         # self.undef_lattice: UndefLattice = UndefLattice()
+
+    def set_context(self, new_context: Tuple) -> None:
+        self.context = new_context
 
     def transform_one(self, obj: Obj):
         heap_context, fields = obj
@@ -408,7 +412,8 @@ class VarLattice:
 
     def is_subset(self, other: VarLattice):
         return (
-            self.bool_lattice.is_subset(other.bool_lattice)
+            self.context <= other.context
+            and self.bool_lattice.is_subset(other.bool_lattice)
             and self.none_lattice.is_subset(other.none_lattice)
             and self.num_lattice.is_subset(other.num_lattice)
             and self.str_lattice.is_subset(other.str_lattice)

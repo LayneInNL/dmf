@@ -202,6 +202,12 @@ class PointsToAnalysis:
         if self.analysis_list[label] == self.bot:
             return self.bot
 
+        if label in self.inter_flows:
+            if is_call_label(self.inter_flows, label):
+                return self.type_analysis_transfer_call(label)
+            if is_exit_return_label(self.inter_flows, label):
+                return self.type_analysis_transfer_return(label)
+
         stmt: ast.stmt = self.blocks[label].stmt[0]
 
         method = "type_analysis_transfer_" + stmt.__class__.__name__
@@ -212,11 +218,50 @@ class PointsToAnalysis:
         transferred_lattice: Lattice = transform([])
         old_lattice = self.analysis_list[label]
         new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
+        new_context = merge_dynamic(label, None, self.context)
+        for key in new_lattice:
+            new_lattice[key].set_context(new_context)
+
+        return new_lattice
+
+    def type_analysis_transfer_return(self, label: int) -> Lattice:
+        call_label: int = self.inter_flows[label][0]
+        call_lattice: Lattice = self.analysis_list[call_label]
+        return_label: int = label
+        return_lattice: Lattice = self.analysis_list[return_label]
+        new_lattice = union_two_lattices_in_transfer(call_lattice, return_lattice)
+        return new_lattice
+
+    def type_analysis_transfer_Return(self, label: int) -> Lattice:
+        left_name = None
+        for a, b in self.flows:
+            if a == label:
+                left_name = self.blocks[b].stmt[0].targets[0].id
+
+        stmt: ast.Return = self.blocks[label].stmt[0]
+        right_name: ast.expr = stmt.value
+        right_objs: Set[Obj] = self.get_objs(right_name)
+
+        transferred_lattice: Lattice = transform([(left_name, right_objs)])
+        return transferred_lattice
 
     def type_analysis_transfer_FunctionDef(self, label: int) -> Lattice:
         stmt: ast.FunctionDef = self.blocks[label].stmt[0]
         function_name: str = stmt.name
         function_objs: Set[Obj] = {FuncObjectInfo.obj}
+
+        self.func_table.insert_func(
+            function_name,
+            self.func_cfgs[function_name][1].start_block.bid,
+            self.func_cfgs[function_name][1].final_block.bid,
+        )
+        logging.debug(
+            "Add ({} {} {}) to function table".format(
+                function_name,
+                self.func_cfgs[function_name][1].start_block.bid,
+                self.func_cfgs[function_name][1].final_block.bid,
+            )
+        )
 
         transferred_lattice: Lattice = transform([(function_name, function_objs)])
         old_lattice = self.analysis_list[label]
@@ -226,7 +271,6 @@ class PointsToAnalysis:
     def type_analysis_transfer_Assign(self, label: int) -> Lattice:
         stmt: ast.Assign = self.blocks[label].stmt[0]
         name: str = stmt.targets[0].id
-        address: Address = (name, self.context)
         objs: Set[Obj] = self.get_objs(stmt.value)
 
         transferred_lattice: Lattice = transform([(name, objs)])
@@ -249,10 +293,8 @@ class PointsToAnalysis:
         stmt = self.blocks[label].stmt[0]
         if is_call_label(self.inter_flows, label):
             return self.points_to_transfer_call(label)
-        elif isinstance(stmt, ast.Return):
-            return self.points_to_transfer_exit_return(label)
         elif is_exit_return_label(self.inter_flows, label):
-            return self.points_to_transfer_return_label(label)
+            return self.points_to_transfer_return(label)
         method = "points_to_transfer_" + stmt.__class__.__name__
         handler = getattr(self, method)
         handler(stmt)
@@ -276,33 +318,20 @@ class PointsToAnalysis:
         self.call_stack.push(call_stack_frame)
         self.context = new_context
 
-    def points_to_transfer_exit_return(self, return_label: int):
-        return_label_content: Lattice = self.analysis_list[return_label]
+    def points_to_transfer_Return(self, stmt: ast.Return):
         next_label, context, address = self.call_stack.top()
-        self.call_stack.pop()
 
-        stmt: ast.Return = self.blocks[return_label].stmt[0]
         self.update_points_to(address, self.get_objs(stmt.value))
+        self.call_stack.pop()
+        self.data_stack.pop()
 
-    def points_to_transfer_return_label(self, return_label: int):
+    def points_to_transfer_return(self, label: int):
         pass
 
     # FIXME: at one time, only one name is visible.
     #  But in flows, we need to consider the situation that later declaration rewrites previous declaration
     def points_to_transfer_FunctionDef(self, stmt: ast.FunctionDef):
         name: str = stmt.name
-        self.func_table.insert_func(
-            name,
-            self.func_cfgs[name][1].start_block.bid,
-            self.func_cfgs[name][1].final_block.bid,
-        )
-        logging.debug(
-            "Add ({} {} {}) to function table".format(
-                name,
-                self.func_cfgs[name][1].start_block.bid,
-                self.func_cfgs[name][1].final_block.bid,
-            )
-        )
 
         address: Address = self.st(name, self.context)
         self.update_points_to(address, {FuncObjectInfo.obj})
@@ -393,9 +422,9 @@ class PointsToAnalysis:
         func: ast.expr = expr.func
         assert isinstance(func, ast.Name)
 
-        entry_id, exit_id = self.func_table.st(func.id)
-        self.inter_flows[self.curr_label][1] = entry_id
-        self.inter_flows[self.curr_label][2] = exit_id
+        entry_label, entry_label = self.func_table.st(func.id)
+        self.inter_flows[self.curr_label][1] = entry_label
+        self.inter_flows[self.curr_label][2] = entry_label
 
         args: List[ast.expr] = expr.args
         keywords: List[ast.keyword] = expr.keywords

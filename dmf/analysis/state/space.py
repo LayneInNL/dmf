@@ -47,6 +47,9 @@ class DataStack:
     def top(self) -> DataStackFrame:
         return self.data_stack[-1]
 
+    def pop(self) -> None:
+        self.data_stack = self.data_stack[:-1]
+
     def insert_var(self, var: str, address: Address) -> None:
         top_frame: DataStackFrame = self.top()
         top_frame[var] = address

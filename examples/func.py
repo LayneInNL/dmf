@@ -18,9 +18,9 @@ def test():
     return a
 
 
-def test2():
-    pass
+# def test2():
+#     pass
 
 
 b = test()
-d = test2()
+# d = test2()
