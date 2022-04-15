@@ -35,6 +35,7 @@ from .state.space import (
     Obj,
     Address,
     FuncTable,
+    ClassTable,
 )
 from .state.types import (
     BoolObjectInfo,
@@ -46,6 +47,7 @@ from .state.types import (
     ListObjectInfo,
     TupleObjectInfo,
     FuncObjectInfo,
+    ClassObjectInfo,
 )
 from .varlattice import VarLattice, Lattice
 from ..py2flows.py2flows.cfg.flows import BasicBlock, CFG
@@ -80,7 +82,7 @@ class PointsToAnalysis:
         # used for computing
         self.blocks: Dict[int, BasicBlock] = cfg.blocks
         self.func_cfgs: Dict[str, (List[str, ast.AST], CFG)] = cfg.func_cfgs
-        self.class_cfgs: Dict[str, (List[str, ast.AST], CFG)] = cfg.class_cfgs
+        self.class_cfgs: Dict[str, CFG] = cfg.class_cfgs
 
         # Control flow graph, it contains program points and ast nodes.
         self.curr_label = cfg.start.bid
@@ -89,6 +91,7 @@ class PointsToAnalysis:
         self.call_stack: CallStack = CallStack()
         self.context: Context = Context(())
         self.func_table: FuncTable = FuncTable()
+        self.class_table: ClassTable = ClassTable()
 
         self.added_flows = set()
         self.added_labels = set()
@@ -114,6 +117,7 @@ class PointsToAnalysis:
         logging.debug("analysis_list: {}".format(self.analysis_list))
 
     def iterate(self) -> None:
+        self.work_list.appendleft((1, 3))
         while self.work_list:
             fst_label, snd_label = self.work_list.popleft()
             logging.debug("Current flow({}, {})".format(fst_label, snd_label))
@@ -268,6 +272,20 @@ class PointsToAnalysis:
         new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
         return new_lattice
 
+    def type_analysis_transfer_ClassDef(self, label: int) -> Lattice:
+        stmt: ast.ClassDef = self.blocks[label].stmt[0]
+        class_name: str = stmt.name
+        start_label: int = self.class_cfgs[class_name].start_block.bid
+        final_label: int = self.class_cfgs[class_name].final_block.bid
+        class_objs: Set[Obj] = {ClassObjectInfo.obj}
+
+        self.class_table.insert_class(class_name, start_label, final_label)
+
+        transferred_lattice: Lattice = transform([(class_name, class_objs)])
+        old_lattice = self.analysis_list[label]
+        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
+        return new_lattice
+
     def type_analysis_transfer_Assign(self, label: int) -> Lattice:
         stmt: ast.Assign = self.blocks[label].stmt[0]
         name: str = stmt.targets[0].id
@@ -335,6 +353,11 @@ class PointsToAnalysis:
 
         address: Address = self.st(name, self.context)
         self.update_points_to(address, {FuncObjectInfo.obj})
+
+    def points_to_transfer_ClassDef(self, stmt: ast.ClassDef):
+        name: str = stmt.name
+        address: Address = self.st(name, self.context)
+        self.update_points_to(address, {ClassObjectInfo.obj})
 
     def points_to_transfer_Assign(self, stmt: ast.Assign):
 

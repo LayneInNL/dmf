@@ -13,23 +13,11 @@
 #  limitations under the License.
 
 
-outside = False
-a = "str"
-
-
-def test():
+class Test:
     a = 1
 
-    # information about a
-    return a
-    # information about b
+    def __init__(self):
+        self.b = 2
 
 
-def test2():
-    pass
-
-
-# know information about test()
-b = test()
-# information about b
-d = test2()
+a = Test()

@@ -305,11 +305,14 @@ class FuncLattice:
         return self.format_mapping[self.value]
 
 
-class BytesLattice:
+class ClassLattice:
     BOT = 1
-    BYTES = 2
-    mapping = {PrimitiveTypes.BYTES: BYTES}
-    format_mapping = {BYTES: "Bytes", BOT: "Bot"}
+    CLASS = 2
+    mapping = {PrimitiveTypes.CLASS: CLASS}
+    format_mapping = {
+        CLASS: "Class",
+        BOT: "Bot",
+    }
 
     def __init__(self):
         self.value: int = self.BOT
@@ -319,48 +322,19 @@ class BytesLattice:
         if value in [2]:
             self.value = self.BOT
         elif value in [3, 4]:
-            self.value = self.BYTES
+            self.value = self.CLASS
 
-    def merge(self, other: BytesLattice):
+    def merge(self, other: ClassLattice):
         self.join(other.value)
 
     def from_heap_context_to_lattice(self, heap_context: int):
         self.join(self.mapping[heap_context])
 
-    def is_subset(self, other: BytesLattice):
+    def is_subset(self, other: ClassLattice):
         return self.value <= other.value
 
     def __repr__(self):
-        return "{}".format(self.format_mapping[self.value])
-
-
-class UndefLattice:
-    BOT = 1
-    UNDEF = 2
-    mapping = {PrimitiveTypes.UNDEF: UNDEF}
-    format_mapping = {UNDEF: "Undef", BOT: "Bot"}
-
-    def __init__(self):
-        self.value: int = self.BOT
-
-    def join(self, other: int):
-        value: int = self.value + other
-        if value in [2]:
-            self.value = self.BOT
-        elif value in [3, 4]:
-            self.value = self.UNDEF
-
-    def merge(self, other: UndefLattice):
-        self.join(other.value)
-
-    def from_heap_context_to_lattice(self, heap_context: int):
-        self.join(self.mapping[heap_context])
-
-    def is_subset(self, other: UndefLattice):
-        return self.value <= other.value
-
-    def __repr__(self):
-        return "{}".format(self.format_mapping[self.value])
+        return self.format_mapping[self.value]
 
 
 class VarLattice:
@@ -375,8 +349,7 @@ class VarLattice:
         self.list_lattice: ListLattice = ListLattice()
         self.tuple_lattice: TupleLattice = TupleLattice()
         self.func_lattice: FuncLattice = FuncLattice()
-        # self.bytes_lattice: BytesLattice = BytesLattice()
-        # self.undef_lattice: UndefLattice = UndefLattice()
+        self.class_lattice: ClassLattice = ClassLattice()
 
     def set_context(self, new_context: Tuple) -> None:
         self.context = new_context
@@ -401,10 +374,8 @@ class VarLattice:
             self.tuple_lattice.from_heap_context_to_lattice(heap_context)
         elif heap_context in [PrimitiveTypes.FUNC]:
             self.func_lattice.from_heap_context_to_lattice(heap_context)
-        # elif heap_context in [PrimitiveTypes.BYTES]:
-        #     self.bytes_lattice.from_heap_context_to_lattice(heap_context)
-        # elif heap_context in [PrimitiveTypes.UNDEF]:
-        #     self.undef_lattice.from_heap_context_to_lattice(heap_context)
+        elif heap_context in [PrimitiveTypes.CLASS]:
+            self.class_lattice.from_heap_context_to_lattice(heap_context)
 
     def transform(self, objs: Set[Obj]):
         for obj in objs:
@@ -422,8 +393,7 @@ class VarLattice:
             and self.list_lattice.is_subset(other.list_lattice)
             and self.tuple_lattice.is_subset(other.tuple_lattice)
             and self.func_lattice.is_subset(other.func_lattice)
-            # and self.bytes_lattice.is_subset(other.bytes_lattice)
-            # and self.undef_lattice.is_subset(other.undef_lattice)
+            and self.class_lattice.is_subset(other.class_lattice)
         )
 
     def merge(self, other: VarLattice):
@@ -436,8 +406,7 @@ class VarLattice:
         self.list_lattice.merge(other.list_lattice)
         self.tuple_lattice.merge(other.tuple_lattice)
         self.func_lattice.merge(other.func_lattice)
-        # self.bytes_lattice.merge(other.bytes_lattice)
-        # self.undef_lattice.merge(other.undef_lattice)
+        self.class_lattice.merge(other.class_lattice)
 
     def __repr__(self):
         bool_lattice_str = self.bool_lattice.__repr__()
@@ -449,11 +418,10 @@ class VarLattice:
         list_lattice_str = self.list_lattice.__repr__()
         tuple_lattice_str = self.tuple_lattice.__repr__()
         func_lattice_str = self.func_lattice.__repr__()
-        # bytes_lattice_str = self.bytes_lattice.__repr__()
-        # undef_lattice_str = self.undef_lattice.__repr__()
+        class_lattice_str = self.class_lattice.__repr__()
         res = (
-            "Lattice: Bool x None x Num x Str x Dict x Set x List x Tuple x Func:"
-            " {} x {} x {} x {} x {} x {} x {} x {} x {} \n"
+            "Lattice: Bool x None x Num x Str x Dict x Set x List x Tuple x Func x Class:"
+            " {} x {} x {} x {} x {} x {} x {} x {} x {} x {} \n"
         )
         res = res.format(
             bool_lattice_str,
@@ -465,8 +433,7 @@ class VarLattice:
             list_lattice_str,
             tuple_lattice_str,
             func_lattice_str,
-            # bytes_lattice_str,
-            # undef_lattice_str,
+            class_lattice_str,
         )
         return res
 

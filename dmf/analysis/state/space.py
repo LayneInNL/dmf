@@ -14,7 +14,7 @@
 
 import logging
 from collections import defaultdict
-from typing import Dict, Tuple, List, Union, Set, NewType, DefaultDict
+from typing import Dict, Tuple, List, Union, Set, NewType, DefaultDict, Any
 
 from .types import BUILTIN_CLASSES, BUILTIN_CLASS_NAMES
 
@@ -131,12 +131,39 @@ class FuncTable:
     def new_and_push_frame(self):
         self.func_table.append({})
 
-    def insert_func(self, name: str, call_id: int, exit_id: int):
+    def insert_func(self, name: str, start_label: int, final_label: int):
         top: Dict[str, FuncInfo] = self.top()
-        top[name] = FuncInfo((call_id, exit_id))
+        top[name] = FuncInfo((start_label, final_label))
 
     def top(self) -> Dict[str, FuncInfo]:
         return self.func_table[-1]
 
-    def st(self, name: str) -> Tuple[int, int]:
+    def pop(self) -> None:
+        self.func_table = self.func_table[:-1]
+
+    def st(self, name: str) -> FuncInfo:
+        return self.top()[name]
+
+
+class ClassTable:
+    def __init__(self):
+        # each class contains global fields, function tables
+        self.class_table: List[
+            Dict[str, Tuple[Tuple[int, int], Set[str], FuncTable]]
+        ] = []
+        self.new_and_push_frame()
+
+    def new_and_push_frame(self):
+        self.class_table.append({})
+
+    def insert_class(self, name: str, start_label: int, final_label: int):
+        self.top()[name] = ((start_label, final_label), set(), FuncTable())
+
+    def top(self) -> Dict[str, Any]:
+        return self.class_table[-1]
+
+    def pop(self) -> None:
+        self.class_table = self.class_table[:-1]
+
+    def st(self, name: str) -> Any:
         return self.top()[name]

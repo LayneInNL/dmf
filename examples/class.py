@@ -12,24 +12,30 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+x = 1
+y = x
 
-outside = False
-a = "str"
 
-
-def test():
+class Test:
     a = 1
+    b = False
 
-    # information about a
-    return a
-    # information about b
+    def __init__(self):
+        self.c = 1
+        self.d = Test.a
+        self.f = Test.e
+
+    e = None
+    for x in [1, 2, 3]:
+        print(x)
 
 
-def test2():
-    pass
+t = Test()
 
+t.e = 2
+Test.e = 3
+print(t.x)
 
-# know information about test()
-b = test()
-# information about b
-d = test2()
+t2 = Test()
+print(t2.e == t.e)
+print(t2.a == t.a)
