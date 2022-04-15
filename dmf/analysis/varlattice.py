@@ -31,8 +31,8 @@ class BoolLattice:
         BOT: "Bot",
     }
 
-    def __init__(self):
-        self.value: int = self.BOT
+    def __init__(self, maximal: bool = False):
+        self.value: int = self.BOOL if maximal else self.BOT
 
     def join(self, other: int):
         value: int = self.value + other
@@ -61,8 +61,8 @@ class NoneLattice:
     mapping = {PrimitiveTypes.NONE: NONE}
     format_mapping = {NONE: "None", BOT: "Bot"}
 
-    def __init__(self):
-        self.value: int = self.BOT
+    def __init__(self, maximal: bool = False):
+        self.value: int = self.NONE if maximal else self.BOT
 
     def join(self, other: int):
         value: int = self.value + other
@@ -90,8 +90,8 @@ class NumLattice:
     mapping = {PrimitiveTypes.NUM: NUM}
     format_mapping = {NUM: "Num", BOT: "Bot"}
 
-    def __init__(self):
-        self.value: int = self.BOT
+    def __init__(self, maximal: bool = False):
+        self.value: int = self.NUM if maximal else self.BOT
 
     def join(self, other: int):
         value: int = self.value + other
@@ -122,8 +122,8 @@ class StrLattice:
         BOT: "Bot",
     }
 
-    def __init__(self):
-        self.value: int = self.BOT
+    def __init__(self, maximal: bool = False):
+        self.value: int = self.STR if maximal else self.BOT
 
     def join(self, other: int):
         value: int = self.value + other
@@ -154,8 +154,8 @@ class DictLattice:
         BOT: "Bot",
     }
 
-    def __init__(self):
-        self.value: int = self.BOT
+    def __init__(self, maximal: bool = False):
+        self.value: int = self.DICT if maximal else self.BOT
 
     def join(self, other: int):
         value: int = self.value + other
@@ -186,8 +186,8 @@ class SetLattice:
         BOT: "Bot",
     }
 
-    def __init__(self):
-        self.value: int = self.BOT
+    def __init__(self, maximal: bool = False):
+        self.value: int = self.SET if maximal else self.BOT
 
     def join(self, other: int):
         value: int = self.value + other
@@ -218,8 +218,8 @@ class ListLattice:
         BOT: "Bot",
     }
 
-    def __init__(self):
-        self.value: int = self.BOT
+    def __init__(self, maximal: bool = False):
+        self.value: int = self.LIST if maximal else self.BOT
 
     def join(self, other: int):
         value: int = self.value + other
@@ -250,8 +250,8 @@ class TupleLattice:
         BOT: "Bot",
     }
 
-    def __init__(self):
-        self.value: int = self.BOT
+    def __init__(self, maximal: bool = False):
+        self.value: int = self.TUPLE if maximal else self.BOT
 
     def join(self, other: int):
         value: int = self.value + other
@@ -282,8 +282,8 @@ class FuncLattice:
         BOT: "Bot",
     }
 
-    def __init__(self):
-        self.value: int = self.BOT
+    def __init__(self, maximal: bool = False):
+        self.value: int = self.FUNC if maximal else self.BOT
 
     def join(self, other: int):
         value: int = self.value + other
@@ -314,8 +314,8 @@ class ClassLattice:
         BOT: "Bot",
     }
 
-    def __init__(self):
-        self.value: int = self.BOT
+    def __init__(self, maximal: bool = False):
+        self.value: int = self.CLASS if maximal else self.BOT
 
     def join(self, other: int):
         value: int = self.value + other
@@ -338,18 +338,18 @@ class ClassLattice:
 
 
 class VarLattice:
-    def __init__(self):
+    def __init__(self, maximal: bool = False):
         self.context = ()
-        self.bool_lattice: BoolLattice = BoolLattice()
-        self.none_lattice: NoneLattice = NoneLattice()
-        self.num_lattice: NumLattice = NumLattice()
-        self.str_lattice: StrLattice = StrLattice()
-        self.dict_lattice: DictLattice = DictLattice()
-        self.set_lattice: SetLattice = SetLattice()
-        self.list_lattice: ListLattice = ListLattice()
-        self.tuple_lattice: TupleLattice = TupleLattice()
-        self.func_lattice: FuncLattice = FuncLattice()
-        self.class_lattice: ClassLattice = ClassLattice()
+        self.bool_lattice: BoolLattice = BoolLattice(maximal)
+        self.none_lattice: NoneLattice = NoneLattice(maximal)
+        self.num_lattice: NumLattice = NumLattice(maximal)
+        self.str_lattice: StrLattice = StrLattice(maximal)
+        self.dict_lattice: DictLattice = DictLattice(maximal)
+        self.set_lattice: SetLattice = SetLattice(maximal)
+        self.list_lattice: ListLattice = ListLattice(maximal)
+        self.tuple_lattice: TupleLattice = TupleLattice(maximal)
+        self.func_lattice: FuncLattice = FuncLattice(maximal)
+        self.class_lattice: ClassLattice = ClassLattice(maximal)
 
     def set_context(self, new_context: Tuple) -> None:
         self.context = new_context

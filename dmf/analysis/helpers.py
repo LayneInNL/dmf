@@ -71,6 +71,9 @@ def union_two_lattices_in_transfer(old: Lattice, new: Lattice) -> Lattice:
 def union_two_lattices_in_iterate(old: Lattice, new: Lattice) -> Lattice:
     if old is None:
         return new
+    intersection_old_new = set(old).intersection(new)
+    for var in intersection_old_new:
+        new[var].merge(old[var])
     diff_old_new = set(old).difference(new)
     for var in diff_old_new:
         new[var] = old[var]

@@ -62,12 +62,13 @@ class PointsToAnalysis:
         self.inter_flows: Dict[int, List[int, Optional[int], int]] = extend_inter_flows(
             cfg.inter_flows
         )
+        self.vars: Set[str] = cfg.vars
 
         # self.flows_mapping: DefaultDict[int, Set[int]] = condense_flows(self.flows)
         self.labels: Set[int] = cfg.labels
         self.extremal_labels: Set[int] = {cfg.start.bid}
         # Note: passed by address
-        self.extremal_value: Lattice = defaultdict(VarLattice)
+        self.extremal_value: Lattice = defaultdict(lambda: VarLattice(maximal=True))
         # Use None as Bottom
         self.bot: None = None
 
@@ -117,7 +118,6 @@ class PointsToAnalysis:
         logging.debug("analysis_list: {}".format(self.analysis_list))
 
     def iterate(self) -> None:
-        self.work_list.appendleft((1, 3))
         while self.work_list:
             fst_label, snd_label = self.work_list.popleft()
             logging.debug("Current flow({}, {})".format(fst_label, snd_label))
