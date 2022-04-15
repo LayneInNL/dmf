@@ -89,6 +89,9 @@ class Store:
     def get(self, address: Address) -> Set[Obj]:
         return self.store[address]
 
+    def get_store(self) -> Dict:
+        return self.store.items()
+
     def __repr__(self) -> str:
         result = ""
         for key, value in self.store.items():

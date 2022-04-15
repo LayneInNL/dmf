@@ -59,9 +59,9 @@ class PointsToAnalysis:
     def __init__(self, cfg: CFG):
 
         self.flows: Set[Tuple[int, int]] = cfg.flows
-        self.inter_flows: Dict[int, List[int, Optional[int], int]] = extend_inter_flows(
-            cfg.inter_flows
-        )
+        self.inter_flows: Dict[
+            int, List[int, Optional[int], Optional[int], int]
+        ] = extend_inter_flows(cfg.inter_flows)
         self.vars: Set[str] = cfg.vars
 
         # self.flows_mapping: DefaultDict[int, Set[int]] = condense_flows(self.flows)
@@ -138,25 +138,18 @@ class PointsToAnalysis:
                         # function name
                         name: str = stmt.value.func.id
                         entry_label, exit_label = self.func_table.st(name)
-                        # on-the-fly edge from call to entry of the function
-                        self.inter_flows[snd_label][1] = entry_label
-                        call2entry = (snd_label, entry_label)
-                        self.flows.add(call2entry)
-                        exit2return = (exit_label, self.inter_flows[snd_label][-1])
-                        self.flows.add(exit2return)
-                        self.added_flows.add(call2entry)
-                        self.added_flows.add(exit2return)
-                        logging.debug("Add flow {}".format(call2entry))
-                        self.flows.update(self.func_cfgs[name][1].flows)
-                        self.added_flows.update(self.func_cfgs[name][1].flows)
-                        logging.debug(
-                            "Add flows {}".format(self.func_cfgs[name][1].flows)
+
+                        self.modify_inter_flows(snd_label, entry_label, exit_label)
+
+                        additional_flows = self.on_the_fly_flows(
+                            snd_label, entry_label, exit_label
                         )
-                        self.blocks.update(self.func_cfgs[name][1].blocks)
-                        self.added_blocks.update(self.func_cfgs[name][1].blocks)
-                        logging.debug(
-                            "add blocks {}".format(self.func_cfgs[name][1].blocks)
-                        )
+                        self.flows.update(additional_flows)
+                        logging.debug("Add flows {}".format(additional_flows))
+
+                        additional_blocks = self.on_the_fly_blocks(snd_label)
+                        self.blocks.update(additional_blocks)
+                        logging.debug("Add blocks {}".format(additional_blocks))
 
                     # exit_return label
                     elif self.inter_flows[snd_label][-1] == snd_label:
@@ -202,6 +195,26 @@ class PointsToAnalysis:
     def update_points_to(self, address: Address, objs: Union[Set[Obj], Obj]):
         self.store.insert_many(address, objs)
 
+    def modify_inter_flows(self, call_label: int, entry_label: int, exit_label: int):
+        # on-the-fly edge from call to entry of the function
+        self.inter_flows[call_label][1] = entry_label
+        self.inter_flows[call_label][2] = exit_label
+        self.inter_flows[entry_label] = self.inter_flows[call_label]
+        self.inter_flows[exit_label] = self.inter_flows[call_label]
+
+    def on_the_fly_flows(
+        self, call_label: int, entry_label: int, exit_label: int
+    ) -> Set:
+        call2entry = (call_label, entry_label)
+        exit2return = (exit_label, self.inter_flows[call_label][-1])
+        name: str = self.blocks[call_label].stmt[0].value.func.id
+        func_flows = self.func_cfgs[name][1].flows
+        return func_flows | {call2entry, exit2return}
+
+    def on_the_fly_blocks(self, call_label: int):
+        name: str = self.blocks[call_label].stmt[0].value.func.id
+        return self.func_cfgs[name][1].blocks
+
     def type_analysis_transfer(self, label: int):
         if self.analysis_list[label] == self.bot:
             return self.bot
@@ -229,6 +242,12 @@ class PointsToAnalysis:
         return new_lattice
 
     def type_analysis_transfer_return(self, label: int) -> Lattice:
+        left_name: str = self.blocks[label].stmt[0].targets[0].id
+        right_name: str = self.blocks[label].pass_through_name
+        right_objs = self.blocks[label].pass_through_value
+        pass_through_lattice: Lattice = transform([(right_name, right_objs)])
+        left_name_lattice: Lattice = transform([(left_name, right_objs)])
+
         call_label: int = self.inter_flows[label][0]
         call_lattice: Lattice = self.analysis_list[call_label]
         return_label: int = label
@@ -237,17 +256,17 @@ class PointsToAnalysis:
         return new_lattice
 
     def type_analysis_transfer_Return(self, label: int) -> Lattice:
-        left_name = None
-        for a, b in self.flows:
-            if a == label:
-                left_name = self.blocks[b].stmt[0].targets[0].id
-
-        stmt: ast.Return = self.blocks[label].stmt[0]
-        right_name: ast.expr = stmt.value
-        right_objs: Set[Obj] = self.get_objs(right_name)
-
-        transferred_lattice: Lattice = transform([(left_name, right_objs)])
-        return transferred_lattice
+        name: str = self.blocks[label].stmt[0].value.id
+        pass_through_name: str = self.blocks[
+            self.inter_flows[label][-1]
+        ].pass_through_name
+        transferred_lattice: Lattice = transform([])
+        self.blocks[self.inter_flows[label][-1]].pass_through_value = self.sigma(
+            self.st(name, self.context)
+        )
+        old_lattice = self.analysis_list[label]
+        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
+        return new_lattice
 
     def type_analysis_transfer_FunctionDef(self, label: int) -> Lattice:
         stmt: ast.FunctionDef = self.blocks[label].stmt[0]
@@ -448,9 +467,6 @@ class PointsToAnalysis:
         entry_label, entry_label = self.func_table.st(func.id)
         self.inter_flows[self.curr_label][1] = entry_label
         self.inter_flows[self.curr_label][2] = entry_label
-
-        args: List[ast.expr] = expr.args
-        keywords: List[ast.keyword] = expr.keywords
 
         return {NoneObjectInfo.obj}
 

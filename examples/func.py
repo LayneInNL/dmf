@@ -13,23 +13,23 @@
 #  limitations under the License.
 
 
-outside = False
-a = "str"
-
-
-def test():
-    a = 1
-
-    # information about a
-    return a
-    # information about b
+# outside = False
+# a = "str"
+#
+#
+# def test():
+#     a = 1
+#
+#     # information about a
+#     return a
+#     # information about b
 
 
 def test2():
     pass
 
 
-# know information about test()
-b = test()
+# # know information about test()
+# b = test()
 # information about b
 d = test2()

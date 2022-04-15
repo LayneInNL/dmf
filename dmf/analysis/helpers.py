@@ -50,12 +50,12 @@ def merge_dynamic(
         pass
 
 
-def extend_inter_flows(inter_flows):
+def extend_inter_flows(inter_flows: Set[Tuple[int, Optional[int], Optional[int], int]]):
     new_inter_flows = {}
-    for a, b, c in inter_flows:
-        temp = [a, b, c]
+    for a, b, c, d in inter_flows:
+        temp = [a, b, c, d]
         new_inter_flows[a] = temp
-        new_inter_flows[c] = temp
+        new_inter_flows[d] = temp
     return new_inter_flows
 
 
