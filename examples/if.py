@@ -18,3 +18,5 @@ else:
     x = False
 
 a = x
+
+b = 1 if True else False

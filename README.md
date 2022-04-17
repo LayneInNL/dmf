@@ -23,7 +23,7 @@ An instance of a dynamic monotone framework for type analysis for Python.
 - [] For
 - [] AsyncFor
 - [] While
-- [] If
+- [x] If
 - [] with
 - [] AsyncWith
 - [] Raise
@@ -42,6 +42,7 @@ An instance of a dynamic monotone framework for type analysis for Python.
 - [x] BinOp
 - [x] UnaryOp
 - [x] Lambda
+- [x] IfExp
 - [x] Dict
 - [x] Set
 - [x] ListComp

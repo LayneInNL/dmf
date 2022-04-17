@@ -257,9 +257,6 @@ class PointsToAnalysis:
 
     def type_analysis_transfer_Return(self, label: int) -> Lattice:
         name: str = self.blocks[label].stmt[0].value.id
-        pass_through_name: str = self.blocks[
-            self.inter_flows[label][-1]
-        ].pass_through_name
         transferred_lattice: Lattice = transform([])
         self.blocks[self.inter_flows[label][-1]].pass_through_value = self.sigma(
             self.st(name, self.context)
@@ -311,6 +308,12 @@ class PointsToAnalysis:
         objs: Set[Obj] = self.get_objs(stmt.value)
 
         transferred_lattice: Lattice = transform([(name, objs)])
+        old_lattice = self.analysis_list[label]
+        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
+        return new_lattice
+
+    def type_analysis_transfer_If(self, label: int) -> Lattice:
+        transferred_lattice: Lattice = transform([])
         old_lattice = self.analysis_list[label]
         new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
         return new_lattice
@@ -386,6 +389,9 @@ class PointsToAnalysis:
         left_name: str = stmt.targets[0].id
         left_address: Address = self.st(left_name, self.context)
         self.update_points_to(left_address, right_objs)
+
+    def points_to_transfer_If(self, stmt: ast.If):
+        pass
 
     def points_to_transfer_Pass(self, stmt: ast.Pass):
         pass
