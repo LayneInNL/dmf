@@ -312,6 +312,12 @@ class PointsToAnalysis:
         new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
         return new_lattice
 
+    def type_analysis_transfer_While(self, label: int) -> Lattice:
+        transferred_lattice: Lattice = transform([])
+        old_lattice = self.analysis_list[label]
+        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
+        return new_lattice
+
     def type_analysis_transfer_If(self, label: int) -> Lattice:
         transferred_lattice: Lattice = transform([])
         old_lattice = self.analysis_list[label]
@@ -389,6 +395,9 @@ class PointsToAnalysis:
         left_name: str = stmt.targets[0].id
         left_address: Address = self.st(left_name, self.context)
         self.update_points_to(left_address, right_objs)
+
+    def points_to_transfer_While(self, stmt: ast.While):
+        pass
 
     def points_to_transfer_If(self, stmt: ast.If):
         pass

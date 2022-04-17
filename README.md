@@ -12,7 +12,7 @@ An instance of a dynamic monotone framework for type analysis for Python.
 
 ## Supported language constructs
 - [] Module
-- [] FunctionDef
+- [x] FunctionDef
 - [] AsyncFunctionDef
 - [] ClassDef
 - [] Return
@@ -22,7 +22,7 @@ An instance of a dynamic monotone framework for type analysis for Python.
 - [] AnnAssign
 - [] For
 - [] AsyncFor
-- [] While
+- [x] While
 - [x] If
 - [] with
 - [] AsyncWith
