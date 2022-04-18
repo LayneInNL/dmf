@@ -14,4 +14,9 @@
 
 a = 0
 while a > 0:
-    a = a + 1
+    a = False
+
+x = False
+y = 1
+if x and y:
+    z = 1

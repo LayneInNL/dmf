@@ -242,9 +242,13 @@ class PointsToAnalysis:
         return new_lattice
 
     def type_analysis_transfer_return(self, label: int) -> Lattice:
+        # left name in assign
         left_name: str = self.blocks[label].stmt[0].targets[0].id
+        # right name in pass through assign
         right_name: str = self.blocks[label].pass_through_name
+        # right objs in pass through assign
         right_objs = self.blocks[label].pass_through_value
+
         pass_through_lattice: Lattice = transform([(right_name, right_objs)])
         left_name_lattice: Lattice = transform([(left_name, right_objs)])
 
@@ -252,7 +256,7 @@ class PointsToAnalysis:
         call_lattice: Lattice = self.analysis_list[call_label]
         return_label: int = label
         return_lattice: Lattice = self.analysis_list[return_label]
-        new_lattice = union_two_lattices_in_transfer(call_lattice, return_lattice)
+        new_lattice = union_two_lattices_in_transfer(call_lattice, left_name_lattice)
         return new_lattice
 
     def type_analysis_transfer_Return(self, label: int) -> Lattice:
@@ -371,6 +375,7 @@ class PointsToAnalysis:
         self.call_stack.pop()
         self.data_stack.pop()
 
+    # Nothing needs to be done here. Since we finish the transfer in Return label
     def points_to_transfer_return(self, label: int):
         pass
 

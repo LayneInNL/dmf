@@ -11,6 +11,14 @@ An instance of a dynamic monotone framework for type analysis for Python.
 5. Compute type information *T* by maximal fixed point algorithm
 
 ## Supported language constructs
+
+### Special ones
+- [] Call label
+- [] Entry label
+- [] Exit label
+- [] Return label
+
+### General ones
 - [] Module
 - [x] FunctionDef
 - [] AsyncFunctionDef
@@ -34,7 +42,7 @@ An instance of a dynamic monotone framework for type analysis for Python.
 - [] Global
 - [] Nonlocal
 - [] Expr
-- [] Pass
+- [x] Pass
 - [] Break
 - [] Continue
 

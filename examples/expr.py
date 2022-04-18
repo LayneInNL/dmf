@@ -12,25 +12,4 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-
-# outside = False
-# a = "str"
-#
-#
-def test():
-    a = 1
-
-    # information about a
-    return a
-    # information about b
-
-
-def test2():
-    pass
-
-
-# # know information about test()
-b = test()
-a = b
-# information about b
-# d = test2()
+a = 1 + 2 + 3 + 4
