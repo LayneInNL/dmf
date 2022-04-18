@@ -82,8 +82,8 @@ class PointsToAnalysis:
 
         # used for computing
         self.blocks: Dict[int, BasicBlock] = cfg.blocks
-        self.func_cfgs: Dict[str, (List[str, ast.AST], CFG)] = cfg.func_cfgs
-        self.class_cfgs: Dict[str, CFG] = cfg.class_cfgs
+        self.func_cfgs: Dict[Tuple[str, int], (List[str, ast.AST], CFG)] = cfg.func_cfgs
+        self.class_cfgs: Dict[Tuple[str, int], CFG] = cfg.class_cfgs
 
         # Control flow graph, it contains program points and ast nodes.
         self.curr_label = cfg.start.bid
@@ -120,10 +120,14 @@ class PointsToAnalysis:
     def iterate(self) -> None:
         while self.work_list:
             fst_label, snd_label = self.work_list.popleft()
+            self.curr_label = fst_label
             logging.debug("Current flow({}, {})".format(fst_label, snd_label))
 
             transferred_lattice: Lattice = self.type_analysis_transfer(fst_label)
             logging.debug("Transferred lattice: {}".format(transferred_lattice))
+
+            # since the result of points-to analysis is incremental, we just use the transferred result
+            self.points_to_transfer(fst_label)
 
             if not is_subset(transferred_lattice, self.analysis_list[snd_label]):
                 self.analysis_list[snd_label] = union_two_lattices_in_iterate(
@@ -160,9 +164,6 @@ class PointsToAnalysis:
                 self.work_list.extendleft(added_flows)
 
             self.curr_label = fst_label
-
-            # since the result of points-to analysis is incremental, we just use the transferred result
-            self.points_to_transfer(fst_label)
 
     def present(self) -> None:
         self.all_labels = set()
@@ -208,12 +209,27 @@ class PointsToAnalysis:
         call2entry = (call_label, entry_label)
         exit2return = (exit_label, self.inter_flows[call_label][-1])
         name: str = self.blocks[call_label].stmt[0].value.func.id
-        func_flows = self.func_cfgs[name][1].flows
-        return func_flows | {call2entry, exit2return}
+
+        func_flows = set()
+        func_objs: Set[Obj] = self.sigma(self.st(name, self.context))
+        assert len(func_objs) == 1
+        for obj in func_objs:
+            name_label_pair = (name, obj[0])
+            func_flows.update(self.func_cfgs[name_label_pair][1].flows)
+        func_flows.update({call2entry, exit2return})
+        return func_flows
 
     def on_the_fly_blocks(self, call_label: int):
         name: str = self.blocks[call_label].stmt[0].value.func.id
-        return self.func_cfgs[name][1].blocks
+
+        func_blocks = {}
+        func_objs: Set[Obj] = self.sigma(self.st(name, self.context))
+        assert len(func_objs) == 1
+        for obj in func_objs:
+            name_label_pair = (name, obj[0])
+            func_blocks.update(self.func_cfgs[name_label_pair][1].blocks)
+
+        return func_blocks
 
     def type_analysis_transfer(self, label: int):
         if self.analysis_list[label] == self.bot:
@@ -274,16 +290,13 @@ class PointsToAnalysis:
         function_name: str = stmt.name
         function_objs: Set[Obj] = {FuncObjectInfo.obj}
 
-        self.func_table.insert_func(
-            function_name,
-            self.func_cfgs[function_name][1].start_block.bid,
-            self.func_cfgs[function_name][1].final_block.bid,
-        )
+        func_cfg = self.func_cfgs[(function_name, label)]
+        entry_label: int = func_cfg[1].start_block.bid
+        exit_label: int = func_cfg[1].final_block.bid
+        self.func_table.insert_func(function_name, entry_label, exit_label)
         logging.debug(
             "Add ({} {} {}) to function table".format(
-                function_name,
-                self.func_cfgs[function_name][1].start_block.bid,
-                self.func_cfgs[function_name][1].final_block.bid,
+                function_name, entry_label, exit_label
             )
         )
 
@@ -385,7 +398,9 @@ class PointsToAnalysis:
         name: str = stmt.name
 
         address: Address = self.st(name, self.context)
-        self.update_points_to(address, {FuncObjectInfo.obj})
+        objs: Set[Obj] = set()
+        objs.add((self.curr_label, None))
+        self.update_points_to(address, objs)
 
     def points_to_transfer_ClassDef(self, stmt: ast.ClassDef):
         name: str = stmt.name
@@ -480,15 +495,15 @@ class PointsToAnalysis:
     def get_objs_of_Compare(self, expr: ast.Expr) -> Set[Obj]:
         return {BoolObjectInfo.obj}
 
-    def get_objs_of_Call(self, expr: ast.Call) -> Set[Obj]:
-        func: ast.expr = expr.func
-        assert isinstance(func, ast.Name)
-
-        entry_label, entry_label = self.func_table.st(func.id)
-        self.inter_flows[self.curr_label][1] = entry_label
-        self.inter_flows[self.curr_label][2] = entry_label
-
-        return {NoneObjectInfo.obj}
+    # def get_objs_of_Call(self, expr: ast.Call) -> Set[Obj]:
+    #     func: ast.expr = expr.func
+    #     assert isinstance(func, ast.Name)
+    #
+    #     entry_label, entry_label = self.func_table.st(func.id)
+    #     self.inter_flows[self.curr_label][1] = entry_label
+    #     self.inter_flows[self.curr_label][2] = entry_label
+    #
+    #     return {NoneObjectInfo.obj}
 
     def get_objs_of_Num(self, expr: ast.Num) -> Set[Obj]:
         return {NumObjectInfo.obj}
