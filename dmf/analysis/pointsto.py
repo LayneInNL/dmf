@@ -308,11 +308,13 @@ class PointsToAnalysis:
     def type_analysis_transfer_ClassDef(self, label: int) -> Lattice:
         stmt: ast.ClassDef = self.blocks[label].stmt[0]
         class_name: str = stmt.name
-        start_label: int = self.class_cfgs[class_name].start_block.bid
-        final_label: int = self.class_cfgs[class_name].final_block.bid
         class_objs: Set[Obj] = {ClassObjectInfo.obj}
 
-        self.class_table.insert_class(class_name, start_label, final_label)
+        class_cfg = self.class_cfgs[(class_name, label)]
+        start_label: int = class_cfg.start_block.bid
+        exit_label: int = class_cfg.final_block.bid
+
+        self.class_table.insert_class(class_name, start_label, exit_label)
 
         transferred_lattice: Lattice = transform([(class_name, class_objs)])
         old_lattice = self.analysis_list[label]
@@ -404,8 +406,10 @@ class PointsToAnalysis:
 
     def points_to_transfer_ClassDef(self, stmt: ast.ClassDef):
         name: str = stmt.name
-        address: Address = self.st(name, self.context)
-        self.update_points_to(address, {ClassObjectInfo.obj})
+        # address: Address = self.st(name, self.context)
+        # objs: Set[Obj] = set()
+        # objs.add((self.curr_label, None))
+        # self.update_points_to(address, objs)
 
     def points_to_transfer_Assign(self, stmt: ast.Assign):
 
