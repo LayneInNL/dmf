@@ -55,8 +55,20 @@ from ..py2flows.py2flows.cfg.flows import BasicBlock, CFG
 UpdatedAnalysisInfo = NewType("UpdatedAnalysisInfo", List[Tuple[str, Set[Obj]]])
 
 
-class PointsToAnalysis:
+class PointsToComponents:
+    # Control flow graph, it contains program points and ast nodes.
+    def __init__(self):
+        self.data_stack: DataStack = DataStack()
+        self.store: Store = Store()
+        self.call_stack: CallStack = CallStack()
+        self.context: Context = Context(())
+        self.func_table: FuncTable = FuncTable()
+        self.class_table: ClassTable = ClassTable()
+
+
+class PointsToAnalysis(PointsToComponents):
     def __init__(self, cfg: CFG):
+        super().__init__()
 
         self.flows: Set[Tuple[int, int]] = cfg.flows
         self.inter_flows: Dict[
@@ -72,33 +84,10 @@ class PointsToAnalysis:
         # Use None as Bottom
         self.bot: None = None
 
-        # used for iteration
-        self.work_list: Optional[Deque[Tuple[int, int]]] = None
-        self.analysis_list: Optional[Dict[int, Lattice]] = None
-
-        # used for final result
-        self.mfp_content: Optional[Dict[int, Lattice]] = None
-        self.mfp_effect: Optional[Dict[int, Lattice]] = None
-
         # used for computing
         self.blocks: Dict[int, BasicBlock] = cfg.blocks
         self.func_cfgs: Dict[Tuple[str, int], (List[str, ast.AST], CFG)] = cfg.func_cfgs
         self.class_cfgs: Dict[Tuple[str, int], CFG] = cfg.class_cfgs
-
-        # Control flow graph, it contains program points and ast nodes.
-        self.curr_label = cfg.start.bid
-        self.data_stack: DataStack = DataStack()
-        self.store: Store = Store()
-        self.call_stack: CallStack = CallStack()
-        self.context: Context = Context(())
-        self.func_table: FuncTable = FuncTable()
-        self.class_table: ClassTable = ClassTable()
-
-        self.added_flows = set()
-        self.added_labels = set()
-        self.added_blocks = {}
-
-        self.all_labels = None
 
     def compute_fixed_point(self) -> None:
         self.initialize()
@@ -120,13 +109,11 @@ class PointsToAnalysis:
     def iterate(self) -> None:
         while self.work_list:
             fst_label, snd_label = self.work_list.popleft()
-            self.curr_label = fst_label
             logging.debug("Current flow({}, {})".format(fst_label, snd_label))
 
             transferred_lattice: Lattice = self.type_analysis_transfer(fst_label)
             logging.debug("Transferred lattice: {}".format(transferred_lattice))
 
-            # since the result of points-to analysis is incremental, we just use the transferred result
             self.points_to_transfer(fst_label)
 
             if not is_subset(transferred_lattice, self.analysis_list[snd_label]):
@@ -134,57 +121,70 @@ class PointsToAnalysis:
                     self.analysis_list[snd_label], transferred_lattice
                 )
 
-                # it is eiter call label or exit_return label
+                # it is either call label or return label
                 if snd_label in self.inter_flows:
                     # call label
                     if self.inter_flows[snd_label][0] == snd_label:
-                        stmt: ast.Assign = self.blocks[snd_label].stmt[0]
-                        # function name
-                        name: str = stmt.value.func.id
-                        entry_label, exit_label = self.func_table.st(name)
+                        stmt = self.blocks[snd_label].stmt[0]
+                        if isinstance(stmt, ast.Assign):
+                            # function name
+                            name: str = stmt.value.func.id
+                            entry_label, exit_label = self.func_table.st(name)
 
-                        self.modify_inter_flows(snd_label, entry_label, exit_label)
+                            self.modify_inter_flows(snd_label, entry_label, exit_label)
 
-                        additional_flows = self.on_the_fly_flows(
-                            snd_label, entry_label, exit_label
-                        )
-                        self.flows.update(additional_flows)
-                        logging.debug("Add flows {}".format(additional_flows))
+                            additional_flows = self.on_the_fly_flows(
+                                snd_label, entry_label, exit_label
+                            )
+                            self.flows.update(additional_flows)
+                            logging.debug("Add flows {}".format(additional_flows))
 
-                        additional_blocks = self.on_the_fly_blocks(snd_label)
-                        self.blocks.update(additional_blocks)
-                        logging.debug("Add blocks {}".format(additional_blocks))
+                            additional_blocks = self.on_the_fly_blocks(snd_label)
+                            self.blocks.update(additional_blocks)
+                            logging.debug("Add blocks {}".format(additional_blocks))
+                        elif isinstance(stmt, ast.ClassDef):
+                            class_name: str = stmt.name
+                            name_label = (class_name, snd_label)
+                            class_cfg: CFG = self.class_cfgs[name_label]
+                            entry_label: int = class_cfg.start_block.bid
+                            exit_label: int = class_cfg.final_block.bid
+                            self.class_table.insert_class(
+                                class_name, entry_label, exit_label
+                            )
+                            entry_label, exit_label = self.class_table.st(class_name)
+                            self.modify_inter_flows(snd_label, entry_label, exit_label)
 
-                    # exit_return label
-                    elif self.inter_flows[snd_label][-1] == snd_label:
-                        # return
-                        pass
+                            additional_flows = self.on_the_fly_flows(
+                                snd_label, entry_label, exit_label
+                            )
+                            self.flows.update(additional_flows)
+                            logging.debug("Add flows {}".format(additional_flows))
 
+                            additional_blocks = self.on_the_fly_blocks(snd_label)
+                            self.blocks.update(additional_blocks)
+                            logging.debug("Add blocks {}".format(additional_blocks))
+
+                # add related flows to work_list
                 added_flows = [(l2, l3) for l2, l3 in self.flows if l2 == snd_label]
                 self.work_list.extendleft(added_flows)
 
-            self.curr_label = fst_label
-
     def present(self) -> None:
-        self.all_labels = set()
+        all_labels = set()
         for flow in self.flows:
-            self.all_labels.update(flow)
+            all_labels.update(flow)
 
-        self.mfp_content = {}
-        self.mfp_effect = {}
-        for label in self.all_labels:
-            self.mfp_content[label] = self.analysis_list[label]
-            self.mfp_effect[label] = self.type_analysis_transfer(label)
+        mfp_content = {}
+        mfp_effect = {}
+        for label in all_labels:
+            mfp_content[label] = self.analysis_list[label]
+            mfp_effect[label] = self.type_analysis_transfer(label)
 
-    def pprint(self):
-        logging.debug("data stack:\n{}".format(self.data_stack))
-        logging.debug("store:\n{}".format(self.store))
-        for label in self.all_labels:
+        for label in all_labels:
             logging.debug(
-                "content label: {}, value:\n {}".format(label, self.mfp_content[label])
+                "content label: {}, value:\n {}".format(label, mfp_content[label])
             )
             logging.debug(
-                "effect label: {}, value:\n {}".format(label, self.mfp_effect[label])
+                "effect label: {}, value:\n {}".format(label, mfp_effect[label])
             )
 
     def st(self, var: str, context: Optional[Context]) -> Address:
@@ -193,53 +193,73 @@ class PointsToAnalysis:
     def sigma(self, address: Address) -> Set[Obj]:
         return self.store.get(address)
 
-    def update_points_to(self, address: Address, objs: Union[Set[Obj], Obj]):
+    def update_points_to(self, address: Address, objs: Set[Obj]):
         self.store.insert_many(address, objs)
 
+    # modify inter flows
     def modify_inter_flows(self, call_label: int, entry_label: int, exit_label: int):
         # on-the-fly edge from call to entry of the function
+        # we let call, entry, exit, return label point to the same object.
         self.inter_flows[call_label][1] = entry_label
         self.inter_flows[call_label][2] = exit_label
         self.inter_flows[entry_label] = self.inter_flows[call_label]
         self.inter_flows[exit_label] = self.inter_flows[call_label]
 
+    # add flows to pointer analysis
     def on_the_fly_flows(
         self, call_label: int, entry_label: int, exit_label: int
     ) -> Set:
         call2entry = (call_label, entry_label)
         exit2return = (exit_label, self.inter_flows[call_label][-1])
-        name: str = self.blocks[call_label].stmt[0].value.func.id
-
-        func_flows = set()
-        func_objs: Set[Obj] = self.sigma(self.st(name, self.context))
-        assert len(func_objs) == 1
-        for obj in func_objs:
-            name_label_pair = (name, obj[0])
-            func_flows.update(self.func_cfgs[name_label_pair][1].flows)
-        func_flows.update({call2entry, exit2return})
-        return func_flows
+        stmt = self.blocks[call_label].stmt[0]
+        flows = {call2entry, exit2return}
+        if isinstance(stmt, ast.Assign):
+            name: str = stmt.value.func.id
+            func_objs: Set[Obj] = self.sigma(self.st(name, self.context))
+            assert len(func_objs) == 1
+            for obj in func_objs:
+                name_label_pair = (name, obj[0])
+                flows.update(self.func_cfgs[name_label_pair][1].flows)
+        elif isinstance(stmt, ast.ClassDef):
+            name: str = stmt.name
+            name_label = (name, call_label)
+            flows.update(self.class_cfgs[name_label].flows)
+        return flows
 
     def on_the_fly_blocks(self, call_label: int):
-        name: str = self.blocks[call_label].stmt[0].value.func.id
 
-        func_blocks = {}
-        func_objs: Set[Obj] = self.sigma(self.st(name, self.context))
-        assert len(func_objs) == 1
-        for obj in func_objs:
-            name_label_pair = (name, obj[0])
-            func_blocks.update(self.func_cfgs[name_label_pair][1].blocks)
+        stmt = self.blocks[call_label].stmt[0]
+        blocks = {}
+        if isinstance(stmt, ast.Assign):
+            name: str = stmt.value.func.id
+            func_objs: Set[Obj] = self.sigma(self.st(name, self.context))
+            assert len(func_objs) == 1
+            for obj in func_objs:
+                name_label = (name, obj[0])
+                blocks.update(self.func_cfgs[name_label][1].blocks)
+        elif isinstance(stmt, ast.ClassDef):
+            name: str = stmt.name
+            name_label = (name, call_label)
+            blocks.update(self.class_cfgs[name_label].blocks)
 
-        return func_blocks
+        return blocks
 
     def type_analysis_transfer(self, label: int):
         if self.analysis_list[label] == self.bot:
             return self.bot
 
         if label in self.inter_flows:
+            stmt = self.blocks[label].stmt[0]
             if is_call_label(self.inter_flows, label):
-                return self.type_analysis_transfer_call(label)
+                if isinstance(stmt, ast.Assign):
+                    return self.type_analysis_transfer_call(label)
+                elif isinstance(stmt, ast.ClassDef):
+                    return self.type_analysis_transfer_enter_into_class(label)
             if is_exit_return_label(self.inter_flows, label):
-                return self.type_analysis_transfer_return(label)
+                if isinstance(stmt, ast.Assign):
+                    return self.type_analysis_transfer_return(label)
+                elif isinstance(stmt, ast.ClassDef):
+                    return self.type_analysis_transfer_return_from_class(label)
 
         stmt: ast.stmt = self.blocks[label].stmt[0]
 
@@ -250,12 +270,17 @@ class PointsToAnalysis:
     # enter into new function, change context
     def type_analysis_transfer_call(self, label: int) -> Lattice:
         transferred_lattice: Lattice = transform([])
-        old_lattice = self.analysis_list[label]
-        new_lattice = union_two_lattices_in_transfer({}, transferred_lattice)
-        new_context = merge_dynamic(label, None, self.context)
-        for key in new_lattice:
-            new_lattice[key].set_context(new_context)
+        old_lattice = {}
+        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
+        return new_lattice
 
+    def type_analysis_transfer_enter_into_class(self, label: int) -> Lattice:
+        stmt: ast.ClassDef = self.blocks[label].stmt[0]
+        class_name: str = stmt.name
+
+        transferred_lattice: Lattice = transform([])
+        old_lattice = {}
+        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
         return new_lattice
 
     # union exit lattice and call lattice
@@ -277,7 +302,10 @@ class PointsToAnalysis:
         new_lattice = union_two_lattices_in_transfer(call_lattice, left_name_lattice)
         return new_lattice
 
-    # in fact it's exit label
+    def type_analysis_transfer_return_from_class(self, label: int) -> Lattice:
+        pass
+
+    # in fact it's exit
     def type_analysis_transfer_Return(self, label: int) -> Lattice:
         name: str = self.blocks[label].stmt[0].value.id
         transferred_lattice: Lattice = transform([])
@@ -304,22 +332,6 @@ class PointsToAnalysis:
         )
 
         transferred_lattice: Lattice = transform([(function_name, function_objs)])
-        old_lattice = self.analysis_list[label]
-        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
-        return new_lattice
-
-    def type_analysis_transfer_ClassDef(self, label: int) -> Lattice:
-        stmt: ast.ClassDef = self.blocks[label].stmt[0]
-        class_name: str = stmt.name
-        class_objs: Set[Obj] = {ClassObjectInfo.obj}
-
-        class_cfg = self.class_cfgs[(class_name, label)]
-        start_label: int = class_cfg.start_block.bid
-        exit_label: int = class_cfg.final_block.bid
-
-        self.class_table.insert_class(class_name, start_label, exit_label)
-
-        transferred_lattice: Lattice = transform([(class_name, class_objs)])
         old_lattice = self.analysis_list[label]
         new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
         return new_lattice
@@ -358,9 +370,19 @@ class PointsToAnalysis:
 
         stmt = self.blocks[label].stmt[0]
         if is_call_label(self.inter_flows, label):
-            return self.points_to_transfer_call(label)
+            if isinstance(stmt, ast.Assign):
+                self.points_to_transfer_call(label)
+                return
+            elif isinstance(stmt, ast.ClassDef):
+                self.points_to_transfer_enter_into_class(label)
+                return
         elif is_exit_return_label(self.inter_flows, label):
-            return self.points_to_transfer_return(label)
+            if isinstance(stmt, ast.Assign):
+                self.points_to_transfer_return(label)
+                return
+            elif isinstance(stmt, ast.ClassDef):
+                self.points_to_transfer_return_from_class(label)
+                return
         method = "points_to_transfer_" + stmt.__class__.__name__
         handler = getattr(self, method)
         handler(label)
@@ -380,6 +402,21 @@ class PointsToAnalysis:
             self.st(stmt.targets[0].id, self.context),
         )
         logging.debug("Next label is: {}".format(call_stack_frame))
+
+        self.data_stack.new_and_push_frame()
+        self.call_stack.push(call_stack_frame)
+        self.context = new_context
+
+    def points_to_transfer_enter_into_class(self, label: int):
+        stmt: ast.ClassDef = self.blocks[label].stmt[0]
+
+        name: str = stmt.name
+
+        new_context = merge_dynamic(label, None, self.context)
+        next_label = self.inter_flows[label][-1]
+        call_stack_frame = (next_label, self.context, self.st(name, self.context))
+        logging.debug("New context after merge is: {}".format(new_context))
+
         self.data_stack.new_and_push_frame()
         self.call_stack.push(call_stack_frame)
         self.context = new_context
@@ -396,6 +433,9 @@ class PointsToAnalysis:
     def points_to_transfer_return(self, label: int):
         pass
 
+    def points_to_transfer_return_from_class(self, label: int):
+        pass
+
     # FIXME: at one time, only one name is visible.
     #  But in flows, we need to consider the situation that later declaration rewrites previous declaration
     def points_to_transfer_FunctionDef(self, label: int):
@@ -404,7 +444,7 @@ class PointsToAnalysis:
 
         address: Address = self.st(name, self.context)
         objs: Set[Obj] = set()
-        objs.add((self.curr_label, None))
+        objs.add((label, None))
         self.update_points_to(address, objs)
 
     def points_to_transfer_ClassDef(self, label: int):
