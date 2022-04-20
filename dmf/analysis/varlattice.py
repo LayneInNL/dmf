@@ -337,9 +337,27 @@ class ClassLattice:
         return self.format_mapping[self.value]
 
 
+class HeapLattice:
+    def __init__(self, maximal: bool = False):
+        self.value: Set[int] = set()
+
+    def join(self, other: int):
+        self.value.add(other)
+
+    def merge(self, other: HeapLattice):
+        self.value.update(other.value)
+
+    def is_subset(self, other: HeapLattice):
+        return self.value <= other.value
+
+    def __repr__(self):
+        return self.value.__repr__()
+
+
 class VarLattice:
     def __init__(self, maximal: bool = False):
         self.context = ()
+        self.heap_lattice: HeapLattice = HeapLattice(maximal)
         self.bool_lattice: BoolLattice = BoolLattice(maximal)
         self.none_lattice: NoneLattice = NoneLattice(maximal)
         self.num_lattice: NumLattice = NumLattice(maximal)
@@ -376,6 +394,8 @@ class VarLattice:
             self.func_lattice.from_heap_context_to_lattice(heap_context)
         elif heap_context in [PrimitiveTypes.CLASS]:
             self.class_lattice.from_heap_context_to_lattice(heap_context)
+        else:
+            self.heap_lattice.join(heap_context)
 
     def transform(self, objs: Set[Obj]):
         for obj in objs:
@@ -384,6 +404,7 @@ class VarLattice:
     def is_subset(self, other: VarLattice):
         return (
             self.context <= other.context
+            and self.heap_lattice.is_subset(other.heap_lattice)
             and self.bool_lattice.is_subset(other.bool_lattice)
             and self.none_lattice.is_subset(other.none_lattice)
             and self.num_lattice.is_subset(other.num_lattice)
@@ -397,6 +418,7 @@ class VarLattice:
         )
 
     def merge(self, other: VarLattice):
+        self.heap_lattice.merge(other.heap_lattice)
         self.bool_lattice.merge(other.bool_lattice)
         self.none_lattice.merge(other.none_lattice)
         self.num_lattice.merge(other.num_lattice)
@@ -409,6 +431,7 @@ class VarLattice:
         self.class_lattice.merge(other.class_lattice)
 
     def __repr__(self):
+        heap_lattice_str = self.heap_lattice.__repr__()
         bool_lattice_str = self.bool_lattice.__repr__()
         none_lattice_str = self.none_lattice.__repr__()
         num_lattice_str = self.num_lattice.__repr__()
@@ -420,10 +443,11 @@ class VarLattice:
         func_lattice_str = self.func_lattice.__repr__()
         class_lattice_str = self.class_lattice.__repr__()
         res = (
-            "Lattice: Bool x None x Num x Str x Dict x Set x List x Tuple x Func x Class:"
-            " {} x {} x {} x {} x {} x {} x {} x {} x {} x {} \n"
+            "Lattice: Heap x Bool x None x Num x Str x Dict x Set x List x Tuple x Func x Class:"
+            " {} x {} x {} x {} x {} x {} x {} x {} x {} x {} x {} \n"
         )
         res = res.format(
+            heap_lattice_str,
             bool_lattice_str,
             none_lattice_str,
             num_lattice_str,
@@ -439,4 +463,11 @@ class VarLattice:
 
 
 Lattice = NewType("Lattice", Dict[str, VarLattice])
+
+
+def new_empty_lattice() -> Lattice:
+    lattice: Lattice = Lattice({})
+    return lattice
+
+
 Context_Lattice = NewType("Context_Lattice", Dict[str, Tuple[Context, VarLattice]])

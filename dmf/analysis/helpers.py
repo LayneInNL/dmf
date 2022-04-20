@@ -88,7 +88,21 @@ def is_call_label(inter_flows, label: int) -> bool:
         return False
 
 
-def is_exit_return_label(inter_flows, label: int) -> bool:
+def is_entry_label(inter_flows, label: int) -> bool:
+    if label in inter_flows and label == inter_flows[label][1]:
+        return True
+    else:
+        return False
+
+
+def is_exit_label(inter_flows, label: int) -> bool:
+    if label in inter_flows and label == inter_flows[label][-2]:
+        return True
+    else:
+        return False
+
+
+def is_return_label(inter_flows, label: int) -> bool:
     if label in inter_flows and label == inter_flows[label][-1]:
         return True
     else:

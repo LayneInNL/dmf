@@ -24,8 +24,10 @@ from .helpers import (
     union_two_lattices_in_iterate,
     is_subset,
     is_call_label,
-    is_exit_return_label,
+    is_return_label,
     merge_dynamic,
+    is_exit_label,
+    is_entry_label,
 )
 from .state.space import (
     DataStack,
@@ -49,7 +51,7 @@ from .state.types import (
     FuncObjectInfo,
     ClassObjectInfo,
 )
-from .varlattice import VarLattice, Lattice
+from .varlattice import VarLattice, Lattice, new_empty_lattice
 from ..py2flows.py2flows.cfg.flows import BasicBlock, CFG
 
 UpdatedAnalysisInfo = NewType("UpdatedAnalysisInfo", List[Tuple[str, Set[Obj]]])
@@ -64,6 +66,15 @@ class PointsToComponents:
         self.context: Context = Context(())
         self.func_table: FuncTable = FuncTable()
         self.class_table: ClassTable = ClassTable()
+
+    def st(self, var: str, context: Optional[Context]) -> Address:
+        return self.data_stack.st(var, context)
+
+    def sigma(self, address: Address) -> Set[Obj]:
+        return self.store.get(address)
+
+    def update_points_to(self, address: Address, objs: Set[Obj]):
+        self.store.insert_many(address, objs)
 
 
 class PointsToAnalysis(PointsToComponents):
@@ -102,7 +113,6 @@ class PointsToAnalysis(PointsToComponents):
         # Analysis list
         self.analysis_list = defaultdict(lambda: self.bot)
         for label in self.extremal_labels:
-            # We use None to represent BOTTOM in analysis lattice
             self.analysis_list[label] = self.extremal_value
         logging.debug("analysis_list: {}".format(self.analysis_list))
 
@@ -166,10 +176,12 @@ class PointsToAnalysis(PointsToComponents):
 
                 # add related flows to work_list
                 added_flows = [(l2, l3) for l2, l3 in self.flows if l2 == snd_label]
+                print(added_flows)
                 self.work_list.extendleft(added_flows)
+                print(self.work_list)
 
     def present(self) -> None:
-        all_labels = set()
+        all_labels: Set[int] = set()
         for flow in self.flows:
             all_labels.update(flow)
 
@@ -186,15 +198,6 @@ class PointsToAnalysis(PointsToComponents):
             logging.debug(
                 "effect label: {}, value:\n {}".format(label, mfp_effect[label])
             )
-
-    def st(self, var: str, context: Optional[Context]) -> Address:
-        return self.data_stack.st(var, context)
-
-    def sigma(self, address: Address) -> Set[Obj]:
-        return self.store.get(address)
-
-    def update_points_to(self, address: Address, objs: Set[Obj]):
-        self.store.insert_many(address, objs)
 
     # modify inter flows
     def modify_inter_flows(self, call_label: int, entry_label: int, exit_label: int):
@@ -255,11 +258,16 @@ class PointsToAnalysis(PointsToComponents):
                     return self.type_analysis_transfer_call(label)
                 elif isinstance(stmt, ast.ClassDef):
                     return self.type_analysis_transfer_enter_into_class(label)
-            if is_exit_return_label(self.inter_flows, label):
+            elif is_exit_label(self.inter_flows, label):
+                if isinstance(stmt, ast.Return):
+                    pass
+                else:
+                    return self.type_exit_class(label)
+            elif is_return_label(self.inter_flows, label):
                 if isinstance(stmt, ast.Assign):
                     return self.type_analysis_transfer_return(label)
                 elif isinstance(stmt, ast.ClassDef):
-                    return self.type_analysis_transfer_return_from_class(label)
+                    return self.type_return_class(label)
 
         stmt: ast.stmt = self.blocks[label].stmt[0]
 
@@ -270,40 +278,51 @@ class PointsToAnalysis(PointsToComponents):
     # enter into new function, change context
     def type_analysis_transfer_call(self, label: int) -> Lattice:
         transferred_lattice: Lattice = transform([])
-        old_lattice = {}
+        old_lattice: Lattice = new_empty_lattice()
         new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
         return new_lattice
 
     def type_analysis_transfer_enter_into_class(self, label: int) -> Lattice:
-        stmt: ast.ClassDef = self.blocks[label].stmt[0]
-        class_name: str = stmt.name
-
         transferred_lattice: Lattice = transform([])
-        old_lattice = {}
+        old_lattice: Lattice = new_empty_lattice()
         new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
         return new_lattice
 
     # union exit lattice and call lattice
     def type_analysis_transfer_return(self, label: int) -> Lattice:
         # left name in assign
+        assert len(self.blocks[label].stmt[0].targets) == 1
         left_name: str = self.blocks[label].stmt[0].targets[0].id
-        # right name in pass through assign
-        right_name: str = self.blocks[label].pass_through_name
         # right objs in pass through assign
         right_objs = self.blocks[label].pass_through_value
 
-        pass_through_lattice: Lattice = transform([(right_name, right_objs)])
         left_name_lattice: Lattice = transform([(left_name, right_objs)])
 
         call_label: int = self.inter_flows[label][0]
         call_lattice: Lattice = self.analysis_list[call_label]
-        return_label: int = label
-        return_lattice: Lattice = self.analysis_list[return_label]
         new_lattice = union_two_lattices_in_transfer(call_lattice, left_name_lattice)
         return new_lattice
 
-    def type_analysis_transfer_return_from_class(self, label: int) -> Lattice:
-        pass
+    def type_exit_class(self, label: int) -> Lattice:
+        return_label: int = self.inter_flows[label][-1]
+        self.blocks[return_label].pass_through_value = self.data_stack.top()
+        transferred: Lattice = transform([])
+        old: Lattice = self.analysis_list[label]
+        new: Lattice = union_two_lattices_in_transfer(old, transferred)
+        return new
+
+    def type_return_class(self, label: int) -> Lattice:
+        stmt: ast.ClassDef = self.blocks[label].stmt[0]
+        class_name: str = stmt.name
+        old: Lattice = self.analysis_list[self.inter_flows[label][0]]
+        obj = (label, {})
+        data_stack_frame = self.blocks[label].pass_through_value
+        for name, address in data_stack_frame.items():
+            obj[1][name] = address
+        frozen_obj = (label, frozenset(obj[1]))
+        transferred: Lattice = transform([(class_name, {frozen_obj})])
+        new: Lattice = union_two_lattices_in_transfer(old, transferred)
+        return new
 
     # in fact it's exit
     def type_analysis_transfer_Return(self, label: int) -> Lattice:
@@ -376,7 +395,15 @@ class PointsToAnalysis(PointsToComponents):
             elif isinstance(stmt, ast.ClassDef):
                 self.points_to_transfer_enter_into_class(label)
                 return
-        elif is_exit_return_label(self.inter_flows, label):
+        elif is_entry_label(self.inter_flows, label):
+            pass
+        elif is_exit_label(self.inter_flows, label):
+            if isinstance(stmt, ast.Return):
+                pass
+            else:
+                self.points_to_exit_class(label)
+
+        elif is_return_label(self.inter_flows, label):
             if isinstance(stmt, ast.Assign):
                 self.points_to_transfer_return(label)
                 return
@@ -432,6 +459,12 @@ class PointsToAnalysis(PointsToComponents):
     # Nothing needs to be done here. Since we finish the transfer in Return label
     def points_to_transfer_return(self, label: int):
         pass
+
+    def points_to_exit_class(self, label: int):
+        call_stack_frame = self.call_stack.top()
+        self.call_stack.pop()
+        data_stack_frame = self.data_stack.top()
+        self.data_stack.pop()
 
     def points_to_transfer_return_from_class(self, label: int):
         pass

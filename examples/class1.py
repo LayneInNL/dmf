@@ -15,9 +15,3 @@
 
 class Test:
     a = 1
-
-    def __init__(self):
-        self.b = 2
-
-
-a = Test()
