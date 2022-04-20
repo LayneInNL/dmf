@@ -247,16 +247,18 @@ class PointsToAnalysis:
         handler = getattr(self, method)
         return handler(label)
 
+    # enter into new function, change context
     def type_analysis_transfer_call(self, label: int) -> Lattice:
         transferred_lattice: Lattice = transform([])
         old_lattice = self.analysis_list[label]
-        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
+        new_lattice = union_two_lattices_in_transfer({}, transferred_lattice)
         new_context = merge_dynamic(label, None, self.context)
         for key in new_lattice:
             new_lattice[key].set_context(new_context)
 
         return new_lattice
 
+    # union exit lattice and call lattice
     def type_analysis_transfer_return(self, label: int) -> Lattice:
         # left name in assign
         left_name: str = self.blocks[label].stmt[0].targets[0].id
@@ -275,6 +277,7 @@ class PointsToAnalysis:
         new_lattice = union_two_lattices_in_transfer(call_lattice, left_name_lattice)
         return new_lattice
 
+    # in fact it's exit label
     def type_analysis_transfer_Return(self, label: int) -> Lattice:
         name: str = self.blocks[label].stmt[0].value.id
         transferred_lattice: Lattice = transform([])
@@ -352,8 +355,6 @@ class PointsToAnalysis:
         return new_lattice
 
     def points_to_transfer(self, label: int):
-        if self.analysis_list[label] == self.bot:
-            return self.bot
 
         stmt = self.blocks[label].stmt[0]
         if is_call_label(self.inter_flows, label):
@@ -362,7 +363,7 @@ class PointsToAnalysis:
             return self.points_to_transfer_return(label)
         method = "points_to_transfer_" + stmt.__class__.__name__
         handler = getattr(self, method)
-        handler(stmt)
+        handler(label)
 
     # stmt #
 
@@ -383,7 +384,8 @@ class PointsToAnalysis:
         self.call_stack.push(call_stack_frame)
         self.context = new_context
 
-    def points_to_transfer_Return(self, stmt: ast.Return):
+    def points_to_transfer_Return(self, label: int):
+        stmt: ast.Return = self.blocks[label].stmt[0]
         next_label, context, address = self.call_stack.top()
 
         self.update_points_to(address, self.get_objs(stmt.value))
@@ -396,7 +398,8 @@ class PointsToAnalysis:
 
     # FIXME: at one time, only one name is visible.
     #  But in flows, we need to consider the situation that later declaration rewrites previous declaration
-    def points_to_transfer_FunctionDef(self, stmt: ast.FunctionDef):
+    def points_to_transfer_FunctionDef(self, label: int):
+        stmt: ast.FunctionDef = self.blocks[label].stmt[0]
         name: str = stmt.name
 
         address: Address = self.st(name, self.context)
@@ -404,14 +407,16 @@ class PointsToAnalysis:
         objs.add((self.curr_label, None))
         self.update_points_to(address, objs)
 
-    def points_to_transfer_ClassDef(self, stmt: ast.ClassDef):
+    def points_to_transfer_ClassDef(self, label: int):
+        stmt: ast.ClassDef = self.blocks[label].stmt[0]
         name: str = stmt.name
         # address: Address = self.st(name, self.context)
         # objs: Set[Obj] = set()
         # objs.add((self.curr_label, None))
         # self.update_points_to(address, objs)
 
-    def points_to_transfer_Assign(self, stmt: ast.Assign):
+    def points_to_transfer_Assign(self, label: int):
+        stmt: ast.Assign = self.blocks[label].stmt[0]
 
         right_objs = self.get_objs(stmt.value)
 
@@ -420,13 +425,13 @@ class PointsToAnalysis:
         left_address: Address = self.st(left_name, self.context)
         self.update_points_to(left_address, right_objs)
 
-    def points_to_transfer_While(self, stmt: ast.While):
+    def points_to_transfer_While(self, label: int):
         pass
 
-    def points_to_transfer_If(self, stmt: ast.If):
+    def points_to_transfer_If(self, label: int):
         pass
 
-    def points_to_transfer_Pass(self, stmt: ast.Pass):
+    def points_to_transfer_Pass(self, label: int):
         pass
 
     # expr #
