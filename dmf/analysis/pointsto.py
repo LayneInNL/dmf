@@ -122,14 +122,14 @@ class PointsToAnalysis(PointsToComponents):
             fst_label, snd_label = self.work_list.popleft()
             logging.debug("Current flow({}, {})".format(fst_label, snd_label))
 
-            transferred_lattice: Lattice = self.type_analysis_transfer(fst_label)
-            logging.debug("Transferred lattice: {}".format(transferred_lattice))
+            effects, transferred = self.type_analysis_transfer(fst_label)
+            logging.debug("Transferred lattice: {}".format(transferred))
 
-            self.points_to_transfer(fst_label)
+            self.points_to_transfer(fst_label, effects)
 
-            if not is_subset(transferred_lattice, self.analysis_list[snd_label]):
+            if not is_subset(transferred, self.analysis_list[snd_label]):
                 self.analysis_list[snd_label] = union_two_lattices_in_iterate(
-                    self.analysis_list[snd_label], transferred_lattice
+                    self.analysis_list[snd_label], transferred
                 )
 
                 # it is either call label or return label
@@ -276,41 +276,47 @@ class PointsToAnalysis(PointsToComponents):
         handler = getattr(self, method)
         return handler(label)
 
-    # enter into new function, change context
-    def type_function_call(self, label: int) -> Lattice:
-        transferred_lattice: Lattice = transform([])
-        old_lattice: Lattice = new_empty_lattice()
-        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
-        return new_lattice
+    # enter into new function
+    def type_function_call(self, label: int):
+        effects = []
+        transferred: Lattice = transform(effects)
+        old: Lattice = new_empty_lattice()
+        new = union_two_lattices_in_transfer(old, transferred)
+        return effects, new
 
-    def type_class_call(self, label: int) -> Lattice:
-        transferred_lattice: Lattice = transform([])
-        old_lattice: Lattice = new_empty_lattice()
-        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
-        return new_lattice
+    def type_class_call(self, label: int):
+        effects = []
+        transferred: Lattice = transform(effects)
+        old: Lattice = new_empty_lattice()
+        new = union_two_lattices_in_transfer(old, transferred)
+        return effects, new
 
     # union exit lattice and call lattice
-    def type_function_return(self, label: int) -> Lattice:
+    def type_function_return(self, label: int):
+        effects = []
         # left name in assign
-        assert len(self.blocks[label].stmt[0].targets) == 1
-        left_name: str = self.blocks[label].stmt[0].targets[0].id
+        stmt = self.blocks[label].stmt[0]
+        left_name: str = stmt.targets[0].id
         # right objs in pass through assign
         right_objs = self.blocks[label].pass_through_value
-
-        assign: Lattice = transform([(left_name, right_objs)])
+        effects.append((left_name, right_objs))
+        transferred: Lattice = transform(effects)
 
         call_label: int = self.inter_flows[label][0]
-        call: Lattice = self.analysis_list[call_label]
-        new: Lattice = union_two_lattices_in_transfer(call, assign)
-        return new
+        call = self.analysis_list[call_label]
+        new = union_two_lattices_in_transfer(call, transferred)
+        return effects, new
 
-    def type_class_exit(self, label: int) -> Lattice:
-        transferred: Lattice = transform([])
-        old: Lattice = self.analysis_list[label]
-        new: Lattice = union_two_lattices_in_transfer(old, transferred)
-        return new
+    # id function
+    def type_class_exit(self, label: int):
+        effects = []
+        transferred = transform(effects)
+        old = self.analysis_list[label]
+        new = union_two_lattices_in_transfer(old, transferred)
+        return effects, new
 
-    def type_class_return(self, label: int) -> Lattice:
+    def type_class_return(self, label: int):
+        effects = []
         stmt: ast.ClassDef = self.blocks[label].stmt[0]
         class_name: str = stmt.name
 
@@ -320,26 +326,29 @@ class PointsToAnalysis(PointsToComponents):
             fields.add(field)
         frozen_fields = frozenset(fields)
         objs: Set[Obj] = {(label, frozen_fields)}
-        transferred: Lattice = transform([(class_name, objs)])
+        effects.append((class_name, objs))
+        transferred: Lattice = transform(effects)
 
         call_label: int = self.inter_flows[label][0]
         old: Lattice = self.analysis_list[call_label]
         new: Lattice = union_two_lattices_in_transfer(old, transferred)
-        return new
+        return effects, new
 
     # in fact it's exit
-    def type_Return(self, label: int) -> Lattice:
+    def type_Return(self, label: int):
+        effects = []
         name: str = self.blocks[label].stmt[0].value.id
         return_label: int = self.inter_flows[label][-1]
         self.blocks[return_label].pass_through_value = self.sigma(
             self.st(name, self.context)
         )
         old: Lattice = self.analysis_list[label]
-        transferred: Lattice = transform([])
+        transferred: Lattice = transform(effects)
         new: Lattice = union_two_lattices_in_transfer(old, transferred)
-        return new
+        return effects, new
 
-    def type_FunctionDef(self, label: int) -> Lattice:
+    def type_FunctionDef(self, label: int):
+        effects = []
         stmt: ast.FunctionDef = self.blocks[label].stmt[0]
         function_name: str = stmt.name
         function_objs: Set[Obj] = {FuncObjectInfo.obj}
@@ -354,73 +363,77 @@ class PointsToAnalysis(PointsToComponents):
             )
         )
 
-        transferred_lattice: Lattice = transform([(function_name, function_objs)])
-        old_lattice = self.analysis_list[label]
-        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
-        return new_lattice
+        effects.append((function_name, function_objs))
+        transferred: Lattice = transform(effects)
+        old = self.analysis_list[label]
+        new = union_two_lattices_in_transfer(old, transferred)
+        return effects, new
 
-    def type_Assign(self, label: int) -> Lattice:
+    def type_Assign(self, label: int):
+        effects = []
         stmt: ast.Assign = self.blocks[label].stmt[0]
         name: str = stmt.targets[0].id
         objs: Set[Obj] = self.get_objs(stmt.value)
 
-        transferred_lattice: Lattice = transform([(name, objs)])
-        old_lattice = self.analysis_list[label]
-        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
-        return new_lattice
+        effects.append((name, objs))
+        transferred: Lattice = transform(effects)
+        old = self.analysis_list[label]
+        new = union_two_lattices_in_transfer(old, transferred)
+        return effects, new
 
-    def type_While(self, label: int) -> Lattice:
-        transferred_lattice: Lattice = transform([])
-        old_lattice = self.analysis_list[label]
-        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
-        return new_lattice
+    def type_While(self, label: int):
+        effects = []
+        transferred: Lattice = transform(effects)
+        old = self.analysis_list[label]
+        new = union_two_lattices_in_transfer(old, transferred)
+        return effects, new
 
-    def type_If(self, label: int) -> Lattice:
-        transferred_lattice: Lattice = transform([])
-        old_lattice = self.analysis_list[label]
-        new_lattice = union_two_lattices_in_transfer(old_lattice, transferred_lattice)
-        return new_lattice
+    def type_If(self, label: int):
+        effects = []
+        transferred: Lattice = transform(effects)
+        old = self.analysis_list[label]
+        new = union_two_lattices_in_transfer(old, transferred)
+        return effects, new
 
-    def type_Pass(self, label: int) -> Lattice:
-        transferred_lattice: Lattice = transform([])
-        old_lattice: Lattice = self.analysis_list[label]
-        new_lattice: Lattice = union_two_lattices_in_transfer(
-            old_lattice, transferred_lattice
-        )
-        return new_lattice
+    def type_Pass(self, label: int):
+        effects = []
+        transferred: Lattice = transform(effects)
+        old = self.analysis_list[label]
+        new = union_two_lattices_in_transfer(old, transferred)
+        return effects, new
 
-    def points_to_transfer(self, label: int):
+    def points_to_transfer(self, label, effects):
 
         stmt = self.blocks[label].stmt[0]
         if is_call_label(self.inter_flows, label):
             if isinstance(stmt, ast.Assign):
-                self.points_to_function_call(label)
+                self.points_to_function_call(label, effects)
                 return
             elif isinstance(stmt, ast.ClassDef):
-                self.points_to_class_call(label)
+                self.points_to_class_call(label, effects)
                 return
         elif is_entry_label(self.inter_flows, label):
             pass
         elif is_exit_label(self.inter_flows, label):
             if isinstance(stmt, ast.Return):
-                self.points_to_function_return(label)
+                self.points_to_function_return(label, effects)
             else:
-                self.points_to_class_exit(label)
+                self.points_to_class_exit(label, effects)
 
         elif is_return_label(self.inter_flows, label):
             if isinstance(stmt, ast.Assign):
-                self.points_to_function_return(label)
+                self.points_to_function_return(label, effects)
                 return
             elif isinstance(stmt, ast.ClassDef):
-                self.points_to_class_return(label)
+                self.points_to_class_return(label, effects)
                 return
         method = "points_to_" + stmt.__class__.__name__
         handler = getattr(self, method)
-        handler(label)
+        handler(label, effects)
 
     # stmt #
 
-    def points_to_function_call(self, label: int):
+    def points_to_function_call(self, label, effects):
 
         stmt: ast.Assign = self.blocks[label].stmt[0]
 
@@ -438,7 +451,7 @@ class PointsToAnalysis(PointsToComponents):
         self.call_stack.push(call_stack_frame)
         self.context = new_context
 
-    def points_to_class_call(self, label: int):
+    def points_to_class_call(self, label, effects):
         stmt: ast.ClassDef = self.blocks[label].stmt[0]
 
         name: str = stmt.name
@@ -452,7 +465,7 @@ class PointsToAnalysis(PointsToComponents):
         self.call_stack.push(call_stack_frame)
         self.context = new_context
 
-    def points_to_Return(self, label: int):
+    def points_to_Return(self, label, effects):
         stmt: ast.Return = self.blocks[label].stmt[0]
         _, context, address = self.call_stack.top()
 
@@ -461,7 +474,7 @@ class PointsToAnalysis(PointsToComponents):
         self.call_stack.pop()
         self.context = context
 
-    def points_to_class_exit(self, label: int):
+    def points_to_class_exit(self, label, effects):
         next_label, context, address = self.call_stack.top()
         return_label: int = self.inter_flows[label][-1]
         self.blocks[return_label].pass_through_address = address
@@ -471,10 +484,10 @@ class PointsToAnalysis(PointsToComponents):
         self.context = context
 
     # Nothing needs to be done here. Since we finish the transfer in Return label
-    def points_to_function_return(self, label: int):
+    def points_to_function_return(self, label, effects):
         pass
 
-    def points_to_class_return(self, label: int):
+    def points_to_class_return(self, label, effects):
         address: Address = self.blocks[label].pass_through_address
         frame: DataStackFrame = self.blocks[label].pass_through_objs
         fields = set()
@@ -486,7 +499,7 @@ class PointsToAnalysis(PointsToComponents):
 
     # FIXME: at one time, only one name is visible.
     #  But in flows, we need to consider the situation that later declaration rewrites previous declaration
-    def points_to_FunctionDef(self, label: int):
+    def points_to_FunctionDef(self, label, effects):
         stmt: ast.FunctionDef = self.blocks[label].stmt[0]
         name: str = stmt.name
 
@@ -495,10 +508,7 @@ class PointsToAnalysis(PointsToComponents):
         objs.add((label, None))
         self.update_points_to(address, objs)
 
-    def points_to_ClassDef(self, label: int):
-        pass
-
-    def points_to_Assign(self, label: int):
+    def points_to_Assign(self, label, effects):
         stmt: ast.Assign = self.blocks[label].stmt[0]
 
         right_objs = self.get_objs(stmt.value)
@@ -508,13 +518,13 @@ class PointsToAnalysis(PointsToComponents):
         left_address: Address = self.st(left_name, self.context)
         self.update_points_to(left_address, right_objs)
 
-    def points_to_While(self, label: int):
+    def points_to_While(self, label, effects):
         pass
 
-    def points_to_If(self, label: int):
+    def points_to_If(self, label, effects):
         pass
 
-    def points_to_Pass(self, label: int):
+    def points_to_Pass(self, label, effects):
         pass
 
     # expr #
