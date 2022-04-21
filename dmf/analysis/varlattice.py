@@ -339,9 +339,9 @@ class ClassLattice:
 
 class HeapLattice:
     def __init__(self, maximal: bool = False):
-        self.value: Set[int] = set()
+        self.value: Set[Obj] = set()
 
-    def join(self, other: int):
+    def join(self, other: Obj):
         self.value.add(other)
 
     def merge(self, other: HeapLattice):
@@ -395,7 +395,7 @@ class VarLattice:
         elif heap_context in [PrimitiveTypes.CLASS]:
             self.class_lattice.from_heap_context_to_lattice(heap_context)
         else:
-            self.heap_lattice.join(heap_context)
+            self.heap_lattice.join(obj)
 
     def transform(self, objs: Set[Obj]):
         for obj in objs:

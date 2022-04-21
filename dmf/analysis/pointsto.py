@@ -38,6 +38,7 @@ from .state.space import (
     Address,
     FuncTable,
     ClassTable,
+    DataStackFrame,
 )
 from .state.types import (
     BoolObjectInfo,
@@ -262,7 +263,7 @@ class PointsToAnalysis(PointsToComponents):
                 pass
             elif is_exit_label(self.inter_flows, label):
                 if isinstance(stmt, ast.Return):
-                    return self.type_analysis_transfer_Return(label)
+                    return self.type_Return(label)
                 else:
                     return self.type_class_exit(label)
             elif is_return_label(self.inter_flows, label):
@@ -304,8 +305,6 @@ class PointsToAnalysis(PointsToComponents):
         return new
 
     def type_class_exit(self, label: int) -> Lattice:
-        return_label: int = self.inter_flows[label][-1]
-        self.blocks[return_label].pass_through_value = self.data_stack.top()
         transferred: Lattice = transform([])
         old: Lattice = self.analysis_list[label]
         new: Lattice = union_two_lattices_in_transfer(old, transferred)
@@ -314,7 +313,14 @@ class PointsToAnalysis(PointsToComponents):
     def type_class_return(self, label: int) -> Lattice:
         stmt: ast.ClassDef = self.blocks[label].stmt[0]
         class_name: str = stmt.name
-        transferred: Lattice = transform([(class_name, {ClassObjectInfo.obj})])
+
+        frame: DataStackFrame = self.blocks[label].pass_through_objs
+        fields = set()
+        for field in frame.items():
+            fields.add(field)
+        frozen_fields = frozenset(fields)
+        objs: Set[Obj] = {(label, frozen_fields)}
+        transferred: Lattice = transform([(class_name, objs)])
 
         call_label: int = self.inter_flows[label][0]
         old: Lattice = self.analysis_list[call_label]
@@ -448,24 +454,35 @@ class PointsToAnalysis(PointsToComponents):
 
     def points_to_Return(self, label: int):
         stmt: ast.Return = self.blocks[label].stmt[0]
-        next_label, context, address = self.call_stack.top()
+        _, context, address = self.call_stack.top()
 
         self.update_points_to(address, self.get_objs(stmt.value))
+        self.data_stack.pop()
+        self.call_stack.pop()
+        self.context = context
+
+    def points_to_class_exit(self, label: int):
+        next_label, context, address = self.call_stack.top()
+        return_label: int = self.inter_flows[label][-1]
+        self.blocks[return_label].pass_through_address = address
+        self.blocks[return_label].pass_through_objs = self.data_stack.top()
         self.call_stack.pop()
         self.data_stack.pop()
+        self.context = context
 
     # Nothing needs to be done here. Since we finish the transfer in Return label
     def points_to_function_return(self, label: int):
         pass
 
-    def points_to_class_exit(self, label: int):
-        call_stack_frame = self.call_stack.top()
-        self.call_stack.pop()
-        data_stack_frame = self.data_stack.top()
-        self.data_stack.pop()
-
     def points_to_class_return(self, label: int):
-        pass
+        address: Address = self.blocks[label].pass_through_address
+        frame: DataStackFrame = self.blocks[label].pass_through_objs
+        fields = set()
+        for field in frame.items():
+            fields.add(field)
+        frozen_fields = frozenset(fields)
+        objs: Set[Obj] = {(label, frozen_fields)}
+        self.update_points_to(address, objs)
 
     # FIXME: at one time, only one name is visible.
     #  But in flows, we need to consider the situation that later declaration rewrites previous declaration
@@ -479,12 +496,7 @@ class PointsToAnalysis(PointsToComponents):
         self.update_points_to(address, objs)
 
     def points_to_ClassDef(self, label: int):
-        stmt: ast.ClassDef = self.blocks[label].stmt[0]
-        name: str = stmt.name
-        # address: Address = self.st(name, self.context)
-        # objs: Set[Obj] = set()
-        # objs.add((self.curr_label, None))
-        # self.update_points_to(address, objs)
+        pass
 
     def points_to_Assign(self, label: int):
         stmt: ast.Assign = self.blocks[label].stmt[0]

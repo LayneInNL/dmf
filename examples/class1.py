@@ -15,3 +15,7 @@
 
 class Test:
     a = 1
+
+
+a = Test
+b = Test
