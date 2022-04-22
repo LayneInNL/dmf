@@ -33,7 +33,7 @@ class DataStack:
         self.data_stack: List[DataStackFrame] = []
         self.new_and_push_frame()
 
-    def st(self, var: str, context: Context = None) -> Address:
+    def st(self, var: str, context: Tuple) -> Address:
         if var in BUILTIN_CLASS_NAMES:
             return BUILTIN_CLASS_NAMES[var]
 
@@ -136,7 +136,8 @@ class FuncTable:
 
     def insert_func(self, name: str, start_label: int, final_label: int):
         top: Dict[str, FuncInfo] = self.top()
-        top[name] = FuncInfo((start_label, final_label))
+        func_info = (start_label, final_label)
+        top[name] = FuncInfo(func_info)
 
     def top(self) -> Dict[str, FuncInfo]:
         return self.func_table[-1]
@@ -148,19 +149,22 @@ class FuncTable:
         return self.top()[name]
 
 
+ClassInfo = NewType("ClassInfo", Tuple[int, int])
+
+
 class ClassTable:
     def __init__(self):
         # each class contains global fields, function tables
-        self.class_table: List[
-            Dict[str, Tuple[Tuple[int, int], Set[str], FuncTable]]
-        ] = []
+        self.class_table: List[Dict[str, ClassInfo]] = []
         self.new_and_push_frame()
 
     def new_and_push_frame(self):
         self.class_table.append({})
 
     def insert_class(self, name: str, start_label: int, final_label: int):
-        self.top()[name] = ((start_label, final_label), set(), FuncTable())
+        top: Dict[str, ClassInfo] = self.top()
+        class_info = (start_label, final_label)
+        top[name] = ClassInfo(class_info)
 
     def top(self) -> Dict[str, Any]:
         return self.class_table[-1]
@@ -168,5 +172,5 @@ class ClassTable:
     def pop(self) -> None:
         self.class_table = self.class_table[:-1]
 
-    def st(self, name: str) -> Any:
+    def st(self, name: str) -> ClassInfo:
         return self.top()[name]

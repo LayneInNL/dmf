@@ -27,4 +27,3 @@ if __name__ == "__main__":
     CFG = construct_CFG(args.file_name)
     mfp = PointsToAnalysis(CFG)
     mfp.compute_fixed_point()
-    mfp.pprint()
