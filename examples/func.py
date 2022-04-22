@@ -29,8 +29,12 @@ def test2():
     pass
 
 
+def test():
+    pass
+
+
 # # know information about test()
-b = test()
-a = b
+# b = test()
+# a = b
 # information about b
 # d = test2()

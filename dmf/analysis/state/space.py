@@ -33,7 +33,7 @@ class DataStack:
         self.data_stack: List[DataStackFrame] = []
         self.new_and_push_frame()
 
-    def st(self, var: str, context: Context) -> Address:
+    def st(self, var: str, context: Tuple) -> Address:
         if var in BUILTIN_CLASS_NAMES:
             return BUILTIN_CLASS_NAMES[var]
 

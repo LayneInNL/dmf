@@ -15,13 +15,13 @@
 from collections import defaultdict
 from typing import List, Tuple, Set, DefaultDict, Dict, Optional
 
-from dmf.analysis.state.space import Obj, HContext, Context
+from dmf.analysis.state.space import Obj, HContext, Context, Address
 from dmf.analysis.varlattice import VarLattice, Lattice
 
 
-def transform(store: List[Tuple[str, Set[Obj]]]) -> Lattice:
+def transform(store: Dict[Address, Set[Obj]]) -> Lattice:
     transferred_lattice: DefaultDict[str, VarLattice] = defaultdict(VarLattice)
-    for name, objects in store:
+    for (name, context), objects in store.items():
         transferred_lattice[name].transform(objects)
 
     return transferred_lattice
@@ -68,17 +68,30 @@ def union_two_lattices_in_transfer(old: Lattice, new: Lattice) -> Lattice:
     return new
 
 
-def union_two_lattices_in_iterate(old: Lattice, new: Lattice) -> Lattice:
+def union_two_lattices_in_iterate(old: Lattice, transferred: Lattice):
     if old is None:
-        return new
-    intersection_old_new = set(old).intersection(new)
-    for var in intersection_old_new:
-        new[var].merge(old[var])
-    diff_old_new = set(old).difference(new)
-    for var in diff_old_new:
-        new[var] = old[var]
+        return transferred
 
-    return new
+    intersection_old_new = set(old).intersection(transferred)
+    for var in intersection_old_new:
+        transferred[var].merge(old[var])
+    diff_old_new = set(old).difference(transferred)
+    for var in diff_old_new:
+        transferred[var] = old[var]
+
+    return transferred
+
+
+def union_analyses(original: Dict[Tuple, Lattice], transferred: Dict[Tuple, Lattice]):
+    if original is None:
+        return transferred
+
+    for context, analysis in original.items():
+        transferred[context] = union_two_lattices_in_iterate(
+            original[context], transferred[context]
+        )
+
+    return transferred
 
 
 def is_call_label(inter_flows, label: int) -> bool:
@@ -109,21 +122,27 @@ def is_return_label(inter_flows, label: int) -> bool:
         return False
 
 
-def is_subset(left: Optional[Lattice], right: Optional[Lattice]):
-    # (None, None), (None, ?)
-    if left is None:
+def is_subset(
+    transferred: Optional[Dict[Tuple, Lattice]],
+    original: Optional[Dict[Tuple, Lattice]],
+):
+    # (None, None) and (None, ?)
+    if transferred is None:
         return True
 
     # (?, None)
-    if right is None:
+    if original is None:
         return False
 
-    left_vars = set(left)
-    right_vars = set(right)
-    if left_vars.issubset(right_vars):
-        for var in left_vars:
-            if not left[var].is_subset(right[var]):
-                return False
+    # (Dict[Tuple, Lattice], Dict[Tuple, Lattice])
+    transferred_contexts = set(transferred)
+    original_contexts = set(original)
+    if transferred_contexts.issubset(original_contexts):
+        for context in transferred_contexts:
+            transferred_vars = set(transferred[context])
+            for var in transferred_vars:
+                if not transferred[context][var].is_subset(original[context][var]):
+                    return False
         return True
 
     return False

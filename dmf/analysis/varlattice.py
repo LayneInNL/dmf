@@ -356,7 +356,6 @@ class HeapLattice:
 
 class VarLattice:
     def __init__(self, maximal: bool = False):
-        self.context = ()
         self.heap_lattice: HeapLattice = HeapLattice(maximal)
         self.bool_lattice: BoolLattice = BoolLattice(maximal)
         self.none_lattice: NoneLattice = NoneLattice(maximal)
@@ -366,11 +365,6 @@ class VarLattice:
         self.set_lattice: SetLattice = SetLattice(maximal)
         self.list_lattice: ListLattice = ListLattice(maximal)
         self.tuple_lattice: TupleLattice = TupleLattice(maximal)
-        self.func_lattice: FuncLattice = FuncLattice(maximal)
-        self.class_lattice: ClassLattice = ClassLattice(maximal)
-
-    def set_context(self, new_context: Tuple) -> None:
-        self.context = new_context
 
     def transform_one(self, obj: Obj):
         heap_context, fields = obj
@@ -390,10 +384,6 @@ class VarLattice:
             self.list_lattice.from_heap_context_to_lattice(heap_context)
         elif heap_context in [PrimitiveTypes.TUPLE]:
             self.tuple_lattice.from_heap_context_to_lattice(heap_context)
-        elif heap_context in [PrimitiveTypes.FUNC]:
-            self.func_lattice.from_heap_context_to_lattice(heap_context)
-        elif heap_context in [PrimitiveTypes.CLASS]:
-            self.class_lattice.from_heap_context_to_lattice(heap_context)
         else:
             self.heap_lattice.join(obj)
 
@@ -403,8 +393,7 @@ class VarLattice:
 
     def is_subset(self, other: VarLattice):
         return (
-            self.context <= other.context
-            and self.heap_lattice.is_subset(other.heap_lattice)
+            self.heap_lattice.is_subset(other.heap_lattice)
             and self.bool_lattice.is_subset(other.bool_lattice)
             and self.none_lattice.is_subset(other.none_lattice)
             and self.num_lattice.is_subset(other.num_lattice)
@@ -413,8 +402,6 @@ class VarLattice:
             and self.set_lattice.is_subset(other.set_lattice)
             and self.list_lattice.is_subset(other.list_lattice)
             and self.tuple_lattice.is_subset(other.tuple_lattice)
-            and self.func_lattice.is_subset(other.func_lattice)
-            and self.class_lattice.is_subset(other.class_lattice)
         )
 
     def merge(self, other: VarLattice):
@@ -427,8 +414,6 @@ class VarLattice:
         self.set_lattice.merge(other.set_lattice)
         self.list_lattice.merge(other.list_lattice)
         self.tuple_lattice.merge(other.tuple_lattice)
-        self.func_lattice.merge(other.func_lattice)
-        self.class_lattice.merge(other.class_lattice)
 
     def __repr__(self):
         heap_lattice_str = self.heap_lattice.__repr__()
@@ -440,11 +425,9 @@ class VarLattice:
         set_lattice_str = self.set_lattice.__repr__()
         list_lattice_str = self.list_lattice.__repr__()
         tuple_lattice_str = self.tuple_lattice.__repr__()
-        func_lattice_str = self.func_lattice.__repr__()
-        class_lattice_str = self.class_lattice.__repr__()
         res = (
-            "Lattice: Heap x Bool x None x Num x Str x Dict x Set x List x Tuple x Func x Class:"
-            " {} x {} x {} x {} x {} x {} x {} x {} x {} x {} x {} \n"
+            "Lattice: Heap x Bool x None x Num x Str x Dict x Set x List x Tuple:"
+            " {} x {} x {} x {} x {} x {} x {} x {} x {}\n"
         )
         res = res.format(
             heap_lattice_str,
@@ -456,8 +439,6 @@ class VarLattice:
             set_lattice_str,
             list_lattice_str,
             tuple_lattice_str,
-            func_lattice_str,
-            class_lattice_str,
         )
         return res
 

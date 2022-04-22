@@ -15,25 +15,24 @@
 import ast
 import logging
 from collections import defaultdict, deque
-from typing import List, Tuple, Dict, NewType, Optional, Set, Deque, Union
+from typing import List, Tuple, Dict, NewType, Optional, Set
 
 from .helpers import (
     extend_inter_flows,
     transform,
     union_two_lattices_in_transfer,
-    union_two_lattices_in_iterate,
     is_subset,
     is_call_label,
     is_return_label,
     merge_dynamic,
     is_exit_label,
     is_entry_label,
+    union_analyses,
 )
 from .state.space import (
     DataStack,
     Store,
     CallStack,
-    Context,
     Obj,
     Address,
     FuncTable,
@@ -50,9 +49,8 @@ from .state.types import (
     ListObjectInfo,
     TupleObjectInfo,
     FuncObjectInfo,
-    ClassObjectInfo,
 )
-from .varlattice import VarLattice, Lattice, new_empty_lattice
+from .varlattice import Lattice, new_empty_lattice, VarLattice
 from ..py2flows.py2flows.cfg.flows import BasicBlock, CFG
 
 UpdatedAnalysisInfo = NewType("UpdatedAnalysisInfo", List[Tuple[str, Set[Obj]]])
@@ -64,11 +62,11 @@ class PointsToComponents:
         self.data_stack: DataStack = DataStack()
         self.store: Store = Store()
         self.call_stack: CallStack = CallStack()
-        self.context: Context = Context(())
+        self.context: Tuple = ()
         self.func_table: FuncTable = FuncTable()
         self.class_table: ClassTable = ClassTable()
 
-    def st(self, var: str, context: Optional[Context]) -> Address:
+    def st(self, var: str, context: Tuple) -> Address:
         return self.data_stack.st(var, context)
 
     def sigma(self, address: Address) -> Set[Obj]:
@@ -86,15 +84,12 @@ class PointsToAnalysis(PointsToComponents):
         self.inter_flows: Dict[
             int, List[int, Optional[int], Optional[int], int]
         ] = extend_inter_flows(cfg.inter_flows)
-        self.vars: Set[str] = cfg.vars
 
-        # self.flows_mapping: DefaultDict[int, Set[int]] = condense_flows(self.flows)
-        self.labels: Set[int] = cfg.labels
-        self.extremal_labels: Set[int] = {cfg.start.bid}
+        self.extremal_label: int = cfg.start.bid
         # Note: passed by address
-        self.extremal_value: Lattice = defaultdict(lambda: VarLattice(maximal=True))
+        self.extremal_value = {(): defaultdict(lambda: VarLattice(maximal=True))}
         # Use None as Bottom
-        self.bot: None = None
+        self.bot = None
 
         # used for computing
         self.blocks: Dict[int, BasicBlock] = cfg.blocks
@@ -108,13 +103,14 @@ class PointsToAnalysis(PointsToComponents):
 
     def initialize(self) -> None:
         # WorkList W
+        # lift (fst_label, snd_label) with context information
         self.work_list = deque(self.flows)
         logging.debug("work_list: {}".format(self.work_list))
 
         # Analysis list
+        # label -> context -> lattice {{}}
         self.analysis_list = defaultdict(lambda: self.bot)
-        for label in self.extremal_labels:
-            self.analysis_list[label] = self.extremal_value
+        self.analysis_list[self.extremal_label] = self.extremal_value
         logging.debug("analysis_list: {}".format(self.analysis_list))
 
     def iterate(self) -> None:
@@ -124,11 +120,14 @@ class PointsToAnalysis(PointsToComponents):
 
             effects, transferred = self.type_analysis_transfer(fst_label)
             logging.debug("Transferred lattice: {}".format(transferred))
+            if transferred == self.bot:
+                logging.debug("Skip this iteration")
+                continue
 
             self.points_to_transfer(fst_label, effects)
 
             if not is_subset(transferred, self.analysis_list[snd_label]):
-                self.analysis_list[snd_label] = union_two_lattices_in_iterate(
+                self.analysis_list[snd_label] = union_analyses(
                     self.analysis_list[snd_label], transferred
                 )
 
@@ -138,21 +137,26 @@ class PointsToAnalysis(PointsToComponents):
                     if self.inter_flows[snd_label][0] == snd_label:
                         stmt = self.blocks[snd_label].stmt[0]
                         if isinstance(stmt, ast.Assign):
-                            # function name
-                            name: str = stmt.value.func.id
-                            entry_label, exit_label = self.func_table.st(name)
+                            if isinstance(stmt.value, ast.Call) and isinstance(
+                                stmt.value.func, ast.Name
+                            ):
+                                # function name
+                                name: str = stmt.value.func.id
+                                entry_label, exit_label = self.func_table.st(name)
 
-                            self.modify_inter_flows(snd_label, entry_label, exit_label)
+                                self.modify_inter_flows(
+                                    snd_label, entry_label, exit_label
+                                )
 
-                            additional_flows = self.on_the_fly_flows(
-                                snd_label, entry_label, exit_label
-                            )
-                            self.flows.update(additional_flows)
-                            logging.debug("Add flows {}".format(additional_flows))
+                                additional_flows = self.on_the_fly_flows(
+                                    snd_label, entry_label, exit_label
+                                )
+                                self.flows.update(additional_flows)
+                                logging.debug("Add flows {}".format(additional_flows))
 
-                            additional_blocks = self.on_the_fly_blocks(snd_label)
-                            self.blocks.update(additional_blocks)
-                            logging.debug("Add blocks {}".format(additional_blocks))
+                                additional_blocks = self.on_the_fly_blocks(snd_label)
+                                self.blocks.update(additional_blocks)
+                                logging.debug("Add blocks {}".format(additional_blocks))
                         elif isinstance(stmt, ast.ClassDef):
                             class_name: str = stmt.name
                             name_label = (class_name, snd_label)
@@ -177,9 +181,7 @@ class PointsToAnalysis(PointsToComponents):
 
                 # add related flows to work_list
                 added_flows = [(l2, l3) for l2, l3 in self.flows if l2 == snd_label]
-                print(added_flows)
                 self.work_list.extendleft(added_flows)
-                print(self.work_list)
 
     def present(self) -> None:
         all_labels: Set[int] = set()
@@ -218,12 +220,15 @@ class PointsToAnalysis(PointsToComponents):
         stmt = self.blocks[call_label].stmt[0]
         flows = {call2entry, exit2return}
         if isinstance(stmt, ast.Assign):
-            name: str = stmt.value.func.id
-            func_objs: Set[Obj] = self.sigma(self.st(name, self.context))
-            assert len(func_objs) == 1
-            for obj in func_objs:
-                name_label_pair = (name, obj[0])
-                flows.update(self.func_cfgs[name_label_pair][1].flows)
+            if isinstance(stmt.value, ast.Call) and isinstance(
+                stmt.value.func, ast.Name
+            ):
+                name: str = stmt.value.func.id
+                func_objs: Set[Obj] = self.sigma(self.st(name, self.context))
+                assert len(func_objs) == 1
+                for obj in func_objs:
+                    name_label_pair = (name, obj[0])
+                    flows.update(self.func_cfgs[name_label_pair][1].flows)
         elif isinstance(stmt, ast.ClassDef):
             name: str = stmt.name
             name_label = (name, call_label)
@@ -248,9 +253,9 @@ class PointsToAnalysis(PointsToComponents):
 
         return blocks
 
-    def type_analysis_transfer(self, label: int):
-        if self.analysis_list[label] == self.bot:
-            return self.bot
+    def type_analysis_transfer(self, label):
+        if not self.analysis_list[label]:
+            return None, self.bot
 
         stmt: ast.stmt = self.blocks[label].stmt[0]
         if label in self.inter_flows:
@@ -263,12 +268,12 @@ class PointsToAnalysis(PointsToComponents):
                 pass
             elif is_exit_label(self.inter_flows, label):
                 if isinstance(stmt, ast.Return):
-                    return self.type_Return(label)
+                    return self.type_function_exit(label)
                 else:
                     return self.type_class_exit(label)
             elif is_return_label(self.inter_flows, label):
                 if isinstance(stmt, ast.Assign):
-                    return self.type_function_return(label)
+                    return self.type_function_exit(label)
                 elif isinstance(stmt, ast.ClassDef):
                     return self.type_class_return(label)
 
@@ -278,11 +283,16 @@ class PointsToAnalysis(PointsToComponents):
 
     # enter into new function
     def type_function_call(self, label: int):
-        effects = []
-        transferred: Lattice = transform(effects)
-        old: Lattice = new_empty_lattice()
-        new = union_two_lattices_in_transfer(old, transferred)
-        return effects, new
+        new_analysis = defaultdict(lambda: None)
+        for context, old in self.analysis_list[label].items():
+            effects = defaultdict(set)
+            transferred: Lattice = transform(effects)
+            old: Lattice = new_empty_lattice()
+            new = union_two_lattices_in_transfer(old, transferred)
+            new_context = merge_dynamic(label, None, context)
+            new_analysis[new_context] = new
+
+        return None, new_analysis
 
     def type_class_call(self, label: int):
         effects = []
@@ -291,7 +301,6 @@ class PointsToAnalysis(PointsToComponents):
         new = union_two_lattices_in_transfer(old, transferred)
         return effects, new
 
-    # union exit lattice and call lattice
     def type_function_return(self, label: int):
         effects = []
         # left name in assign
@@ -305,6 +314,18 @@ class PointsToAnalysis(PointsToComponents):
         call_label: int = self.inter_flows[label][0]
         call = self.analysis_list[call_label]
         new = union_two_lattices_in_transfer(call, transferred)
+        return effects, new
+
+    def type_function_exit(self, label: int):
+        effects = []
+        name: str = self.blocks[label].stmt[0].value.id
+        return_label: int = self.inter_flows[label][-1]
+        self.blocks[return_label].pass_through_value = self.sigma(
+            self.st(name, self.context)
+        )
+        old: Lattice = self.analysis_list[label]
+        transferred: Lattice = transform(effects)
+        new: Lattice = union_two_lattices_in_transfer(old, transferred)
         return effects, new
 
     # id function
@@ -334,24 +355,9 @@ class PointsToAnalysis(PointsToComponents):
         new: Lattice = union_two_lattices_in_transfer(old, transferred)
         return effects, new
 
-    # in fact it's exit
-    def type_Return(self, label: int):
-        effects = []
-        name: str = self.blocks[label].stmt[0].value.id
-        return_label: int = self.inter_flows[label][-1]
-        self.blocks[return_label].pass_through_value = self.sigma(
-            self.st(name, self.context)
-        )
-        old: Lattice = self.analysis_list[label]
-        transferred: Lattice = transform(effects)
-        new: Lattice = union_two_lattices_in_transfer(old, transferred)
-        return effects, new
-
     def type_FunctionDef(self, label: int):
-        effects = []
         stmt: ast.FunctionDef = self.blocks[label].stmt[0]
         function_name: str = stmt.name
-        function_objs: Set[Obj] = {FuncObjectInfo.obj}
 
         func_cfg = self.func_cfgs[(function_name, label)]
         entry_label: int = func_cfg[1].start_block.bid
@@ -363,44 +369,53 @@ class PointsToAnalysis(PointsToComponents):
             )
         )
 
-        effects.append((function_name, function_objs))
-        transferred: Lattice = transform(effects)
-        old = self.analysis_list[label]
-        new = union_two_lattices_in_transfer(old, transferred)
-        return effects, new
+        new_analysis = defaultdict(lambda: None)
+        for context, old in self.analysis_list[label].items():
+            effects = defaultdict(set)
+            address = self.st(function_name, self.context)
+            effects[address].add((label, None))
+            transferred = transform(effects)
+            new = union_two_lattices_in_transfer(old, transferred)
+            new_analysis[context] = new
 
-    def type_Assign(self, label: int):
-        effects = []
+        return None, new_analysis
+
+    def type_Assign(self, label):
         stmt: ast.Assign = self.blocks[label].stmt[0]
-        name: str = stmt.targets[0].id
-        objs: Set[Obj] = self.get_objs(stmt.value)
+        if isinstance(stmt.targets[0], ast.Name):
+            name = stmt.targets[0].id
+        elif isinstance(stmt.targets[0], ast.Attribute):
+            assert False
+        elif isinstance(stmt.targets[0], ast.Subscript):
+            assert False
+        elif isinstance(stmt.targets[0], ast.Tuple):
+            assert False
 
-        effects.append((name, objs))
-        transferred: Lattice = transform(effects)
-        old = self.analysis_list[label]
-        new = union_two_lattices_in_transfer(old, transferred)
-        return effects, new
+        objs: Set[Obj] = self.get_objs(stmt.value)
+        new_analysis = defaultdict(lambda: None)
+        for context, old in self.analysis_list[label].items():
+            effects = defaultdict(set)
+            address = self.st(name, self.context)
+            effects[address].update(objs)
+            transferred = transform(effects)
+            new = union_two_lattices_in_transfer(old, transferred)
+            new_analysis[context] = new
+        return None, new_analysis
 
     def type_While(self, label: int):
-        effects = []
-        transferred: Lattice = transform(effects)
-        old = self.analysis_list[label]
-        new = union_two_lattices_in_transfer(old, transferred)
-        return effects, new
+        return self.type_Pass(label)
 
     def type_If(self, label: int):
-        effects = []
-        transferred: Lattice = transform(effects)
-        old = self.analysis_list[label]
-        new = union_two_lattices_in_transfer(old, transferred)
-        return effects, new
+        return self.type_Pass(label)
 
     def type_Pass(self, label: int):
-        effects = []
-        transferred: Lattice = transform(effects)
-        old = self.analysis_list[label]
-        new = union_two_lattices_in_transfer(old, transferred)
-        return effects, new
+        new_analysis = {}
+        effects = defaultdict(set)
+        for context, old in self.analysis_list[label].items():
+            transferred = transform(effects)
+            new = union_two_lattices_in_transfer(old, transferred)
+            new_analysis[context] = new
+        return None, new_analysis
 
     def points_to_transfer(self, label, effects):
 
@@ -513,10 +528,12 @@ class PointsToAnalysis(PointsToComponents):
 
         right_objs = self.get_objs(stmt.value)
 
-        # FIXME: Now we assume left has only one var.
-        left_name: str = stmt.targets[0].id
-        left_address: Address = self.st(left_name, self.context)
-        self.update_points_to(left_address, right_objs)
+        if isinstance(stmt.targets[0], ast.Name):
+            left_name: str = stmt.targets[0].id
+            left_address: Address = self.st(left_name, self.context)
+            self.update_points_to(left_address, right_objs)
+        else:
+            assert False
 
     def points_to_While(self, label, effects):
         pass
@@ -529,17 +546,15 @@ class PointsToAnalysis(PointsToComponents):
 
     # expr #
     def get_objs(self, expr: ast.expr) -> Set[Obj]:
-        method = "get_objs_of_" + expr.__class__.__name__
+        method = "objs_" + expr.__class__.__name__
         handler = getattr(self, method)
         return handler(expr)
 
-    # FIXME: In python, BoolOp doesn't return True or False. It returns the
-    #  corresponding object. But it's hard to do this in static analysis.
-    #  So we use subtyping to translate it to Bool.
-    def get_objs_of_BoolOp(self, expr: ast.BoolOp) -> Set[Obj]:
-        return {BoolObjectInfo.obj}
+    # BoolOp has been desugared in control flow graph
+    def objs_BoolOp(self, expr: ast.BoolOp):
+        assert False, "BoolOp is encountered"
 
-    def get_objs_of_BinOp(self, expr: ast.BinOp) -> Set[Obj]:
+    def objs_BinOp(self, expr: ast.BinOp) -> Set[Obj]:
 
         left: ast.expr = expr.left
         right: ast.expr = expr.right
@@ -551,108 +566,96 @@ class PointsToAnalysis(PointsToComponents):
 
         return {NumObjectInfo.obj}
 
-    def get_objs_of_UnaryOp(self, expr: ast.UnaryOp) -> Set[Obj]:
+    def objs_UnaryOp(self, expr: ast.UnaryOp) -> Set[Obj]:
         if isinstance(expr.op, (ast.Invert, ast.UAdd, ast.USub)):
             return {NumObjectInfo.obj}
         elif isinstance(expr.op, ast.Not):
             return {BoolObjectInfo.obj}
 
-    def get_objs_of_Lambda(self, expr: ast.Lambda) -> Set[Obj]:
+    def objs_Lambda(self, expr: ast.Lambda):
         assert False, "Lambda is encountered."
 
     # TODO
-    def get_objs_of_IfExp(self, expr: ast.IfExp) -> Set[Obj]:
-        body_objs: Set[Obj] = self.get_objs(expr.body)
-        orelse_objs: Set[Obj] = self.get_objs(expr.orelse)
-        return body_objs | orelse_objs
+    def objs_IfExp(self, expr: ast.IfExp):
+        assert False, "IfExp is encountered"
 
-    def get_objs_of_Dict(self, expr: ast.Dict) -> Set[Obj]:
+    def objs_Dict(self, expr: ast.Dict) -> Set[Obj]:
         return {DictObjectInfo.obj}
 
-    def get_objs_of_Set(self, expr: ast.Set) -> Set[Obj]:
+    def objs_Set(self, expr: ast.Set) -> Set[Obj]:
         return {SetObjectInfo.obj}
 
-    def get_objs_of_ListComp(self, expr: ast.ListComp) -> Set[Obj]:
-        assert False
+    def objs_ListComp(self, expr: ast.ListComp):
+        assert False, "ListComp is encountered"
 
-    def get_objs_of_SetComp(self, expr: ast.SetComp) -> Set[Obj]:
-        assert False
+    def objs_SetComp(self, expr: ast.SetComp):
+        assert False, "SetComp is encountered"
 
-    def get_objs_of_DictComp(self, expr: ast.DictComp) -> Set[Obj]:
-        assert False
+    def objs_DictComp(self, expr: ast.DictComp):
+        assert False, "DictComp is encountered"
 
-    def get_objs_of_GeneratorExpr(self, expr: ast.GeneratorExp) -> Set[Obj]:
-        assert False
+    def objs_GeneratorExpr(self, expr: ast.GeneratorExp):
+        assert False, "GeneratorExpr is encountered"
 
-    def get_objs_of_Await(self, expr: ast.Await) -> Set[Obj]:
+    def objs_Await(self, expr: ast.Await) -> Set[Obj]:
         return self.get_objs(expr.value)
 
     # I remember we transform yield (empty) into yield None
-    def get_objs_of_Yield(self, expr: ast.Yield) -> Set[Obj]:
+    def objs_Yield(self, expr: ast.Yield) -> Set[Obj]:
         return self.get_objs(expr.value)
 
-    def get_objs_of_YieldFrom(self, expr: ast.YieldFrom) -> Set[Obj]:
+    def objs_YieldFrom(self, expr: ast.YieldFrom) -> Set[Obj]:
         return self.get_objs(expr.value)
 
-    def get_objs_of_Compare(self, expr: ast.Expr) -> Set[Obj]:
+    def objs_Compare(self, expr: ast.Expr) -> Set[Obj]:
         return {BoolObjectInfo.obj}
 
-    # def get_objs_of_Call(self, expr: ast.Call) -> Set[Obj]:
-    #     func: ast.expr = expr.func
-    #     assert isinstance(func, ast.Name)
-    #
-    #     entry_label, entry_label = self.func_table.st(func.id)
-    #     self.inter_flows[self.curr_label][1] = entry_label
-    #     self.inter_flows[self.curr_label][2] = entry_label
-    #
-    #     return {NoneObjectInfo.obj}
-
-    def get_objs_of_Num(self, expr: ast.Num) -> Set[Obj]:
+    def objs_Num(self, expr: ast.Num) -> Set[Obj]:
         return {NumObjectInfo.obj}
 
-    def get_objs_of_Str(self, expr: ast.Str) -> Set[Obj]:
+    def objs_Str(self, expr: ast.Str) -> Set[Obj]:
         return {StrObjectInfo.obj}
 
-    def get_objs_of_FormattedValue(self, expr: ast.FormattedValue) -> Set[Obj]:
+    def objs_FormattedValue(self, expr: ast.FormattedValue) -> Set[Obj]:
         assert False, "FormattedValue is encountered."
 
-    def get_objs_of_JoinedStr(self, expr: ast.JoinedStr) -> Set[Obj]:
+    def objs_JoinedStr(self, expr: ast.JoinedStr) -> Set[Obj]:
         return {StrObjectInfo.obj}
 
-    def get_objs_of_Bytes(self, expr: ast.Bytes) -> Set[Obj]:
+    def objs_Bytes(self, expr: ast.Bytes) -> Set[Obj]:
         return {StrObjectInfo.obj}
 
-    def get_objs_of_NameConstant(self, expr: ast.NameConstant) -> Set[Obj]:
+    def objs_NameConstant(self, expr: ast.NameConstant) -> Set[Obj]:
         if expr.value is None:
             return {NoneObjectInfo.obj}
         else:
             return {BoolObjectInfo.obj}
 
-    def get_objs_of_Ellipsis(self, expr: ast.Ellipsis) -> Set[Obj]:
+    def objs_Ellipsis(self, expr: ast.Ellipsis) -> Set[Obj]:
         assert False
 
-    def get_objs_of_Constant(self, expr: ast.Constant) -> Set[Obj]:
+    def objs_Constant(self, expr: ast.Constant) -> Set[Obj]:
         assert False
 
-    def get_objs_of_Attribute(self, expr: ast.Attribute) -> Set[Obj]:
+    def objs_Attribute(self, expr: ast.Attribute) -> Set[Obj]:
         value: ast.expr = expr.value
         attr = expr.attr
         value_objs = self.get_objs(value)
         assert False
 
-    def get_objs_of_Subscript(self, expr: ast.Subscript) -> Set[Obj]:
+    def objs_Subscript(self, expr: ast.Subscript) -> Set[Obj]:
         value: ast.expr = expr.value
         assert False
 
-    def get_objs_of_Starred(self, expr: ast.Starred) -> Set[Obj]:
+    def objs_Starred(self, expr: ast.Starred) -> Set[Obj]:
         value: ast.expr = expr.value
         assert False
 
-    def get_objs_of_Name(self, expr: ast.Name) -> Set[Obj]:
+    def objs_Name(self, expr: ast.Name) -> Set[Obj]:
         return self.sigma(self.st(str(expr.id), self.context))
 
-    def get_objs_of_List(self, expr: ast.List) -> Set[Obj]:
+    def objs_List(self, expr: ast.List) -> Set[Obj]:
         return {ListObjectInfo.obj}
 
-    def get_objs_of_Tuple(self, expr: ast.Tuple) -> Set[Obj]:
+    def objs_Tuple(self, expr: ast.Tuple) -> Set[Obj]:
         return {TupleObjectInfo.obj}

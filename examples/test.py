@@ -1,6 +1,6 @@
-# a = 1
-# b = 0
-# c = True
+a = 1
+b = 0
+c = True
 # c = False
 # d = None
 # d = c
@@ -14,5 +14,5 @@
 # k = None
 # l = k
 # d = l
-a = 1
-a = True
+# a = 1
+# a = True
