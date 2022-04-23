@@ -15,7 +15,7 @@
 import argparse
 import logging
 
-from dmf.analysis.pointsto import PointsToAnalysis
+from dmf.analysis.pointsto import TypeAnalysis
 from dmf.py2flows.py2flows.main import construct_CFG
 
 parser = argparse.ArgumentParser()
@@ -25,5 +25,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG)
     CFG = construct_CFG(args.file_name)
-    mfp = PointsToAnalysis(CFG)
+    mfp = TypeAnalysis(CFG)
     mfp.compute_fixed_point()

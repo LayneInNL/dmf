@@ -13,23 +13,21 @@
 #  limitations under the License.
 
 from collections import defaultdict
-from typing import List, Tuple, Set, DefaultDict, Dict, Optional
-
-from dmf.analysis.state.space import Obj, HContext, Context, Address
-from dmf.analysis.varlattice import VarLattice, Lattice
+from typing import Tuple, Set, Optional
 
 
-def transform(store: Dict[Address, Set[Obj]]) -> Lattice:
-    transferred_lattice: DefaultDict[str, VarLattice] = defaultdict(VarLattice)
-    for (name, context), objects in store.items():
-        transferred_lattice[name].transform(objects)
+# def transform(abstract_values):
+#
+#     transferred_lattice: DefaultDict[
+#         str,
+#     ] = defaultdict()
+#     for (name, context), objects in store.items():
+#         transferred_lattice[name].transform(objects)
+#
+#     return transferred_lattice
 
-    return transferred_lattice
 
-
-def merge(
-    original_lattice: Dict[str, VarLattice], added_lattice: Dict[str, VarLattice]
-) -> Dict[str, VarLattice]:
+def merge(original_lattice, added_lattice):
     in_original: Set[str] = set(original_lattice.keys())
     in_added: Set[str] = set(added_lattice.keys())
     mixed: Set[str] = in_original | in_added
@@ -41,9 +39,7 @@ def merge(
     return added_lattice
 
 
-def merge_dynamic(
-    curr_label: int, heap_context: Optional[HContext], context: Context
-) -> Tuple:
+def merge_dynamic(curr_label: int, heap_context, context) -> Tuple:
     if heap_context is None:
         return context[-1:] + (curr_label,)
     else:
@@ -59,7 +55,7 @@ def extend_inter_flows(inter_flows: Set[Tuple[int, Optional[int], Optional[int],
     return new_inter_flows
 
 
-def union_two_lattices_in_transfer(old: Lattice, new: Lattice) -> Lattice:
+def union_two_lattices_in_transfer(old, new):
     # if old is self.bot, we can't get any new info from it. So old can't be self.bot
     diff_old_new = set(old).difference(new)
     for var in diff_old_new:
@@ -68,28 +64,26 @@ def union_two_lattices_in_transfer(old: Lattice, new: Lattice) -> Lattice:
     return new
 
 
-def union_two_lattices_in_iterate(old: Lattice, transferred: Lattice):
+def union_values(old, new):
     if old is None:
-        return transferred
+        return new
 
-    intersection_old_new = set(old).intersection(transferred)
+    intersection_old_new = set(old).intersection(new)
     for var in intersection_old_new:
-        transferred[var].merge(old[var])
-    diff_old_new = set(old).difference(transferred)
+        new[var].union(old[var])
+    diff_old_new = set(old).difference(new)
     for var in diff_old_new:
-        transferred[var] = old[var]
+        new[var] = old[var]
 
-    return transferred
+    return new
 
 
-def union_analyses(original: Dict[Tuple, Lattice], transferred: Dict[Tuple, Lattice]):
+def union_analyses(original, transferred):
     if original is None:
         return transferred
 
     for context, analysis in original.items():
-        transferred[context] = union_two_lattices_in_iterate(
-            original[context], transferred[context]
-        )
+        transferred[context] = union_values(original[context], transferred[context])
 
     return transferred
 
@@ -122,10 +116,7 @@ def is_return_label(inter_flows, label: int) -> bool:
         return False
 
 
-def is_subset(
-    transferred: Optional[Dict[Tuple, Lattice]],
-    original: Optional[Dict[Tuple, Lattice]],
-):
+def issubset(transferred, original):
     # (None, None) and (None, ?)
     if transferred is None:
         return True
@@ -134,15 +125,20 @@ def is_subset(
     if original is None:
         return False
 
-    # (Dict[Tuple, Lattice], Dict[Tuple, Lattice])
+    # (Dict[Tuple, Dict[str, AbstractValue]], Dict[Tuple, Dict[str, AbstractValue]])
     transferred_contexts = set(transferred)
     original_contexts = set(original)
     if transferred_contexts.issubset(original_contexts):
         for context in transferred_contexts:
             transferred_vars = set(transferred[context])
-            for var in transferred_vars:
-                if not transferred[context][var].is_subset(original[context][var]):
-                    return False
-        return True
-
+            original_vars = set(original[context])
+            if transferred_vars.issubset(original_vars):
+                for var in transferred_vars:
+                    if not transferred[context][var].issubset(original[context][var]):
+                        return False
+            return False
     return False
+
+
+class PrettyDefaultDict(defaultdict):
+    __repr__ = dict.__repr__

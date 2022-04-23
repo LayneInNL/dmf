@@ -12,53 +12,183 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+from __future__ import annotations
 import logging
-from collections import defaultdict
-from typing import Dict, Tuple, List, Union, Set, NewType, DefaultDict, Any
-
-from .types import BUILTIN_CLASSES, BUILTIN_CLASS_NAMES
-
-Context = NewType("Context", tuple)
-HContext = NewType("HContext", tuple)
-FieldName = NewType("FieldName", str)
-VarAddress = NewType("VarAddress", Tuple[str, Context])
-FieldNameAddress = NewType("FieldNameAddress", Tuple[FieldName, HContext])
-Address = NewType("Address", Union[VarAddress, FieldNameAddress])
-DataStackFrame = NewType("DataStackFrame", Dict[str, Address])
-Obj = NewType("Obj", Tuple[HContext, Dict[FieldName, Address]])
+from typing import Dict, Tuple, List, NewType, Any
 
 
-class DataStack:
+class ValueBool:
+    BOT = 1
+    BOOL = 2
+
     def __init__(self):
-        self.data_stack: List[DataStackFrame] = []
-        self.new_and_push_frame()
+        self.value = ValueBool.BOT
 
-    def st(self, var: str, context: Tuple) -> Address:
-        if var in BUILTIN_CLASS_NAMES:
-            return BUILTIN_CLASS_NAMES[var]
+    def present(self):
+        self.value = ValueBool.BOOL
 
-        logging.debug("Test st: {} {}".format(var, context))
-        top_frame: DataStackFrame = self.top()
-        if var not in top_frame:
-            logging.info("{} is not in data stack, make one".format(var))
-            top_frame[var] = (var, context)
+    def issubset(self, other: ValueBool):
+        return self.value <= other.value
+
+    def union(self, other: ValueBool):
+        if self.value + other.value == 2:
+            self.value = ValueBool.BOT
+        else:
+            self.value = ValueBool.BOOL
+
+    def __repr__(self):
+        if self.value == ValueBool.BOT:
+            return "BOT"
+        else:
+            return "BOOL"
+
+
+class ValueNum:
+    BOT = 1
+    NUM = 2
+
+    def __init__(self):
+        self.value = ValueNum.BOT
+
+    def present(self):
+        self.value = ValueNum.NUM
+
+    def issubset(self, other: ValueNum):
+        return self.value <= other.value
+
+    def union(self, other: ValueNum):
+        if self.value + other.value == 2:
+            self.value = ValueNum.BOT
+        else:
+            self.value = ValueNum.NUM
+
+    def __repr__(self):
+        if self.value == ValueNum.BOT:
+            return "BOT"
+        else:
+            return "NUM"
+
+
+class ValueNone:
+    BOT = 1
+    NONE = 2
+
+    def __init__(self):
+        self.value = ValueNone.BOT
+
+    def present(self):
+        self.value = ValueNone.NONE
+
+    def issubset(self, other: ValueNone):
+        return self.value <= other.value
+
+    def union(self, other: ValueNone):
+        if self.value + other.value == 2:
+            self.value = ValueNone.BOT
+        else:
+            self.value = ValueNone.NONE
+
+    def __repr__(self):
+        if self.value == ValueNone.BOT:
+            return "BOT"
+        else:
+            return "NONE"
+
+
+class ValueStr:
+    BOT = 1
+    STR = 2
+
+    def __init__(self):
+        self.value = ValueStr.BOT
+
+    def present(self):
+        self.value = ValueStr.STR
+
+    def issubset(self, other: ValueStr):
+        return self.value <= other.value
+
+    def union(self, other: ValueStr):
+        if self.value + other.value == 2:
+            self.value = ValueStr.BOT
+        else:
+            self.value = ValueStr.STR
+
+    def __repr__(self):
+        if self.value == ValueNone.BOT:
+            return "BOT"
+        else:
+            return "STR"
+
+
+class AbstractValue:
+    def __init__(self):
+        self.heap_contexts = set()
+        self.value_bool = ValueBool()
+        self.value_num = ValueNum()
+        self.value_none = ValueNone()
+        self.value_str = ValueStr()
+
+    def inject_heap_context(self, heap):
+        self.heap_contexts.add(heap)
+
+    def inject_bool(self):
+        self.value_bool.present()
+
+    def inject_num(self):
+        self.value_num.present()
+
+    def inject_none(self):
+        self.value_none.present()
+
+    def inject_str(self):
+        self.value_str.present()
+
+    def union(self, other: AbstractValue):
+        self.heap_contexts.update(other.heap_contexts)
+        self.value_bool.union(other.value_bool)
+        self.value_num.union(other.value_num)
+        self.value_none.union(other.value_none)
+        self.value_str.union(other.value_str)
+
+    def issubset(self, other: AbstractValue):
+        return (
+            self.heap_contexts.issubset(other.heap_contexts)
+            and self.value_bool.issubset(other.value_bool)
+            and self.value_num.issubset(other.value_num)
+            and self.value_none.issubset(other.value_none)
+            and self.value_str.issubset(other.value_str)
+        )
+
+    def __repr__(self):
+        return "heaps {} x bool {} x num {} x none {} x str {}".format(
+            self.heap_contexts,
+            self.value_bool,
+            self.value_num,
+            self.value_none,
+            self.value_str,
+        )
+
+
+class Stack:
+    def __init__(self):
+        self.stack: List = [{}]
+
+    def lookup(self, var: str):
+        top_frame = self.top()
         return top_frame[var]
 
-    def top(self) -> DataStackFrame:
-        return self.data_stack[-1]
+    def top(self):
+        return self.stack[-1]
 
     def pop(self) -> None:
-        self.data_stack = self.data_stack[:-1]
+        self.stack = self.stack[:-1]
 
-    def insert_var(self, var: str, address: Address) -> None:
-        top_frame: DataStackFrame = self.top()
-        top_frame[var] = address
+    def insert_var(self, var: str, abstract_value: AbstractValue) -> None:
+        top_frame = self.top()
+        top_frame[var] = abstract_value
 
-    def new_and_push_frame(self) -> None:
-        frame: DataStackFrame = DataStackFrame({})
-        self.data_stack.append(frame)
-
-    def __repr__(self) -> str:
+    def __repr__(self):
         result = ""
         for key, value in self.top().items():
             line = "{}, {}\n".format(key, value)
@@ -68,59 +198,8 @@ class DataStack:
 
 
 class Store:
-    def __init__(self, default_initialize: bool = True):
-        self.store: DefaultDict[Address, Set[Obj]] = defaultdict(set)
-        if default_initialize:
-            self._initialize()
-
-    def _initialize(self):
-        for cls in BUILTIN_CLASSES:
-            self.insert_one(cls.address, cls.obj)
-
-    def insert_one(self, address: Address, obj: Obj):
-        self.store[address].add(obj)
-
-    def insert_many(self, address: Address, objs: Set[Obj]):
-        # sometimes an object only points to one object, but sometimes points to lots of
-        # if one, clear and add new
-        # self.store[address].clear()
-        self.store[address].update(objs)
-
-    def get(self, address: Address) -> Set[Obj]:
-        return self.store[address]
-
-    def get_store(self) -> Dict:
-        return self.store.items()
-
-    def __repr__(self) -> str:
-        result = ""
-        for key, value in self.store.items():
-            line = "{}, {}\n".format(key, value)
-            result += line
-
-        return result
-
-
-CallStackFrame = NewType("CallStackFrame", Tuple[int, Context, Address])
-
-
-class CallStack:
     def __init__(self):
-        self.call_stack: List[CallStackFrame] = []
-
-    def top(self) -> CallStackFrame:
-        assert self.call_stack
-        return self.call_stack[-1]
-
-    def pop(self) -> None:
-        assert self.call_stack
-        self.call_stack = self.call_stack[:-1]
-
-    def push(self, frame: CallStackFrame):
-        self.call_stack.append(frame)
-
-    def emplace(self, label: int, context: Context, address: Address) -> None:
-        self.push(CallStackFrame((label, context, address)))
+        self.store = {}
 
 
 FuncInfo = NewType("FuncInfo", Tuple[int, int])
