@@ -12,8 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-a = 2
+
+class Test:
+    a = 2
 
 
 class Test:
-    b = 3
+    b = 2

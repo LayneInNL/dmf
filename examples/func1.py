@@ -12,18 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import argparse
-import logging
 
-from dmf.analysis.analysis import Analysis
-from dmf.py2flows.py2flows.main import construct_CFG
+def test1():
+    pass
 
-parser = argparse.ArgumentParser()
-parser.add_argument("file_name", help="the file name")
 
-if __name__ == "__main__":
-    args = parser.parse_args()
-    logging.basicConfig(level=logging.DEBUG)
-    CFG = construct_CFG(args.file_name)
-    mfp = Analysis(CFG)
-    mfp.compute_fixed_point()
+a = test1()

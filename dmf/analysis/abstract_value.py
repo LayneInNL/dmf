@@ -18,8 +18,8 @@ class ValueBool:
     BOT = 1
     BOOL = 2
 
-    def __init__(self):
-        self.value = ValueBool.BOT
+    def __init__(self, present=False):
+        self.value = ValueBool.BOOL if present else ValueBool.BOT
 
     def present(self):
         self.value = ValueBool.BOOL
@@ -44,8 +44,8 @@ class ValueNum:
     BOT = 1
     NUM = 2
 
-    def __init__(self):
-        self.value = ValueNum.BOT
+    def __init__(self, present=False):
+        self.value = ValueNum.NUM if present else ValueNum.BOT
 
     def present(self):
         self.value = ValueNum.NUM
@@ -70,8 +70,8 @@ class ValueNone:
     BOT = 1
     NONE = 2
 
-    def __init__(self):
-        self.value = ValueNone.BOT
+    def __init__(self, present=False):
+        self.value = ValueNone.NONE if present else ValueNone.BOT
 
     def present(self):
         self.value = ValueNone.NONE
@@ -96,8 +96,8 @@ class ValueStr:
     BOT = 1
     STR = 2
 
-    def __init__(self):
-        self.value = ValueStr.BOT
+    def __init__(self, present=False):
+        self.value = ValueStr.STR if present else ValueStr.BOT
 
     def present(self):
         self.value = ValueStr.STR
@@ -118,13 +118,69 @@ class ValueStr:
             return "STR"
 
 
-class Value:
+class ValueFunction:
     def __init__(self):
+        self.value = set()
+
+    def inject_function(self, name, label):
+        self.value.add((name, label))
+
+    def issubset(self, other: ValueFunction):
+        return self.value.issubset(other.value)
+
+    def union(self, other: ValueFunction):
+        self.value.update(other.value)
+
+    def __repr__(self):
+        return self.value.__repr__()
+
+
+class ValueClass:
+    def __init__(self):
+        self.value = {}
+
+    def inject_class(self, name, label, frame):
+        self.value[(name, label)] = frame
+
+    def issubset(self, other: ValueClass):
+        for key, values in self.value.items():
+            if key not in other.value:
+                return False
+            other_values = other.value[key]
+            for var in values:
+                if var not in other_values:
+                    return False
+                if not values[var].issubset(other_values[var]):
+                    return False
+        return True
+
+    def union(self, other: ValueClass):
+        for other_key, other_values in other.value.items():
+            if other_key not in self.value:
+                self.value[other_key] = other_values
+                continue
+            values = self.value[other_key]
+            for other_var in other_values:
+                if other_var not in values:
+                    values[other_var] = other_values[other_var]
+                else:
+                    values[other_var].union(other_values[other_var])
+
+    def __repr__(self):
+        return self.value.__repr__()
+
+
+class Value:
+    def __init__(
+        self, value_bool=False, value_num=False, value_none=False, value_str=False
+    ):
         self.heap_contexts = set()
-        self.value_bool = ValueBool()
-        self.value_num = ValueNum()
-        self.value_none = ValueNone()
-        self.value_str = ValueStr()
+        self.value_bool = ValueBool(value_bool)
+        self.value_num = ValueNum(value_num)
+        self.value_none = ValueNone(value_none)
+        self.value_str = ValueStr(value_str)
+        self.value_func = ValueFunction()
+        self.value_class = ValueClass()
 
     def inject_heap_context(self, heap):
         self.heap_contexts.add(heap)
@@ -141,12 +197,20 @@ class Value:
     def inject_str(self):
         self.value_str.present()
 
+    def inject_function(self, name, label):
+        self.value_func.inject_function(name, label)
+
+    def inject_class(self, name, label, frame):
+        self.value_class.inject_class(name, label, frame)
+
     def union(self, other: Value):
         self.heap_contexts.update(other.heap_contexts)
         self.value_bool.union(other.value_bool)
         self.value_num.union(other.value_num)
         self.value_none.union(other.value_none)
         self.value_str.union(other.value_str)
+        self.value_func.union(other.value_func)
+        self.value_class.union(other.value_class)
 
     def issubset(self, other: Value):
         return (
@@ -155,13 +219,17 @@ class Value:
             and self.value_num.issubset(other.value_num)
             and self.value_none.issubset(other.value_none)
             and self.value_str.issubset(other.value_str)
+            and self.value_func.issubset(other.value_func)
+            and self.value_class.issubset(other.value_class)
         )
 
     def __repr__(self):
-        return "heaps {} x bool {} x num {} x none {} x str {}".format(
+        return "heaps {} x bool {} x num {} x none {} x str {} x func {} x class {}".format(
             self.heap_contexts,
             self.value_bool,
             self.value_num,
             self.value_none,
             self.value_str,
+            self.value_func,
+            self.value_class,
         )
