@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 import logging
+from collections import defaultdict
+from copy import deepcopy
 from typing import Dict, Tuple, List, NewType, Any
 
 
@@ -121,6 +123,48 @@ class ValueStr:
             return "STR"
 
 
+class ValueClass:
+    def __init__(self):
+        self.value = defaultdict(lambda: {})
+
+    def inject_field(self, name, field, value):
+        self.value[name][field] = value
+
+    def inject_class(self, name, fields):
+        for field, value in fields.items():
+            self.value[name][field] = value
+
+    def union(self, other: ValueClass):
+        for name, fields in other.value.items():
+            if name not in self.value:
+                self.value[name] = deepcopy(other.value[name])
+                continue
+            curr_class = self.value[name]
+            for field_name, field_value in fields:
+                if field_name not in curr_class:
+                    curr_class[field_name] = field_value
+                else:
+                    curr_class[field_name].union(field_value)
+
+    def issubset(self, other: ValueClass):
+        for name in self.value:
+            if name not in other.value:
+                return False
+
+        for name, fields in self.value.items():
+            other_class = other[name]
+            for field_name, field_value in fields.items():
+                if field_name not in other_class:
+                    return False
+                if not field_value.issubset(other_class[field_name]):
+                    return False
+
+        return True
+
+    def __repr__(self):
+        return self.value.__repr__()
+
+
 class AbstractValue:
     def __init__(self):
         self.heap_contexts = set()
@@ -128,6 +172,7 @@ class AbstractValue:
         self.value_num = ValueNum()
         self.value_none = ValueNone()
         self.value_str = ValueStr()
+        self.value_class = ValueClass()
 
     def inject_heap_context(self, heap):
         self.heap_contexts.add(heap)
@@ -144,6 +189,9 @@ class AbstractValue:
     def inject_str(self):
         self.value_str.present()
 
+    def inject_class(self, name, fields):
+        self.value_class.inject_class(name, fields)
+
     def union(self, other: AbstractValue):
         self.heap_contexts.update(other.heap_contexts)
         self.value_bool.union(other.value_bool)
@@ -158,15 +206,17 @@ class AbstractValue:
             and self.value_num.issubset(other.value_num)
             and self.value_none.issubset(other.value_none)
             and self.value_str.issubset(other.value_str)
+            and self.value_class.issubset(other.value_class)
         )
 
     def __repr__(self):
-        return "heaps {} x bool {} x num {} x none {} x str {}".format(
+        return "heaps {} x bool {} x num {} x none {} x str {} x class {}".format(
             self.heap_contexts,
             self.value_bool,
             self.value_num,
             self.value_none,
             self.value_str,
+            self.value_class,
         )
 
 
@@ -187,6 +237,9 @@ class Stack:
     def insert_var(self, var: str, abstract_value: AbstractValue) -> None:
         top_frame = self.top()
         top_frame[var] = abstract_value
+
+    def add_frame(self):
+        self.stack.append({})
 
     def __repr__(self):
         result = ""
@@ -213,9 +266,9 @@ class FuncTable:
     def new_and_push_frame(self):
         self.func_table.append({})
 
-    def insert_func(self, name: str, start_label: int, final_label: int):
+    def insert_func(self, name: str, entry_label: int, exit_label: int):
         top: Dict[str, FuncInfo] = self.top()
-        func_info = (start_label, final_label)
+        func_info = (entry_label, exit_label)
         top[name] = FuncInfo(func_info)
 
     def top(self) -> Dict[str, FuncInfo]:
@@ -251,5 +304,5 @@ class ClassTable:
     def pop(self) -> None:
         self.class_table = self.class_table[:-1]
 
-    def st(self, name: str) -> ClassInfo:
+    def lookup(self, name: str) -> ClassInfo:
         return self.top()[name]
