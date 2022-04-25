@@ -14,14 +14,11 @@
 
 from __future__ import annotations
 
-import logging
-
-from dmf.analysis.abstract_value import Value
-
 
 class StackFrame:
-    def __init__(self):
+    def __init__(self, scope_property):
         self.frame = {}
+        self.scope_property = scope_property
 
     def __setitem__(self, key, value):
         self.frame[key] = value
@@ -32,7 +29,7 @@ class StackFrame:
     def keys(self):
         return self.frame
 
-    def get_internal_dict(self):
+    def symbol_table(self):
         return self.frame
 
     def items(self):
@@ -42,11 +39,8 @@ class StackFrame:
         for key in self.keys():
             if key not in other.keys():
                 return False
-            if isinstance(self.frame[key], Value):
-                if not self.frame[key].issubset(other[key]):
-                    return False
-            else:
-                logging.debug("{} has type {}".format(key, self.frame[key]))
+            if not self.frame[key].issubset(other[key]):
+                return False
 
         return True
 
@@ -63,10 +57,10 @@ class StackFrame:
         return self.frame.__repr__()
 
     def copy(self):
-        copied = StackFrame()
+        copied_frame = StackFrame(self.scope_property)
         for key, value in self.items():
-            copied[key] = value
-        return copied
+            copied_frame[key] = value
+        return copied_frame
 
 
 class Stack:
@@ -76,8 +70,8 @@ class Stack:
     def push(self, frame):
         self.stack.append(frame)
 
-    def enter_new_scope(self):
-        self.stack.append(StackFrame())
+    def enter_new_scope(self, scope_property):
+        self.push(StackFrame(scope_property))
 
     def pop(self):
         self.stack = self.stack[:-1]
@@ -124,8 +118,8 @@ class State:
     def read_from_stack(self, name):
         return self.stack.read_var(name)
 
-    def stack_enter_new_scope(self):
-        self.stack.enter_new_scope()
+    def stack_enter_new_scope(self, scope_property):
+        self.stack.enter_new_scope(scope_property)
 
     def issubset(self, other: State):
         return self.stack.issubset(other.stack)
@@ -147,7 +141,7 @@ class ContextStates:
     def __init__(self, extremal=False):
         if extremal:
             state = State()
-            state.stack_enter_new_scope()
+            state.stack_enter_new_scope("global")
             self.states = {(): state}
         else:
             self.states = {}
@@ -200,47 +194,3 @@ class ContextStates:
         for key, states in self.states.items():
             copied_context_states[key] = states.copy()
         return copied_context_states
-
-
-class FuncTable:
-    def __init__(self):
-        self.func_table = [{}]
-
-    def push(self, frame):
-        self.func_table.append(frame)
-
-    def pop(self):
-        self.func_table = self.func_table[:-1]
-
-    def top(self):
-        return self.func_table[-1]
-
-    def insert(self, name, location, entry_label, exit_label):
-        top = self.top()
-        top[name] = (location, (entry_label, exit_label))
-
-    def lookup(self, name):
-        top = self.top()
-        return top[name]
-
-
-class ClassTable:
-    def __init__(self):
-        self.class_table = [{}]
-
-    def push(self, frame):
-        self.class_table.append(frame)
-
-    def pop(self):
-        self.class_table = self.class_table[:-1]
-
-    def top(self):
-        return self.class_table[-1]
-
-    def insert(self, name, entry_label, exit_label):
-        top = self.top()
-        top[name] = (entry_label, exit_label)
-
-    def lookup(self, name):
-        top = self.top()
-        return top[name]

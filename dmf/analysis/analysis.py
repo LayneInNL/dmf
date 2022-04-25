@@ -17,9 +17,8 @@ from collections import defaultdict, deque
 from copy import deepcopy
 from typing import Dict
 
-from dmf.analysis.abstract_state import ContextStates, ClassTable, FuncTable, StackFrame
+from dmf.analysis.abstract_state import ContextStates, StackFrame
 from dmf.analysis.abstract_value import Value
-from dmf.analysis.state.space import AbstractValue
 
 
 class PrettyDefaultDict(defaultdict):
@@ -49,9 +48,7 @@ class Analysis:
 
         self.inter_flows = extend_inter_flows(cfg.inter_flows)
         self.func_cfgs = cfg.func_cfgs
-        self.func_table = FuncTable()
         self.class_cfgs = cfg.class_cfgs
-        self.class_table = ClassTable()
 
     def compute_fixed_point(self):
         self.initialize()
@@ -77,39 +74,38 @@ class Analysis:
                 if snd_label in self.inter_flows:
                     stmt = self.blocks[snd_label].stmt[0]
                     if self.is_call_label(snd_label):
+                        cfg = None
                         if isinstance(stmt, ast.ClassDef):
                             class_name = stmt.name
-                            class_cfg = self.class_cfgs[(class_name, snd_label)]
-                            entry_label = class_cfg.start_block.bid
-                            exit_label = class_cfg.final_block.bid
-                            self.class_table.insert(class_name, entry_label, exit_label)
-                            entry_label, exit_label = self.class_table.lookup(
-                                class_name
-                            )
-                            self.modify_inter_flows(snd_label, entry_label, exit_label)
-                            additional_flows = self.on_the_fly_flows(
-                                snd_label, entry_label, exit_label
-                            )
-                            self.flows.update(additional_flows)
-                            additional_blocks = self.on_the_fly_blocks(snd_label)
-                            self.blocks.update(additional_blocks)
+                            cfg = self.class_cfgs[(class_name, snd_label)]
                         elif isinstance(stmt, ast.Assign):
                             if isinstance(stmt.value, ast.Call) and isinstance(
                                 stmt.value.func, ast.Name
                             ):
                                 func_name = stmt.value.func.id
-                                _, (entry_label, exit_label) = self.func_table.lookup(
-                                    func_name
-                                )
-                                self.modify_inter_flows(
-                                    snd_label, entry_label, exit_label
-                                )
-                                additional_flows = self.on_the_fly_flows(
-                                    snd_label, entry_label, exit_label
-                                )
-                                self.flows.update(additional_flows)
-                                additional_blocks = self.on_the_fly_blocks(snd_label)
-                                self.blocks.update(additional_blocks)
+                                for context, state in self.analysis_list[
+                                    snd_label
+                                ].items():
+                                    value = state.read_from_stack(func_name)
+                                    locations = value.value_func[func_name]
+                                    location = locations.pop()
+                                cfg = self.func_cfgs[(func_name, location)][1]
+                            else:
+                                assert False
+                        entry_label = cfg.start_block.bid
+                        exit_label = cfg.final_block.bid
+                        return_label = self.inter_flows[snd_label][-1]
+                        self.modify_inter_flows(snd_label, entry_label, exit_label)
+                        self.flows.update(
+                            {
+                                (snd_label, entry_label),
+                                (exit_label, return_label),
+                            }
+                        )
+                        additional_flows = cfg.flows
+                        self.flows.update(additional_flows)
+                        additional_blocks = cfg.blocks
+                        self.blocks.update(additional_blocks)
 
                 added_flows = [(l2, l3) for l2, l3 in self.flows if l2 == snd_label]
                 self.work_list.extendleft(added_flows)
@@ -129,47 +125,6 @@ class Analysis:
         self.inter_flows[entry_label] = self.inter_flows[exit_label] = self.inter_flows[
             call_label
         ]
-
-    def on_the_fly_flows(self, call_label, entry_label, exit_label):
-        call2entry = (call_label, entry_label)
-        exit2return = (exit_label, self.inter_flows[call_label][-1])
-        stmt = self.blocks[call_label].stmt[0]
-        flows = {call2entry, exit2return}
-        if isinstance(stmt, ast.ClassDef):
-            name = stmt.name
-            name_label = (name, call_label)
-            flows.update(self.class_cfgs[name_label].flows)
-        elif (
-            isinstance(stmt, ast.Assign)
-            and isinstance(stmt.value, ast.Call)
-            and isinstance(stmt.value.func, ast.Name)
-        ):
-            name = stmt.value.func.id
-            location, _ = self.func_table.lookup(name)
-            name_label = (name, location)
-            func_cfg = self.func_cfgs[name_label][1]
-            flows.update(func_cfg.flows)
-        return flows
-
-    def on_the_fly_blocks(self, call_label):
-        stmt = self.blocks[call_label].stmt[0]
-        blocks = {}
-        if isinstance(stmt, ast.ClassDef):
-            name = stmt.name
-            name_label = (name, call_label)
-            blocks.update(self.class_cfgs[name_label].blocks)
-        elif (
-            isinstance(stmt, ast.Assign)
-            and isinstance(stmt.value, ast.Call)
-            and isinstance(stmt.value.func, ast.Name)
-        ):
-            name = stmt.value.func.id
-            location, _ = self.func_table.lookup(name)
-            name_label = (name, location)
-            func_cfg = self.func_cfgs[name_label][1]
-            blocks.update(func_cfg.blocks)
-
-        return blocks
 
     def merge(self, label, heap, context):
         return context[-1:] + (label,)
@@ -243,15 +198,17 @@ class Analysis:
 
     def transfer_class_call(self, label, new_context_states):
         for context, state in new_context_states.items():
-            state.stack_enter_new_scope()
+            state.stack_enter_new_scope("local")
+
         return new_context_states
 
     def transfer_func_call(self, label, new_context_states):
         res_context_states = ContextStates()
         for context, state in new_context_states.items():
-            state.stack_enter_new_scope()
+            state.stack_enter_new_scope("local")
             new_context = self.merge(label, None, context)
             res_context_states[new_context] = state
+
         return res_context_states
 
     def transfer_func_exit(self, label, new_context_states):
@@ -288,7 +245,7 @@ class Analysis:
             call_label = self.inter_flows[label][0]
             call_state = self.analysis_list[call_label][context]
             value = Value()
-            value.inject_class(name, label, frame.get_internal_dict())
+            value.inject_class(name, label, frame.symbol_table())
             call_state.write_to_stack(name, value)
             new_context_states[context] = call_state
         return new_context_states
@@ -298,11 +255,10 @@ class Analysis:
         context_states = self.analysis_list[label]
         new_context_states = context_states.copy()
         for context, state in new_context_states.items():
-            if isinstance(stmt, ast.Assign):
-                value = self.get_value(stmt.value, state)
-                if isinstance(stmt.targets[0], ast.Name):
-                    name = stmt.targets[0].id
-                    state.write_to_stack(name, value)
+            value = self.get_value(stmt.value, state)
+            if isinstance(stmt.targets[0], ast.Name):
+                name = stmt.targets[0].id
+                state.write_to_stack(name, value)
             else:
                 assert False
         return new_context_states
@@ -310,12 +266,10 @@ class Analysis:
     def transfer_FunctionDef(self, label, new_context_states):
         stmt = self.blocks[label].stmt[0]
         func_name = stmt.name
-
-        func_cfg = self.func_cfgs[(func_name, label)]
-        entry_label = func_cfg[1].start_block.bid
-        exit_label = func_cfg[1].final_block.bid
-        self.func_table.insert(func_name, label, entry_label, exit_label)
         for context, state in new_context_states.items():
+            func_cfg = self.func_cfgs[(func_name, label)]
+            entry_label = func_cfg[1].start_block.bid
+            exit_label = func_cfg[1].final_block.bid
             value = Value()
             value.inject_function(func_name, label)
             state.write_to_stack(func_name, value)
