@@ -62,10 +62,16 @@ class StackFrame:
     def __repr__(self):
         return self.frame.__repr__()
 
+    def copy(self):
+        copied = StackFrame()
+        for key, value in self.items():
+            copied[key] = value
+        return copied
+
 
 class Stack:
     def __init__(self):
-        self.stack = [StackFrame()]
+        self.stack = []
 
     def push(self, frame):
         self.stack.append(frame)
@@ -93,6 +99,13 @@ class Stack:
 
     def __repr__(self):
         return self.stack.__repr__()
+
+    def copy(self):
+        copied_stack = Stack()
+        for frame in self.stack:
+            copied_frame = frame.copy()
+            copied_stack.push(copied_frame)
+        return copied_stack
 
 
 class Heap:
@@ -123,10 +136,21 @@ class State:
     def __repr__(self):
         return self.stack.__repr__()
 
+    def copy(self):
+        copied_state = State()
+        copied_stack = self.stack.copy()
+        copied_state.stack = copied_stack
+        return copied_state
+
 
 class ContextStates:
     def __init__(self, extremal=False):
-        self.states = {(): State()} if extremal else {}
+        if extremal:
+            state = State()
+            state.stack_enter_new_scope()
+            self.states = {(): state}
+        else:
+            self.states = {}
 
     def __setitem__(self, key, value):
         self.states[key] = value
@@ -170,6 +194,12 @@ class ContextStates:
             res += "context {}, state {}\n".format(context, state)
 
         return res
+
+    def copy(self):
+        copied_context_states = ContextStates()
+        for key, states in self.states.items():
+            copied_context_states[key] = states.copy()
+        return copied_context_states
 
 
 class FuncTable:

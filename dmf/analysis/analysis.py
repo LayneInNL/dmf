@@ -293,8 +293,10 @@ class Analysis:
             new_context_states[context] = call_state
         return new_context_states
 
-    def transfer_Assign(self, label, new_context_states):
+    def transfer_Assign(self, label, _):
         stmt = self.blocks[label].stmt[0]
+        context_states = self.analysis_list[label]
+        new_context_states = context_states.copy()
         for context, state in new_context_states.items():
             if isinstance(stmt, ast.Assign):
                 value = self.get_value(stmt.value, state)
