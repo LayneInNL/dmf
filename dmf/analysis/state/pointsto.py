@@ -11,6 +11,18 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
 
 import ast
 import logging
@@ -18,21 +30,21 @@ from collections import deque
 from copy import deepcopy
 from typing import List, Tuple, Dict, Set, Deque, Optional
 
-from .helpers import (
+from dmf.analysis.state.helpers import (
     issubset,
     union_analyses,
     PrettyDefaultDict,
     is_call_label,
     is_return_label,
 )
-from .state.space import (
+from dmf.analysis.state.space import (
     Stack,
     Store,
     FuncTable,
     ClassTable,
     AbstractValue,
 )
-from ..py2flows.py2flows.cfg.flows import BasicBlock, CFG
+from dmf.py2flows.py2flows.cfg.flows import BasicBlock, CFG
 
 
 def extend_inter_flows(inter_flows: Set[Tuple[int, Optional[int], Optional[int], int]]):

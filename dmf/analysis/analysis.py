@@ -216,6 +216,8 @@ class Analysis:
         elif self.is_exit_label(label):
             if isinstance(stmt, ast.Return):
                 return self.transfer_func_exit(label, new_context_states)
+            elif isinstance(stmt, ast.Pass):
+                return self.transfer_class_exit(label, new_context_states)
         elif self.is_return_label(label):
             if isinstance(stmt, ast.ClassDef):
                 return self.transfer_class_return(label, new_context_states)
@@ -255,18 +257,20 @@ class Analysis:
     def transfer_func_exit(self, label, new_context_states):
         return new_context_states
 
+    def transfer_class_exit(self, label, new_context_states):
+        return new_context_states
+
     def transfer_func_return(self, label, new_context_states):
         call_label = self.inter_flows[label][0]
         call_context_states = self.analysis_list[call_label]
         exit_label = self.inter_flows[label][-2]
         exit_stmt = self.blocks[exit_label].stmt[0]
         exit_name = exit_stmt.value.id
-
         return_stmt = self.blocks[label].stmt[0]
         return_name = return_stmt.targets[0].id
         res_context_states = deepcopy(call_context_states)
         for call_context, call_state in call_context_states.items():
-            new_context = self.merge(label, None, call_context)
+            new_context = self.merge(call_label, None, call_context)
             for return_context, return_state in new_context_states.items():
                 if new_context == return_context:
                     return_value = return_state.read_from_stack(exit_name)
