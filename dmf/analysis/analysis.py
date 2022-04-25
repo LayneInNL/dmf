@@ -46,8 +46,7 @@ class Analysis:
         self.analysis_list = None
 
         self.inter_flows = extend_inter_flows(cfg.inter_flows)
-        self.func_cfgs = cfg.func_cfgs
-        self.class_cfgs = cfg.class_cfgs
+        self.sub_cfgs = cfg.sub_cfgs
 
     def compute_fixed_point(self):
         self.initialize()
@@ -65,7 +64,6 @@ class Analysis:
             transferred = self.transfer(fst_label)
             if transferred == self.bot:
                 continue
-            logging.debug("Transferred States {}".format(transferred))
             if not transferred.issubset(self.analysis_list[snd_label]):
                 transferred.union(self.analysis_list[snd_label])
                 self.analysis_list[snd_label] = transferred
@@ -75,8 +73,7 @@ class Analysis:
                     if self.is_call_label(snd_label):
                         cfg = None
                         if isinstance(stmt, ast.ClassDef):
-                            class_name = stmt.name
-                            cfg = self.class_cfgs[(class_name, snd_label)]
+                            cfg = self.sub_cfgs[snd_label]
                         elif isinstance(stmt, ast.Assign):
                             if isinstance(stmt.value, ast.Call) and isinstance(
                                 stmt.value.func, ast.Name
@@ -88,7 +85,7 @@ class Analysis:
                                     value = state.read_from_stack(func_name)
                                     locations = value.extract_functions()
                                     location = list(locations)
-                                cfg = self.func_cfgs[(func_name, location[0])][1]
+                                cfg = self.sub_cfgs[location[0]]
                             else:
                                 assert False
                         entry_label = cfg.start_block.bid
@@ -115,8 +112,10 @@ class Analysis:
             all_labels.update(flow)
 
         for label in all_labels:
-            print(label, self.analysis_list[label])
-            print(label, self.transfer(label))
+            logging.debug(
+                "Context at label {}: {}".format(label, self.analysis_list[label])
+            )
+            logging.debug("Effect at label {}: {}".format(label, self.transfer(label)))
 
     def modify_inter_flows(self, call_label, entry_label, exit_label):
         self.inter_flows[call_label][1] = entry_label
