@@ -194,6 +194,12 @@ class Analysis:
         else:
             assert False
 
+    def extract_params(self, args: ast.arguments):
+        arg_name_list = []
+        for arg in args.args:
+            arg_name_list.append(arg.arg)
+        return arg_name_list
+
     def transfer_class_call(self, label):
         old_context_states = self.analysis_list[label]
         new_context_states = old_context_states.copy()
@@ -209,9 +215,26 @@ class Analysis:
         old_context_states = self.analysis_list[label]
         new_context_states = old_context_states.copy()
         for context, state in old_context_states.items():
-            state.stack_enter_new_scope("local")
+            value = state.read_from_stack(name)
+            func_labels = value.extract_functions_as_list()
+            assert len(func_labels) == 1
+            func_def_stmt: ast.FunctionDef = self.blocks[func_labels[0]].stmt[0]
+            params_list = self.extract_params(func_def_stmt.args)
+            arg_list = expr.args
+            param_value = []
+            for loc, arg in enumerate(arg_list):
+                if isinstance(arg, (ast.Str, ast.Num, ast.NameConstant)):
+                    arg_value = self.get_value(arg, state)
+                    param_value.append((params_list[loc], arg_value))
+                elif isinstance(arg, ast.Name):
+                    arg_value = state.read_from_stack(arg.id)
+                    param_value.append((params_list[loc], arg_value))
+            new_state = new_context_states[context]
+            new_state.stack_enter_new_scope("local")
+            for param, param_value in param_value:
+                new_state.write_to_stack(param, param_value)
             new_context = self.merge(label, None, context)
-            new_context_states[new_context] = state
+            new_context_states[new_context] = new_state
             del new_context_states[context]
 
         return new_context_states

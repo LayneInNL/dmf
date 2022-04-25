@@ -13,8 +13,10 @@
 #  limitations under the License.
 
 
-def test1():
+def test1(x, y):
     pass
 
 
-a = test1()
+b = 2
+
+a = test1(1, b)

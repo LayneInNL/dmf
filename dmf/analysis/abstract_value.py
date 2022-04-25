@@ -212,6 +212,9 @@ class Value:
     def extract_functions(self):
         return self.value_func.extract_function()
 
+    def extract_functions_as_list(self):
+        return list(self.value_func.extract_function())
+
     def inject_class(self, name, label, frame):
         self.value_class.inject_class(name, label, frame)
 
