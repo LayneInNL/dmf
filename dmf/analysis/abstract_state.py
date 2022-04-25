@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from dmf.analysis.abstract_value import Value
+
 
 class StackFrame:
     def __init__(self, scope_property):
@@ -112,10 +114,10 @@ class State:
         self.stack = Stack()
         # self.heap = Heap()
 
-    def write_to_stack(self, name, value):
+    def write_to_stack(self, name, value: Value):
         self.stack.write_var(name, value)
 
-    def read_from_stack(self, name):
+    def read_from_stack(self, name) -> Value:
         return self.stack.read_var(name)
 
     def stack_enter_new_scope(self, scope_property):
@@ -151,6 +153,9 @@ class ContextStates:
 
     def __getitem__(self, context):
         return self.states[context]
+
+    def __delitem__(self, key):
+        del self.states[key]
 
     def items(self):
         return self.states.items()

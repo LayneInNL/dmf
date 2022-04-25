@@ -14,8 +14,7 @@
 import ast
 import logging
 from collections import defaultdict, deque
-from copy import deepcopy
-from typing import Dict
+from typing import Dict, Set
 
 from dmf.analysis.abstract_state import ContextStates, StackFrame
 from dmf.analysis.abstract_value import Value
@@ -87,9 +86,9 @@ class Analysis:
                                     snd_label
                                 ].items():
                                     value = state.read_from_stack(func_name)
-                                    locations = value.value_func[func_name]
-                                    location = locations.pop()
-                                cfg = self.func_cfgs[(func_name, location)][1]
+                                    locations = value.extract_functions()
+                                    location = list(locations)
+                                cfg = self.func_cfgs[(func_name, location[0])][1]
                             else:
                                 assert False
                         entry_label = cfg.start_block.bid
@@ -135,7 +134,7 @@ class Analysis:
         if self.analysis_list[label] == self.bot:
             return self.bot
 
-        return self.do_transfer(label, self.analysis_list[label])
+        return self.do_transfer(label)
 
     def is_call_label(self, label):
         if label in self.inter_flows and label == self.inter_flows[label][0]:
@@ -155,90 +154,103 @@ class Analysis:
             return True
         return False
 
-    def do_transfer(self, label, context_states: ContextStates):
+    def do_transfer(self, label):
         stmt = self.blocks[label].stmt[0]
 
-        new_context_states = deepcopy(context_states)
         if self.is_call_label(label):
             if isinstance(stmt, ast.ClassDef):
-                return self.transfer_class_call(label, new_context_states)
+                return self.transfer_class_call(label)
             elif (
                 isinstance(stmt, ast.Assign)
                 and isinstance(stmt.value, ast.Call)
                 and isinstance(stmt.value.func, ast.Name)
             ):
-                return self.transfer_func_call(label, new_context_states)
+                return self.transfer_func_call(label)
         elif self.is_exit_label(label):
             if isinstance(stmt, ast.Return):
-                return self.transfer_func_exit(label, new_context_states)
+                return self.transfer_func_exit(label)
             elif isinstance(stmt, ast.Pass):
-                return self.transfer_class_exit(label, new_context_states)
+                return self.transfer_class_exit(label)
         elif self.is_return_label(label):
             if isinstance(stmt, ast.ClassDef):
-                return self.transfer_class_return(label, new_context_states)
+                return self.transfer_class_return(label)
             elif (
                 isinstance(stmt, ast.Assign)
                 and isinstance(stmt.value, ast.Call)
                 and isinstance(stmt.value.func, ast.Name)
             ):
-                return self.transfer_func_return(label, new_context_states)
+                return self.transfer_func_return(label)
 
         elif isinstance(stmt, ast.Pass):
-            return self.transfer_Pass(label, new_context_states)
+            return self.transfer_Pass(label)
         elif isinstance(stmt, ast.If):
-            return self.transfer_If(label, new_context_states)
+            return self.transfer_If(label)
         elif isinstance(stmt, ast.While):
-            return self.transfer_While(label, new_context_states)
+            return self.transfer_While(label)
         elif isinstance(stmt, ast.Assign):
-            return self.transfer_Assign(label, new_context_states)
+            return self.transfer_Assign(label)
         elif isinstance(stmt, ast.FunctionDef):
-            return self.transfer_FunctionDef(label, new_context_states)
+            return self.transfer_FunctionDef(label)
         else:
             assert False
 
-    def transfer_class_call(self, label, new_context_states):
+    def transfer_class_call(self, label):
+        old_context_states = self.analysis_list[label]
+        new_context_states = old_context_states.copy()
         for context, state in new_context_states.items():
             state.stack_enter_new_scope("local")
 
         return new_context_states
 
-    def transfer_func_call(self, label, new_context_states):
-        res_context_states = ContextStates()
-        for context, state in new_context_states.items():
+    def transfer_func_call(self, label):
+        stmt: ast.Assign = self.blocks[label].stmt[0]
+        expr: ast.Call = stmt.value
+        name = expr.func.id
+        old_context_states = self.analysis_list[label]
+        new_context_states = old_context_states.copy()
+        for context, state in old_context_states.items():
             state.stack_enter_new_scope("local")
             new_context = self.merge(label, None, context)
-            res_context_states[new_context] = state
+            new_context_states[new_context] = state
+            del new_context_states[context]
 
-        return res_context_states
-
-    def transfer_func_exit(self, label, new_context_states):
         return new_context_states
 
-    def transfer_class_exit(self, label, new_context_states):
+    def transfer_func_exit(self, label):
+        old_context_states = self.analysis_list[label]
+        new_context_states = old_context_states.copy()
         return new_context_states
 
-    def transfer_func_return(self, label, new_context_states):
+    def transfer_class_exit(self, label):
+        old_context_states = self.analysis_list[label]
+        new_context_states = old_context_states.copy()
+        return new_context_states
+
+    def transfer_func_return(self, label):
         call_label = self.inter_flows[label][0]
         call_context_states = self.analysis_list[call_label]
         exit_label = self.inter_flows[label][-2]
         exit_stmt = self.blocks[exit_label].stmt[0]
         exit_name = exit_stmt.value.id
+        return_context_states = self.analysis_list[label]
         return_stmt = self.blocks[label].stmt[0]
         return_name = return_stmt.targets[0].id
-        res_context_states = deepcopy(call_context_states)
+        new_context_states = call_context_states.copy()
         for call_context, call_state in call_context_states.items():
-            new_context = self.merge(call_label, None, call_context)
-            for return_context, return_state in new_context_states.items():
-                if new_context == return_context:
+            context_at_call = self.merge(call_label, None, call_context)
+            for return_context, return_state in return_context_states.items():
+                if context_at_call == return_context:
                     return_value = return_state.read_from_stack(exit_name)
-                    res_context_states[call_context].write_to_stack(
+                    new_context_states[call_context].write_to_stack(
                         return_name, return_value
                     )
 
-        return res_context_states
+        return new_context_states
 
-    def transfer_class_return(self, label, new_context_states):
+    def transfer_class_return(self, label):
         stmt = self.blocks[label].stmt[0]
+        old_context_states = self.analysis_list[label]
+        new_context_states = old_context_states.copy()
         for context, state in new_context_states.items():
             name = stmt.name
             frame: StackFrame = state.stack.top()
@@ -250,10 +262,10 @@ class Analysis:
             new_context_states[context] = call_state
         return new_context_states
 
-    def transfer_Assign(self, label, _):
+    def transfer_Assign(self, label):
         stmt = self.blocks[label].stmt[0]
-        context_states = self.analysis_list[label]
-        new_context_states = context_states.copy()
+        old_context_states = self.analysis_list[label]
+        new_context_states = old_context_states.copy()
         for context, state in new_context_states.items():
             value = self.get_value(stmt.value, state)
             if isinstance(stmt.targets[0], ast.Name):
@@ -263,26 +275,31 @@ class Analysis:
                 assert False
         return new_context_states
 
-    def transfer_FunctionDef(self, label, new_context_states):
+    def transfer_FunctionDef(self, label):
         stmt = self.blocks[label].stmt[0]
+        old_context_states = self.analysis_list[label]
+        new_context_states = old_context_states.copy()
         func_name = stmt.name
         for context, state in new_context_states.items():
-            func_cfg = self.func_cfgs[(func_name, label)]
-            entry_label = func_cfg[1].start_block.bid
-            exit_label = func_cfg[1].final_block.bid
             value = Value()
-            value.inject_function(func_name, label)
+            value.inject_function(label)
             state.write_to_stack(func_name, value)
 
         return new_context_states
 
-    def transfer_Pass(self, label, new_context_states):
+    def transfer_Pass(self, label):
+        old_context_states = self.analysis_list[label]
+        new_context_states = old_context_states.copy()
         return new_context_states
 
-    def transfer_If(self, label, new_context_states):
+    def transfer_If(self, label):
+        old_context_states = self.analysis_list[label]
+        new_context_states = old_context_states.copy()
         return new_context_states
 
-    def transfer_While(self, label, new_context_states):
+    def transfer_While(self, label):
+        old_context_states = self.analysis_list[label]
+        new_context_states = old_context_states.copy()
         return new_context_states
 
     def get_value(self, expr, state):

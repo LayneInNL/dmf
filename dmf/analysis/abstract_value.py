@@ -126,33 +126,19 @@ class PrettyDefaultDict(defaultdict):
 
 class ValueFunction:
     def __init__(self):
-        self.value = PrettyDefaultDict(set)
+        self.value = set()
 
-    def __getitem__(self, item):
-        return self.value[item]
+    def inject_function(self, location):
+        self.value.add(location)
 
-    def inject_function(self, name, location):
-        self.value[name].add(location)
-
-    def extract_function(self, name):
-        return self.value[name]
+    def extract_function(self):
+        return self.value
 
     def issubset(self, other: ValueFunction):
-        for var in self.value:
-            if var not in other.value:
-                return False
-            if not self.value[var].issubset(other.value[var]):
-                return False
-        return True
+        return self.value.issubset(other.value)
 
     def union(self, other: ValueFunction):
-        other_value = other.value
-        self_value = self.value
-        for var in other_value:
-            if var not in self_value:
-                self_value[var] = other_value[var]
-            else:
-                self_value[var].update(other_value[var])
+        self.value.update(other.value)
 
     def __repr__(self):
         return self.value.__repr__()
@@ -220,11 +206,11 @@ class Value:
     def inject_str(self):
         self.value_str.present()
 
-    def inject_function(self, name, location):
-        self.value_func.inject_function(name, location)
+    def inject_function(self, location):
+        self.value_func.inject_function(location)
 
-    def extract_function(self, name):
-        self.value_func.extract_function(name)
+    def extract_functions(self):
+        return self.value_func.extract_function()
 
     def inject_class(self, name, label, frame):
         self.value_class.inject_class(name, label, frame)
