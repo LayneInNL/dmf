@@ -265,9 +265,14 @@ class Analysis:
         return_stmt = self.blocks[label].stmt[0]
         return_name = return_stmt.targets[0].id
         res_context_states = deepcopy(call_context_states)
-        for context, state in new_context_states.items():
-            return_value = state.read_from_stack(exit_name)
-            res_context_states[()].write_to_stack(return_name, return_value)
+        for call_context, call_state in call_context_states.items():
+            new_context = self.merge(label, None, call_context)
+            for return_context, return_state in new_context_states.items():
+                if new_context == return_context:
+                    return_value = return_state.read_from_stack(exit_name)
+                    res_context_states[call_context].write_to_stack(
+                        return_name, return_value
+                    )
 
         return res_context_states
 
