@@ -18,6 +18,7 @@ from typing import Dict
 
 from dmf.analysis.abstract_state import ContextStates, StackFrame
 from dmf.analysis.abstract_value import Value
+from dmf.py2flows.py2flows.cfg.flows import CFG
 
 
 class PrettyDefaultDict(defaultdict):
@@ -35,7 +36,7 @@ def extend_inter_flows(inter_flows):
 
 
 class Analysis:
-    def __init__(self, cfg):
+    def __init__(self, cfg: CFG):
         self.flows = cfg.flows
         self.extremal_label = cfg.start_block.bid
         self.extremal_value = ContextStates(extremal=True)
@@ -46,7 +47,7 @@ class Analysis:
         self.analysis_list = None
 
         self.inter_flows = extend_inter_flows(cfg.inter_flows)
-        self.sub_cfgs = cfg.sub_cfgs
+        self.sub_cfgs: Dict[int, CFG] = cfg.sub_cfgs
 
     def compute_fixed_point(self):
         self.initialize()
@@ -74,6 +75,7 @@ class Analysis:
                         cfg = None
                         if isinstance(stmt, ast.ClassDef):
                             cfg = self.sub_cfgs[snd_label]
+                            self.sub_cfgs.update(cfg.sub_cfgs)
                         elif isinstance(stmt, ast.Assign):
                             if isinstance(stmt.value, ast.Call) and isinstance(
                                 stmt.value.func, ast.Name
@@ -84,7 +86,9 @@ class Analysis:
                                     locations = value.extract_functions()
                                     location = list(locations)
                                     logging.debug("locations {}".format(location))
+                                assert len(location) == 1
                                 cfg = self.sub_cfgs[location[0]]
+                                self.sub_cfgs.update(cfg.sub_cfgs)
                             else:
                                 assert False
                         entry_label = cfg.start_block.bid
@@ -98,6 +102,7 @@ class Analysis:
                             }
                         )
                         additional_flows = cfg.flows
+                        logging.debug("Additional flows {}".format(additional_flows))
                         self.flows.update(additional_flows)
                         additional_blocks = cfg.blocks
                         self.blocks.update(additional_blocks)
@@ -107,6 +112,7 @@ class Analysis:
 
     def present(self):
         all_labels = set()
+        logging.debug("All flows {}".format(self.flows))
         for flow in self.flows:
             all_labels.update(flow)
 
@@ -193,10 +199,26 @@ class Analysis:
             assert False
 
     def extract_params(self, args: ast.arguments):
-        arg_name_list = []
+        param_list = []
         for arg in args.args:
-            arg_name_list.append(arg.arg)
-        return arg_name_list
+            param_list.append(arg.arg)
+        return param_list
+
+    def extract_func_params(self, func: ast.FunctionDef):
+        args = func.args
+        return self.extract_params(args)
+
+    def param_value_list(self, params, args, state):
+        param_value = []
+        for loc, arg in enumerate(args):
+            if isinstance(arg, (ast.Str, ast.Num, ast.NameConstant)):
+                arg_value = self.get_value(arg, state)
+            elif isinstance(arg, ast.Name):
+                arg_value = state.read_from_stack(arg.id)
+            else:
+                assert False
+            param_value.append((params[loc], arg_value))
+        return param_value
 
     def transfer_class_call(self, label):
         old_context_states = self.analysis_list[label]
@@ -208,25 +230,20 @@ class Analysis:
 
     def transfer_func_call(self, label):
         stmt: ast.Assign = self.blocks[label].stmt[0]
-        expr: ast.Call = stmt.value
-        name = expr.func.id
+        call: ast.Call = stmt.value
+        name = call.func.id
         old_context_states = self.analysis_list[label]
         new_context_states = old_context_states.copy()
         for context, state in old_context_states.items():
             value = state.read_from_stack(name)
             func_labels = value.extract_functions_as_list()
             assert len(func_labels) == 1
+
             func_def_stmt: ast.FunctionDef = self.blocks[func_labels[0]].stmt[0]
-            params_list = self.extract_params(func_def_stmt.args)
-            arg_list = expr.args
-            param_value = []
-            for loc, arg in enumerate(arg_list):
-                if isinstance(arg, (ast.Str, ast.Num, ast.NameConstant)):
-                    arg_value = self.get_value(arg, state)
-                    param_value.append((params_list[loc], arg_value))
-                elif isinstance(arg, ast.Name):
-                    arg_value = state.read_from_stack(arg.id)
-                    param_value.append((params_list[loc], arg_value))
+            param_list = self.extract_func_params(func_def_stmt)
+            arg_list = call.args
+            param_value = self.param_value_list(param_list, arg_list, state)
+
             new_state = new_context_states[context]
             new_state.stack_enter_new_scope("local")
             for param, param_value in param_value:
@@ -244,8 +261,7 @@ class Analysis:
 
     def transfer_class_exit(self, label):
         old_context_states = self.analysis_list[label]
-        new_context_states = old_context_states.copy()
-        return new_context_states
+        return old_context_states
 
     def transfer_func_return(self, label):
         call_label = self.inter_flows[label][0]
@@ -270,18 +286,18 @@ class Analysis:
 
     def transfer_class_return(self, label):
         stmt = self.blocks[label].stmt[0]
-        old_context_states = self.analysis_list[label]
-        new_context_states = old_context_states.copy()
-        for context, state in new_context_states.items():
-            name = stmt.name
+        return_context_states = self.analysis_list[label]
+        call_label = self.inter_flows[label][0]
+        call_context_states = self.analysis_list[call_label]
+        new_call_context_states = call_context_states.copy()
+        for context, state in return_context_states.items():
+            class_name = stmt.name
             frame: StackFrame = state.stack.top()
-            call_label = self.inter_flows[label][0]
-            call_state = self.analysis_list[call_label][context]
+            call_state = new_call_context_states[context]
             value = Value()
             value.inject_class(label, frame.symbol_table())
-            call_state.write_to_stack(name, value)
-            new_context_states[context] = call_state
-        return new_context_states
+            call_state.write_to_stack(class_name, value)
+        return new_call_context_states
 
     def transfer_Assign(self, label):
         stmt = self.blocks[label].stmt[0]
@@ -311,20 +327,14 @@ class Analysis:
     def transfer_Pass(self, label):
         old_context_states = self.analysis_list[label]
         return old_context_states
-        # new_context_states = old_context_states.copy()
-        # return new_context_states
 
     def transfer_If(self, label):
         old_context_states = self.analysis_list[label]
         return old_context_states
-        # new_context_states = old_context_states.copy()
-        # return new_context_states
 
     def transfer_While(self, label):
         old_context_states = self.analysis_list[label]
         return old_context_states
-        # new_context_states = old_context_states.copy()
-        # return new_context_states
 
     def get_value(self, expr, state):
         if isinstance(expr, ast.Num):

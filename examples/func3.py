@@ -13,10 +13,16 @@
 #  limitations under the License.
 
 
-class Test:
-    a = 2
+def test():
+    a = 3
+    return a
 
 
-class Test:
-    b = 2
-    a = 1 if True else False
+def test1():
+    a = 3
+    if a:
+        return a
+    return 3
+
+
+b = test1()

@@ -13,10 +13,33 @@
 #  limitations under the License.
 
 
-class Test:
-    a = 2
+class Base:
+    a = 1
+
+    def __init__(self):
+        self.base = 1
+
+    def test(self):
+        pass
 
 
-class Test:
+class Derive(Base):
     b = 2
-    a = 1 if True else False
+
+    def __init__(self):
+        super().__init__()
+        self.derive = 2
+
+    def test(self):
+        pass
+
+
+print(Derive.__dict__)
+print(vars(Derive))
+print(Base.__dict__)
+print(vars(Base))
+
+
+a = Base()
+b = Derive()
+c = 3
