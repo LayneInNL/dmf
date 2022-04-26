@@ -14,7 +14,7 @@
 import ast
 import logging
 from collections import defaultdict, deque
-from typing import Dict, Set
+from typing import Dict
 
 from dmf.analysis.abstract_state import ContextStates, StackFrame
 from dmf.analysis.abstract_value import Value
@@ -69,8 +69,8 @@ class Analysis:
                 self.analysis_list[snd_label] = transferred
 
                 if snd_label in self.inter_flows:
-                    stmt = self.blocks[snd_label].stmt[0]
                     if self.is_call_label(snd_label):
+                        stmt = self.blocks[snd_label].stmt[0]
                         cfg = None
                         if isinstance(stmt, ast.ClassDef):
                             cfg = self.sub_cfgs[snd_label]
@@ -79,12 +79,11 @@ class Analysis:
                                 stmt.value.func, ast.Name
                             ):
                                 func_name = stmt.value.func.id
-                                for context, state in self.analysis_list[
-                                    snd_label
-                                ].items():
+                                for _, state in self.analysis_list[snd_label].items():
                                     value = state.read_from_stack(func_name)
                                     locations = value.extract_functions()
                                     location = list(locations)
+                                    logging.debug("locations {}".format(location))
                                 cfg = self.sub_cfgs[location[0]]
                             else:
                                 assert False
@@ -279,7 +278,7 @@ class Analysis:
             call_label = self.inter_flows[label][0]
             call_state = self.analysis_list[call_label][context]
             value = Value()
-            value.inject_class(name, label, frame.symbol_table())
+            value.inject_class(label, frame.symbol_table())
             call_state.write_to_stack(name, value)
             new_context_states[context] = call_state
         return new_context_states
@@ -311,18 +310,21 @@ class Analysis:
 
     def transfer_Pass(self, label):
         old_context_states = self.analysis_list[label]
-        new_context_states = old_context_states.copy()
-        return new_context_states
+        return old_context_states
+        # new_context_states = old_context_states.copy()
+        # return new_context_states
 
     def transfer_If(self, label):
         old_context_states = self.analysis_list[label]
-        new_context_states = old_context_states.copy()
-        return new_context_states
+        return old_context_states
+        # new_context_states = old_context_states.copy()
+        # return new_context_states
 
     def transfer_While(self, label):
         old_context_states = self.analysis_list[label]
-        new_context_states = old_context_states.copy()
-        return new_context_states
+        return old_context_states
+        # new_context_states = old_context_states.copy()
+        # return new_context_states
 
     def get_value(self, expr, state):
         if isinstance(expr, ast.Num):

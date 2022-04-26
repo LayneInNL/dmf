@@ -148,8 +148,8 @@ class ValueClass:
     def __init__(self):
         self.value = {}
 
-    def inject_class(self, name, label, frame):
-        self.value[(name, label)] = frame
+    def inject_class(self, label, frame):
+        self.value[label] = frame
 
     def issubset(self, other: ValueClass):
         for key, values in self.value.items():
@@ -215,8 +215,8 @@ class Value:
     def extract_functions_as_list(self):
         return list(self.value_func.extract_function())
 
-    def inject_class(self, name, label, frame):
-        self.value_class.inject_class(name, label, frame)
+    def inject_class(self, label, frame):
+        self.value_class.inject_class(label, frame)
 
     def union(self, other: Value):
         self.heap_contexts.update(other.heap_contexts)

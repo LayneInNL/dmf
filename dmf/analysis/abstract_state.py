@@ -14,7 +14,12 @@
 
 from __future__ import annotations
 
+import builtins
+from typing import List
+
 from dmf.analysis.abstract_value import Value
+
+BUILTIN_NAMES = set(dir(builtins))
 
 
 class StackFrame:
@@ -25,8 +30,11 @@ class StackFrame:
     def __setitem__(self, key, value):
         self.frame[key] = value
 
-    def __getitem__(self, item):
-        return self.frame[item]
+    def __getitem__(self, key):
+        return self.frame[key]
+
+    def __contains__(self, key):
+        return key in self.frame
 
     def keys(self):
         return self.frame
@@ -67,9 +75,12 @@ class StackFrame:
 
 class Stack:
     def __init__(self):
-        self.stack = []
+        self.stack: List[StackFrame] = []
 
-    def push(self, frame):
+    def __repr__(self):
+        return self.stack.__repr__()
+
+    def push(self, frame: StackFrame):
         self.stack.append(frame)
 
     def enter_new_scope(self, scope_property):
@@ -84,17 +95,21 @@ class Stack:
     def write_var(self, name, value):
         self.top()[name] = value
 
-    def read_var(self, name):
-        return self.top()[name]
+    def LEGB(self, name):
+        for frame in reversed(self.stack):
+            if frame.scope_property == "global":
+                return frame[name]
+            else:
+                if name not in frame:
+                    continue
+                else:
+                    return frame[name]
 
     def issubset(self, other: Stack):
         return self.top().issubset(other.top())
 
     def union(self, other: Stack):
         self.top().union(other.top())
-
-    def __repr__(self):
-        return self.stack.__repr__()
 
     def copy(self):
         copied_stack = Stack()
@@ -114,11 +129,14 @@ class State:
         self.stack = Stack()
         # self.heap = Heap()
 
+    def __repr__(self):
+        return self.stack.__repr__()
+
     def write_to_stack(self, name, value: Value):
         self.stack.write_var(name, value)
 
     def read_from_stack(self, name) -> Value:
-        return self.stack.read_var(name)
+        return self.stack.LEGB(name)
 
     def stack_enter_new_scope(self, scope_property):
         self.stack.enter_new_scope(scope_property)
@@ -128,9 +146,6 @@ class State:
 
     def union(self, other: State):
         self.stack.union(other.stack)
-
-    def __repr__(self):
-        return self.stack.__repr__()
 
     def copy(self):
         copied_state = State()
@@ -156,6 +171,9 @@ class ContextStates:
 
     def __delitem__(self, key):
         del self.states[key]
+
+    def __contains__(self, context):
+        return context in self.states
 
     def items(self):
         return self.states.items()
