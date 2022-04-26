@@ -13,8 +13,8 @@
 #  limitations under the License.
 
 
-class Test:
-    a = 1
+def test(a, b, c):
+    return a
 
 
-a = Test
+value = test("str", 2, None)

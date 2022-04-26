@@ -14,7 +14,8 @@
 
 
 class Test:
-    a = 1
+    def test(self):
+        pass
 
 
-a = Test
+a = Test()
