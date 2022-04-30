@@ -83,11 +83,10 @@ class Analysis:
                                 func_name = stmt.value.func.id
                                 for _, state in self.analysis_list[snd_label].items():
                                     value = state.read_from_stack(func_name)
-                                    locations = value.extract_functions()
-                                    location = list(locations)
-                                    logging.debug("locations {}".format(location))
-                                assert len(location) == 1
-                                cfg = self.sub_cfgs[location[0]]
+                                    locations = value.extract_functions_as_list()
+                                    logging.debug("locations {}".format(locations))
+                                assert len(locations) == 1
+                                cfg = self.sub_cfgs[locations[0]]
                                 self.sub_cfgs.update(cfg.sub_cfgs)
                             else:
                                 assert False
@@ -208,6 +207,9 @@ class Analysis:
         args = func.args
         return self.extract_params(args)
 
+    def extract_class_params(self, cls: ast.ClassDef):
+        pass
+
     def param_value_list(self, params, args, state):
         param_value = []
         for loc, arg in enumerate(args):
@@ -229,20 +231,32 @@ class Analysis:
         return new_context_states
 
     def transfer_func_call(self, label):
+
         stmt: ast.Assign = self.blocks[label].stmt[0]
-        call: ast.Call = stmt.value
-        name = call.func.id
+        call: ast.expr = stmt.value
+        assert isinstance(call, ast.Call)
+
         old_context_states = self.analysis_list[label]
         new_context_states = old_context_states.copy()
         for context, state in old_context_states.items():
+            if isinstance(call.func, ast.Name):
+                name = call.func.id
+            else:
+                assert False
             value = state.read_from_stack(name)
-            func_labels = value.extract_functions_as_list()
-            assert len(func_labels) == 1
-
-            func_def_stmt: ast.FunctionDef = self.blocks[func_labels[0]].stmt[0]
-            param_list = self.extract_func_params(func_def_stmt)
-            arg_list = call.args
-            param_value = self.param_value_list(param_list, arg_list, state)
+            if value.is_function():
+                func_labels = value.extract_functions_as_list()
+                func_def_stmt: ast.FunctionDef = self.blocks[func_labels[0]].stmt[0]
+                param_list = self.extract_func_params(func_def_stmt)
+                arg_list = call.args
+                param_value = self.param_value_list(param_list, arg_list, state)
+            elif value.is_class():
+                class_labels = value.extract_class()
+                class_def_stmt: ast.ClassDef = self.blocks[class_labels[0]].stmt[0]
+                if not call.args:
+                    pass
+                else:
+                    pass
 
             new_state = new_context_states[context]
             new_state.stack_enter_new_scope("local")

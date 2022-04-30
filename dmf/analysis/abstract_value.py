@@ -132,7 +132,11 @@ class ValueFunction:
         self.value.add(location)
 
     def extract_function(self):
+        assert len(self.value) == 1
         return self.value
+
+    def is_function(self):
+        return len(self.value) != 0
 
     def issubset(self, other: ValueFunction):
         return self.value.issubset(other.value)
@@ -150,6 +154,13 @@ class ValueClass:
 
     def inject_class(self, label, frame):
         self.value[label] = frame
+
+    def extract_class(self):
+        assert len(self.value) == 1
+        return self.value
+
+    def is_class(self):
+        return len(self.value) != 0
 
     def issubset(self, other: ValueClass):
         for key, values in self.value.items():
@@ -209,14 +220,20 @@ class Value:
     def inject_function(self, location):
         self.value_func.inject_function(location)
 
-    def extract_functions(self):
-        return self.value_func.extract_function()
+    def is_function(self):
+        return self.value_func.is_function()
 
     def extract_functions_as_list(self):
         return list(self.value_func.extract_function())
 
     def inject_class(self, label, frame):
         self.value_class.inject_class(label, frame)
+
+    def is_class(self):
+        return self.value_class.is_class()
+
+    def extract_class_as_list(self):
+        return list(self.value_class.extract_class())
 
     def union(self, other: Value):
         self.heap_contexts.update(other.heap_contexts)
