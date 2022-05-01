@@ -13,5 +13,15 @@
 #  limitations under the License.
 
 
-class Test:
-    a = 1
+class ModuleManager:
+    def __init__(self):
+        self.manager = {}
+
+    def __setitem__(self, key, value):
+        self.manager[key] = value
+
+    def __getitem__(self, item):
+        return self.manager[item]
+
+    def __contains__(self, item):
+        return item in self.manager

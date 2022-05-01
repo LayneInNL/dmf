@@ -11,7 +11,11 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import os.path
 
 
-class Test:
-    a = 1
+class Module:
+    def __init__(self, path):
+        self.path = path
+        self.name = os.path.basename(path)
+        self.namespace = {}

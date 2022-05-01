@@ -184,7 +184,7 @@ class ValueClass:
                 if other_var not in values:
                     values[other_var] = other_values[other_var]
                 else:
-                    values[other_var].union(other_values[other_var])
+                    values[other_var].update(other_values[other_var])
 
     def __repr__(self):
         return self.value.__repr__()

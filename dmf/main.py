@@ -14,16 +14,37 @@
 
 import argparse
 import logging
+import os.path
 
+from dmf.analysis.Lattice import Lattice
+from dmf.analysis.Stack import create_first_frame
+from dmf.analysis.State import State
 from dmf.analysis.analysis import Analysis
+from dmf.analysis.manager import ModuleManager
+from dmf.analysis.object_types.module import Module
 from dmf.py2flows.py2flows.main import construct_CFG
 
+logging.basicConfig(level=logging.DEBUG)
 parser = argparse.ArgumentParser()
-parser.add_argument("file_name", help="the file name")
+parser.add_argument("file_path", help="the file path")
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    logging.basicConfig(level=logging.DEBUG)
-    CFG = construct_CFG(args.file_name)
-    mfp = Analysis(CFG)
+    abs_path = os.path.abspath(args.file_path)
+    logging.debug("Entry file is: {}".format(abs_path))
+
+    first_module = Module(abs_path)
+    first_module.name = __name__
+
+    module_manager = ModuleManager()
+    module_manager[abs_path] = first_module
+
+    state = State()
+    initial_frame = create_first_frame()
+    state.push_frame_to_stack(initial_frame)
+    lattice = Lattice()
+    lattice[()] = state
+
+    cfg = construct_CFG(abs_path)
+    mfp = Analysis(cfg, lattice)
     mfp.compute_fixed_point()

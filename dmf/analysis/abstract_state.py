@@ -15,14 +15,14 @@
 from __future__ import annotations
 
 import builtins
-from typing import List
+from typing import List, Any, Dict
 
 from dmf.analysis.abstract_value import Value
 
 BUILTIN_NAMES = set(dir(builtins))
 
 
-class StackFrame:
+class Frame:
     def __init__(self, scope_property):
         self.frame = {}
         self.scope_property = scope_property
@@ -45,7 +45,7 @@ class StackFrame:
     def items(self):
         return self.frame.items()
 
-    def issubset(self, other: StackFrame):
+    def issubset(self, other: Frame):
         for key in self.keys():
             if key not in other.keys():
                 return False
@@ -54,10 +54,10 @@ class StackFrame:
 
         return True
 
-    def union(self, other: StackFrame):
+    def union(self, other: Frame):
         intersection = set(self.keys()).intersection(other.keys())
         for var in intersection:
-            self[var].union(other[var])
+            self[var].update(other[var])
 
         diff = set(other.keys()).difference(self.keys())
         for var in diff:
@@ -67,7 +67,7 @@ class StackFrame:
         return self.frame.__repr__()
 
     def copy(self):
-        copied_frame = StackFrame(self.scope_property)
+        copied_frame = Frame(self.scope_property)
         for key, value in self.items():
             copied_frame[key] = value
         return copied_frame
@@ -75,16 +75,16 @@ class StackFrame:
 
 class Stack:
     def __init__(self):
-        self.stack: List[StackFrame] = []
+        self.stack: List[Frame] = []
 
     def __repr__(self):
         return self.stack.__repr__()
 
-    def push(self, frame: StackFrame):
+    def push(self, frame: Frame):
         self.stack.append(frame)
 
     def enter_new_scope(self, scope_property):
-        self.push(StackFrame(scope_property))
+        self.push(Frame(scope_property))
 
     def pop(self):
         self.stack = self.stack[:-1]
@@ -154,66 +154,61 @@ class State:
         return copied_state
 
 
-class ContextStates:
-    def __init__(self, extremal=False):
-        if extremal:
-            state = State()
-            state.stack_enter_new_scope("global")
-            self.states = {(): state}
-        else:
-            self.states = {}
+class Lattice:
+    def __init__(self):
+        self.lattice = {}
 
     def __setitem__(self, key, value):
-        self.states[key] = value
+        self.lattice[key] = value
 
     def __getitem__(self, context):
-        return self.states[context]
+        return self.lattice[context]
 
     def __delitem__(self, key):
-        del self.states[key]
+        del self.lattice[key]
 
     def __contains__(self, context):
-        return context in self.states
+        return context in self.lattice
 
     def items(self):
-        return self.states.items()
+        return self.lattice.items()
 
-    def union(self, original: ContextStates):
+    def update(self, original: Lattice):
         if original is None:
             return
 
         for context, state in original.items():
-            if context not in self.states:
+            if context not in self.lattice:
                 self.__setitem__(context, state)
             else:
-                self.states[context].union(state)
+                self.lattice[context].update(state)
 
-    def issubset(self, original: ContextStates):
+    def issubset(self, original: Lattice):
         # if original is None, it's unreachable for now.
         if original is None:
             return False
 
         # check relationship of contexts
-        transferred_contexts = set(self.states)
-        original_contexts = set(original.states)
+        transferred_contexts = set(self.lattice)
+        original_contexts = set(original.lattice)
         if transferred_contexts.issubset(original_contexts):
             # check relationship of state
             for context in transferred_contexts:
-                new_state = self.states[context]
-                original_state = original.states[context]
+                new_state = self.lattice[context]
+                original_state = original.lattice[context]
                 if not new_state.issubset(original_state):
                     return False
         return False
 
     def __repr__(self):
         res = ""
-        for context, state in self.states.items():
+        for context, state in self.lattice.items():
             res += "context {}, state {}\n".format(context, state)
 
         return res
 
     def copy(self):
-        copied_context_states = ContextStates()
-        for key, states in self.states.items():
+        copied_context_states = Lattice()
+        for key, states in self.lattice.items():
             copied_context_states[key] = states.copy()
         return copied_context_states
