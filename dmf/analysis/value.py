@@ -41,6 +41,9 @@ class Value:
     def inject_func_type(self, label: int):
         self.func_types.add(label)
 
+    def extract_func_type(self):
+        return self.func_types
+
     def inject_class_type(self, label: int, frame):
         self.class_types[label] = frame
 

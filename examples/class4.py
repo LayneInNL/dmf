@@ -16,30 +16,5 @@
 class Base:
     a = 1
 
-    def __init__(self):
-        self.base = 1
 
-    def test(self):
-        pass
-
-
-class Derive(Base):
-    b = 2
-
-    def __init__(self):
-        super().__init__()
-        self.derive = 2
-
-    def test(self):
-        pass
-
-
-print(Derive.__dict__)
-print(vars(Derive))
-print(Base.__dict__)
-print(vars(Base))
-
-
-a = Base()
-b = Derive()
-c = 3
+b = Base()

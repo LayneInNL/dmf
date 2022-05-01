@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from dmf.analysis.Value import Value
+from dmf.analysis.value import Value
 
 # BUILTIN_DICT = {"True": "True", "False": "False", "None": "None"}
 
@@ -47,6 +47,8 @@ class Frame:
 
         if name in self.f_builtins:
             return self.f_builtins[name]
+
+        assert False
 
     def write_var(self, name, value):
         self.f_locals[name] = value

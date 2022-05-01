@@ -18,11 +18,4 @@ def test():
     return a
 
 
-def test1():
-    a = 3
-    if a:
-        return a
-    return 3
-
-
-b = test1()
+b = test()

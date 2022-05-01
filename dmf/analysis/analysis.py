@@ -18,10 +18,10 @@ import logging
 from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, List
 
-from dmf.analysis.Lattice import Lattice, issubset
-from dmf.analysis.Stack import Frame
-from dmf.analysis.State import State
-from dmf.analysis.Value import (
+from dmf.analysis.lattice import Lattice, issubset
+from dmf.analysis.stack import Frame
+from dmf.analysis.state import State
+from dmf.analysis.value import (
     Value,
     NUM_TYPE,
     NONE_TYPE,
@@ -50,6 +50,7 @@ class Analysis:
         self.analysis_list: Dict[int, Lattice] | None = None
 
         self.sub_cfgs: Dict[int, CFG] = cfg.sub_cfgs
+        self.implicit_return_name = "19951107"
 
     def compute_fixed_point(self):
         self.initialize()
@@ -69,9 +70,16 @@ class Analysis:
             if not issubset(transferred, old):
                 self.analysis_list[snd_label]: Lattice = transferred.update(old)
 
-                is_call = self.is_call_label(snd_label)
-                if is_call:
-                    sub_cfg: CFG = self.sub_cfgs[snd_label]
+                if self.is_call_label(snd_label):
+                    label: int = snd_label
+                    if self.is_func_call_label(snd_label):
+                        stmt: ast.Assign = self.blocks[snd_label].stmt[0]
+                        call: ast.Call = stmt.value
+                        func_name: str = self.get_func_name(call)
+                        label = self.get_func_label(
+                            func_name, self.analysis_list[snd_label]
+                        )
+                    sub_cfg: CFG = self.sub_cfgs[label]
                     self.sub_cfgs.update(sub_cfg.sub_cfgs)
                     self.blocks.update(sub_cfg.blocks)
                     self.flows.update(sub_cfg.flows)
@@ -95,9 +103,43 @@ class Analysis:
                 return True
         return False
 
+    def is_func_call_label(self, label: int):
+        if self.is_call_label(label):
+            stmt: ast.stmt = self.blocks[label].stmt[0]
+            if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Call):
+                return True
+        return False
+
+    def get_func_name(self, expr: ast.Call):
+        if isinstance(expr.func, ast.Name):
+            return expr.func.id
+        else:
+            assert False
+
+    def get_assign_name(self, expr: ast.expr):
+        if isinstance(expr, ast.Name):
+            return expr.id
+        else:
+            assert False
+
+    def get_func_label(self, name: str, lattice: Lattice):
+        values: List[State] = list(lattice.values())
+        state: State = values[0]
+        value: Value = state.read_var_from_stack(name)
+        func_labels = list(value.extract_func_type())
+        assert len(func_labels) == 1
+        return func_labels[0]
+
     def is_return_label(self, label: int):
         for _, _, _, b in self.inter_flows:
             if b == label:
+                return True
+        return False
+
+    def is_func_return_label(self, label: int):
+        if self.is_return_label(label):
+            stmt: ast.stmt = self.blocks[label].stmt[0]
+            if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Call):
                 return True
         return False
 
@@ -137,6 +179,11 @@ class Analysis:
         return handler(label)
 
     def transfer_Assign(self, label):
+        if self.is_func_call_label(label):
+            return self.transfer_func_call(label)
+        elif self.is_func_return_label(label):
+            return self.transfer_func_return(label)
+
         stmt: ast.Assign = self.blocks[label].stmt[0]
         old: Lattice = self.analysis_list[label]
         new: Lattice = old.hybrid_copy()
@@ -148,6 +195,34 @@ class Analysis:
             else:
                 assert False
         return new
+
+    def merge(self, label, heap, context):
+        return context[-1:] + (label,)
+
+    def transfer_func_call(self, label):
+        old: Lattice = self.analysis_list[label]
+        new: Lattice = old.hybrid_copy()
+        for context, state in old.items():
+            new_context = self.merge(label, None, context)
+            new[new_context] = new[context]
+            del new[context]
+            new[new_context].stack_go_into_new_frame()
+        return new
+
+    def transfer_func_return(self, label):
+        call_label: int = self.get_call_label(label)
+        call: Lattice = self.analysis_list[call_label]
+        new_call: Lattice = call.hybrid_copy()
+        ret: Lattice = self.analysis_list[label]
+        ret_name = self.implicit_return_name
+        stmt: ast.Assign = self.blocks[label].stmt[0]
+        assign_name = self.get_assign_name(stmt.targets[0])
+        for context, state in new_call.items():
+            context_at_call = self.merge(call_label, None, context)
+            return_state = ret[context_at_call]
+            ret_value = return_state.read_var_from_stack(ret_name)
+            state.write_var_to_stack(assign_name, ret_value)
+        return new_call
 
     def transfer_FunctionDef(self, label):
         stmt: ast.FunctionDef = self.blocks[label].stmt[0]
@@ -178,7 +253,7 @@ class Analysis:
                 class_name: str = stmt.name
                 frame: Frame = ret_state.top_frame_on_stack()
                 value: Value = Value()
-                value.inject_class_type(label, frame.f_locals)
+                value.inject_class_type(call_label, frame.f_locals)
                 new_call[ret_context].write_var_to_stack(class_name, value)
             return new_call
 
@@ -190,6 +265,16 @@ class Analysis:
 
     def transfer_While(self, label):
         return self.analysis_list[label]
+
+    def transfer_Return(self, label):
+        old = self.analysis_list[label]
+        new = old.hybrid_copy()
+        stmt: ast.Return = self.blocks[label].stmt[0]
+        ret_name = stmt.value.id
+        for context, state in new.items():
+            ret_value = state.read_var_from_stack(ret_name)
+            state.write_var_to_stack(self.implicit_return_name, ret_value)
+        return new
 
 
 def get_value(expr: ast.expr, state: State):

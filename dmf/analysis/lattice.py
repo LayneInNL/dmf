@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Tuple, Dict
 
-from dmf.analysis.State import State
+from dmf.analysis.state import State
 
 
 class Lattice:

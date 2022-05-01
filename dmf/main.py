@@ -16,9 +16,9 @@ import argparse
 import logging
 import os.path
 
-from dmf.analysis.Lattice import Lattice
-from dmf.analysis.Stack import create_first_frame
-from dmf.analysis.State import State
+from dmf.analysis.lattice import Lattice
+from dmf.analysis.stack import create_first_frame
+from dmf.analysis.state import State
 from dmf.analysis.analysis import Analysis
 from dmf.analysis.manager import ModuleManager
 from dmf.analysis.object_types.module import Module

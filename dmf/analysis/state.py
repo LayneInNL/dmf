@@ -12,9 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 from __future__ import annotations
-from dmf.analysis.Heap import Heap
-from dmf.analysis.Stack import Stack, Frame
-from dmf.analysis.Value import Value
+from dmf.analysis.heap import Heap
+from dmf.analysis.stack import Stack, Frame
+from dmf.analysis.value import Value
 
 
 class State:

@@ -13,8 +13,11 @@
 #  limitations under the License.
 
 
-def test(a, b, c):
+a = 3
+
+
+def test():
     return a
 
 
-value = test("str", 2, None)
+b = test()
