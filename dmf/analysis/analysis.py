@@ -18,16 +18,20 @@ import logging
 from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, List
 
+from dmf.analysis.helper import (
+    is_func_type,
+    is_class_type,
+    merge,
+    record,
+    get_func_or_class_name,
+    get_value,
+    get_assign_name,
+    get_func_or_class_label,
+)
 from dmf.analysis.lattice import Lattice, issubset
 from dmf.analysis.stack import Frame
-from dmf.analysis.state import State
 from dmf.analysis.value import (
     Value,
-    NUM_TYPE,
-    NONE_TYPE,
-    BOOL_TYPE,
-    STR_TYPE,
-    BYTE_TYPE,
 )
 from dmf.py2flows.py2flows.cfg.flows import CFG
 
@@ -50,7 +54,8 @@ class Analysis:
         self.analysis_list: Dict[int, Lattice] | None = None
 
         self.sub_cfgs: Dict[int, CFG] = cfg.sub_cfgs
-        self.implicit_return_name = "19951107"
+        self.implicit_func_return_name = "19951107"
+        self.implicit_class_call_name = "self"
 
     def compute_fixed_point(self):
         self.initialize()
@@ -75,9 +80,9 @@ class Analysis:
                     if self.is_func_call_label(snd_label):
                         stmt: ast.Assign = self.blocks[snd_label].stmt[0]
                         call: ast.Call = stmt.value
-                        func_name: str = self.get_func_name(call)
-                        label = self.get_func_label(
-                            func_name, self.analysis_list[snd_label]
+                        name: str = get_func_or_class_name(call)
+                        label = get_func_or_class_label(
+                            name, self.analysis_list[snd_label]
                         )
                     sub_cfg: CFG = self.sub_cfgs[label]
                     self.sub_cfgs.update(sub_cfg.sub_cfgs)
@@ -106,40 +111,13 @@ class Analysis:
     def is_func_call_label(self, label: int):
         if self.is_call_label(label):
             stmt: ast.stmt = self.blocks[label].stmt[0]
-            if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Call):
+            if isinstance(stmt.value, ast.Call):
                 return True
         return False
-
-    def get_func_name(self, expr: ast.Call):
-        if isinstance(expr.func, ast.Name):
-            return expr.func.id
-        else:
-            assert False
-
-    def get_assign_name(self, expr: ast.expr):
-        if isinstance(expr, ast.Name):
-            return expr.id
-        else:
-            assert False
-
-    def get_func_label(self, name: str, lattice: Lattice):
-        values: List[State] = list(lattice.values())
-        state: State = values[0]
-        value: Value = state.read_var_from_stack(name)
-        func_labels = list(value.extract_func_type())
-        assert len(func_labels) == 1
-        return func_labels[0]
 
     def is_return_label(self, label: int):
         for _, _, _, b in self.inter_flows:
             if b == label:
-                return True
-        return False
-
-    def is_func_return_label(self, label: int):
-        if self.is_return_label(label):
-            stmt: ast.stmt = self.blocks[label].stmt[0]
-            if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Call):
                 return True
         return False
 
@@ -179,14 +157,33 @@ class Analysis:
         return handler(label)
 
     def transfer_Assign(self, label):
-        if self.is_func_call_label(label):
-            return self.transfer_func_call(label)
-        elif self.is_func_return_label(label):
-            return self.transfer_func_return(label)
-
         stmt: ast.Assign = self.blocks[label].stmt[0]
+
         old: Lattice = self.analysis_list[label]
         new: Lattice = old.hybrid_copy()
+
+        for context, state in new.items():
+            if self.is_call_label(label):
+                name: str = get_func_or_class_name(stmt.value)
+                value: Value = state.read_var_from_stack(name)
+                if is_func_type(value):
+                    new_context = merge(label, None, context)
+                    new[new_context] = new[context]
+                    del new[context]
+                    new[new_context].stack_go_into_new_frame()
+                elif is_class_type(value):
+                    heap: int = record(label, context)
+                    value = Value()
+                    value.inject_heap_type(heap)
+                    name = "self"
+                    new_context = merge(label, None, context)
+                    new[new_context] = new[context]
+                    del new[context]
+                    new[new_context].stack_go_into_new_frame()
+                    new[new_context].write_var_to_stack(name, value)
+            elif self.is_return_label(label):
+                return self.transfer_func_return(label)
+
         for _, state in new.items():
             value: Value = get_value(stmt.value, state)
             if len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
@@ -196,17 +193,43 @@ class Analysis:
                 assert False
         return new
 
-    def merge(self, label, heap, context):
-        return context[-1:] + (label,)
-
     def transfer_func_call(self, label):
         old: Lattice = self.analysis_list[label]
         new: Lattice = old.hybrid_copy()
         for context, state in old.items():
-            new_context = self.merge(label, None, context)
+            new_context = merge(label, None, context)
             new[new_context] = new[context]
             del new[context]
             new[new_context].stack_go_into_new_frame()
+        return new
+
+    def transfer_class_instantiation(self, label):
+        old: Lattice = self.analysis_list[label]
+        new: Lattice = old.hybrid_copy()
+        for context, state in old.items():
+            heap: int = record(label, context)
+            value = Value()
+            value.inject_heap_type(heap)
+            name = "self"
+            new_context = merge(label, None, context)
+            new[new_context] = new[context]
+            del new[context]
+            new[new_context].stack_go_into_new_frame()
+            new[new_context].write_var_to_stack(name, value)
+        return new
+
+    def transfer_class_instantiation_return(self, label):
+        stmt: ast.Assign = self.blocks[label].stmt[0]
+        ret: Lattice = self.analysis_list[label]
+        call_label: int = self.get_call_label(label)
+        call: Lattice = self.analysis_list[call_label]
+        new: Lattice = call.hybrid_copy()
+        assign_name: str = get_assign_name(stmt.targets[0])
+        for context, state in call.items():
+            context_at_call = merge(call_label, None, context)
+            value = ret[context_at_call].read_var_from_stack("self")
+            new[context].write_var_to_stack(assign_name, value)
+            new[context].heap = ret[context_at_call].heap
         return new
 
     def transfer_func_return(self, label):
@@ -214,11 +237,11 @@ class Analysis:
         call: Lattice = self.analysis_list[call_label]
         new_call: Lattice = call.hybrid_copy()
         ret: Lattice = self.analysis_list[label]
-        ret_name = self.implicit_return_name
+        ret_name = self.implicit_func_return_name
         stmt: ast.Assign = self.blocks[label].stmt[0]
-        assign_name = self.get_assign_name(stmt.targets[0])
+        assign_name = get_assign_name(stmt.targets[0])
         for context, state in new_call.items():
-            context_at_call = self.merge(call_label, None, context)
+            context_at_call = merge(call_label, None, context)
             return_state = ret[context_at_call]
             ret_value = return_state.read_var_from_stack(ret_name)
             state.write_var_to_stack(assign_name, ret_value)
@@ -270,33 +293,9 @@ class Analysis:
         old = self.analysis_list[label]
         new = old.hybrid_copy()
         stmt: ast.Return = self.blocks[label].stmt[0]
+        assert isinstance(stmt.value, ast.Name)
         ret_name = stmt.value.id
         for context, state in new.items():
             ret_value = state.read_var_from_stack(ret_name)
-            state.write_var_to_stack(self.implicit_return_name, ret_value)
+            state.write_var_to_stack(self.implicit_func_return_name, ret_value)
         return new
-
-
-def get_value(expr: ast.expr, state: State):
-    if isinstance(expr, ast.Num):
-        value = Value()
-        value.inject_prim_type(NUM_TYPE)
-        return value
-    elif isinstance(expr, ast.NameConstant):
-        value = Value()
-        if expr.value is None:
-            value.inject_prim_type(NONE_TYPE)
-        else:
-            value.inject_prim_type(BOOL_TYPE)
-        return value
-    elif isinstance(expr, (ast.Str, ast.JoinedStr)):
-        value = Value()
-        value.inject_prim_type(STR_TYPE)
-        return value
-    elif isinstance(expr, ast.Bytes):
-        value = Value()
-        value.inject_prim_type(BYTE_TYPE)
-    elif isinstance(expr, ast.Name):
-        return state.read_var_from_stack(expr.id)
-    else:
-        assert False

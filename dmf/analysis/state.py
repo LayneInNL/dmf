@@ -20,10 +20,21 @@ from dmf.analysis.value import Value
 class State:
     def __init__(self):
         self.stack: Stack = Stack()
-        # self.heap: Heap = Heap()
+        self.heap: Heap = Heap()
 
     def __repr__(self):
-        return self.stack.__repr__()
+        res = ""
+        res += self.stack.__repr__()
+        res += "\n"
+        res += self.heap.__repr__()
+        res += "\n"
+        return res
+
+    def read_field_from_heap(self, heap_context: int, filed_name: str):
+        return self.heap.read_from_field(heap_context, filed_name)
+
+    def write_field_to_heap(self, heap_context: int, field_name: str, value: Value):
+        self.heap.write_to_field(heap_context, field_name, value)
 
     def push_frame_to_stack(self, frame: Frame):
         self.stack.push_frame(frame)
@@ -44,15 +55,16 @@ class State:
         self.stack.go_into_new_frame()
 
     def issubset(self, other: State):
-        return self.stack.issubset(other.stack)
+        return self.stack.issubset(other.stack) and self.heap.issubset(other.heap)
 
     def update(self, other: State):
         self.stack.update(other.stack)
+        self.heap.update(other.heap)
         return self
 
     def hybrid_copy(self):
         copied = State()
         copied.stack = self.stack.hybrid_copy()
-        # copied.heap = self.heap.hybrid_copy()
+        copied.heap = self.heap
 
         return copied

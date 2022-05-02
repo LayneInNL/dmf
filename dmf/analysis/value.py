@@ -35,6 +35,12 @@ class Value:
             self.heap_types, self.prim_types, self.func_types, self.class_types
         )
 
+    def inject_heap_type(self, heap: int):
+        self.heap_types.add(heap)
+
+    def extract_heap_type(self):
+        return self.heap_types
+
     def inject_prim_type(self, type_to_be_injected: str):
         self.prim_types.add(type_to_be_injected)
 
@@ -46,6 +52,9 @@ class Value:
 
     def inject_class_type(self, label: int, frame):
         self.class_types[label] = frame
+
+    def extract_class_type(self):
+        return self.class_types.items()
 
     def class_types_issubset(self, other: Dict[int, Dict[str, Value]]):
         mine = self.class_types
