@@ -11,27 +11,11 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-import class3
-
-print(dir())
 
 
-class Test(class3.Test):
-    class5_test = 666
-
+class Base:
     def __init__(self):
-        pass
-
-    def test(self):
-        Test.class5_test = "111"
-        print(class3.Test.__mro__)
-        print(self.xxx)
-        print(dir())
-        print(Test)
+        self.value = 1
 
 
-t = Test()
-
-t.class5_test = 555
-Test.class5_test = "str"
-t.test()
+b = Base()

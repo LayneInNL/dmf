@@ -57,16 +57,10 @@ def get_func_or_class_label(name: str, lattice: Lattice):
     return func_labels[0]
 
 
-def get_func_or_class_name(expr: ast.Call):
+def get_callable_name(expr: ast.expr):
+    assert isinstance(expr, ast.Call)
     if isinstance(expr.func, ast.Name):
         return expr.func.id
-    else:
-        assert False
-
-
-def get_assign_name(expr: ast.expr):
-    if isinstance(expr, ast.Name):
-        return expr.id
     else:
         assert False
 

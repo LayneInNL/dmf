@@ -50,6 +50,9 @@ class Frame:
 
         assert False
 
+    def contains(self, name):
+        return name in self.f_locals
+
     def write_var(self, name, value):
         self.f_locals[name] = value
 

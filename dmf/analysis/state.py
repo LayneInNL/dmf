@@ -45,6 +45,9 @@ class State:
     def top_frame_on_stack(self):
         return self.stack.top_frame()
 
+    def stack_contains(self, name):
+        return self.top_frame_on_stack().contains(name)
+
     def read_var_from_stack(self, var: str) -> Value:
         return self.stack.read_var(var)
 

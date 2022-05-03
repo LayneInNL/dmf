@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 from __future__ import annotations
+
+from collections import defaultdict
 from typing import Dict
 
 from dmf.analysis.value import Value
@@ -19,7 +21,7 @@ from dmf.analysis.value import Value
 
 class Heap:
     def __init__(self):
-        self.heap: Dict[int, Dict[str, Value]] = {}
+        self.heap: Dict[int, Dict[str, Value]] = defaultdict(dict)
 
     def __repr__(self):
         return self.heap.__repr__()
