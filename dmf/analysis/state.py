@@ -23,9 +23,9 @@ class State:
         self.heap: Heap = Heap()
 
     def __repr__(self):
-        res = ""
+        res = "Stack: "
         res += self.stack.__repr__()
-        res += "\n"
+        res += "\nHeap:"
         res += self.heap.__repr__()
         res += "\n"
         return res
@@ -48,6 +48,9 @@ class State:
     def stack_contains(self, name):
         return self.top_frame_on_stack().contains(name)
 
+    def heap_contains(self, heap_context, field):
+        return self.heap.contains(heap_context, field)
+
     def read_var_from_stack(self, var: str) -> Value:
         return self.stack.read_var(var)
 
@@ -68,6 +71,6 @@ class State:
     def hybrid_copy(self):
         copied = State()
         copied.stack = self.stack.hybrid_copy()
-        copied.heap = self.heap
+        copied.heap = self.heap.hybrid_copy()
 
         return copied

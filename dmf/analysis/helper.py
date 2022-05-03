@@ -94,5 +94,20 @@ def get_value(expr: ast.expr, state: State):
         value.inject_prim_type(BYTE_TYPE)
     elif isinstance(expr, ast.Name):
         return state.read_var_from_stack(expr.id)
+    elif isinstance(expr, ast.Attribute):
+        attr = expr.attr
+        assert isinstance(expr.value, ast.Name)
+        name = expr.value.id
+        value = state.read_var_from_stack(name)
+        heaps = list(value.extract_heap_type())
+        assert len(heaps) == 1
+        if state.heap_contains(heaps[0], attr):
+            return state.read_field_from_heap(heaps[0], attr)
+        else:
+            # look it up in class objects
+            class_object_value = state.read_field_from_heap(heaps[0], "0")
+            class_attributes = list(class_object_value.extract_class_type())
+            value = class_attributes[0][1]
+            return value[attr]
     else:
         assert False
