@@ -181,7 +181,6 @@ class Analysis:
                 new[new_context].stack_go_into_new_frame()
                 new[new_context].write_var_to_stack(name, value)
                 new[new_context].write_var_to_stack(fake_name, fake_value)
-                new[new_context].write_field_to_heap(heap, "0", callable_value)
         return new
 
     def transfer_inter_return(self, return_label):
@@ -271,7 +270,7 @@ class Analysis:
                 class_name: str = stmt.name
                 frame: Frame = ret_state.top_frame_on_stack()
                 value: Value = Value()
-                value.inject_class_type(call_label, frame.f_locals)
+                value.inject_class_type(frame.f_locals)
                 new_call[ret_context].write_var_to_stack(class_name, value)
             return new_call
 
@@ -296,7 +295,7 @@ class Analysis:
             state.write_var_to_stack(self.implicit_func_return_name, ret_value)
         return new
 
-    def heap_to_classname(self, heap: int):
+    def heap_to_class_name(self, heap: int):
         stmt: ast.ClassDef = self.blocks[heap].stmt[0]
         class_name: str = stmt.name
         return class_name

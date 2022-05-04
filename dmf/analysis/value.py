@@ -28,7 +28,7 @@ class Value:
         self.heap_types: Set[int] = set()
         self.prim_types: Set[str] = set()
         self.func_types: Set[int] = set()
-        self.class_types: Dict[int, Dict[str, Value]] = {}
+        self.class_types: Dict[str, Value] = {}
 
     def __repr__(self):
         return "Value is: {} x {} x {} x {}".format(
@@ -50,40 +50,33 @@ class Value:
     def extract_func_type(self):
         return self.func_types
 
-    def inject_class_type(self, label: int, frame):
-        self.class_types[label] = frame
+    def inject_class_type(self, frame: Dict[str, Value]):
+        self.class_types.update(frame)
 
-    def extract_class_type(self):
-        return self.class_types.items()
+    def extract_class_type(self) -> Dict[str, Value]:
+        return self.class_types
 
-    def class_types_issubset(self, other: Dict[int, Dict[str, Value]]):
+    def class_types_issubset(self, other: Dict[str, Value]):
         mine = self.class_types
-        for label in mine:
-            if label not in other:
+        mine_values = mine
+        other_values = other
+        for key in mine_values:
+            if key not in other_values:
                 return False
-            mine_values = mine[label]
-            other_values = other[label]
-            for key in mine_values:
-                if key not in other_values:
-                    return False
-                if not mine_values[key].issubset(other_values[key]):
-                    return False
+            if not mine_values[key].issubset(other_values[key]):
+                return False
 
         return True
 
-    def class_types_update(self, other: Dict[int, Dict[str, Value]]):
+    def class_types_update(self, other: Dict[str, Value]):
         mine = self.class_types
-        for label in other:
-            if label not in mine:
-                mine[label] = other[label]
-                continue
-            mine_values = mine[label]
-            other_values = other[label]
-            for key in other_values:
-                if key not in mine_values:
-                    mine_values[key] = other_values[key]
-                else:
-                    mine_values[key].update(other_values[key])
+        mine_values = mine
+        other_values = other
+        for key in other_values:
+            if key not in mine_values:
+                mine_values[key] = other_values[key]
+            else:
+                mine_values[key].update(other_values[key])
 
         return self
 

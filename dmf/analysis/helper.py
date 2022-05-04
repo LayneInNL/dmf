@@ -50,8 +50,8 @@ def get_func_or_class_label(name: str, lattice: Lattice):
     logging.debug("Value is {}".format(value))
     func_labels = list(value.extract_func_type())
     if not func_labels:
-        class_label_value = list(value.extract_class_type())
-        frame: Dict[str, Value] = class_label_value[0][1]
+        class_label_value = value.extract_class_type()
+        frame: Dict[str, Value] = class_label_value
         func_value: Value = frame["__init__"]
         func_labels = list(func_value.extract_func_type())
     return func_labels[0]
@@ -105,9 +105,6 @@ def get_value(expr: ast.expr, state: State):
             return state.read_field_from_heap(heaps[0], attr)
         else:
             # look it up in class objects
-            class_object_value = state.read_field_from_heap(heaps[0], "0")
-            class_attributes = list(class_object_value.extract_class_type())
-            value = class_attributes[0][1]
-            return value[attr]
+            pass
     else:
         assert False
