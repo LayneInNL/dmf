@@ -22,6 +22,14 @@ class State:
         self.stack: Stack = Stack()
         self.heap: Heap = Heap()
 
+    def __le__(self, other: State):
+        return self.stack <= other.stack and self.heap <= other.heap
+
+    def __iadd__(self, other: State):
+        self.stack += other.stack
+        self.heap += other.heap
+        return self
+
     def __repr__(self):
         res = "Stack: "
         res += self.stack.__repr__()
@@ -46,10 +54,10 @@ class State:
         return self.stack.top_frame()
 
     def stack_contains(self, name):
-        return self.top_frame_on_stack().contains(name)
+        return name in self.top_frame_on_stack()
 
     def heap_contains(self, heap_context, field):
-        return self.heap.contains(heap_context, field)
+        return (heap_context, field) in self.heap
 
     def read_var_from_stack(self, var: str) -> Value:
         return self.stack.read_var(var)
@@ -59,14 +67,6 @@ class State:
 
     def stack_go_into_new_frame(self):
         self.stack.go_into_new_frame()
-
-    def issubset(self, other: State):
-        return self.stack.issubset(other.stack) and self.heap.issubset(other.heap)
-
-    def update(self, other: State):
-        self.stack.update(other.stack)
-        self.heap.update(other.heap)
-        return self
 
     def hybrid_copy(self):
         copied = State()

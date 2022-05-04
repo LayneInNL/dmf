@@ -11,13 +11,16 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
-
 class Base:
-    value = 2
+    value = False
 
+    def __init__(self):
+        pass
+
+
+class Derive(Base):
     def __init__(self):
         self.v = self.value
 
 
-b = Base()
+b = Derive()

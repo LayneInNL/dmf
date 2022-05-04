@@ -27,12 +27,14 @@ from dmf.analysis.helper import (
     get_value,
     get_func_or_class_label,
 )
-from dmf.analysis.lattice import Lattice, issubset
+from dmf.analysis.lattice import Lattice
 from dmf.analysis.stack import Frame
 from dmf.analysis.state import State
+from dmf.analysis.utils import subset
 from dmf.analysis.value import (
     Value,
     builtin_object,
+    ClassObject,
 )
 from dmf.py2flows.py2flows.cfg.flows import CFG
 
@@ -74,8 +76,9 @@ class Analysis:
             fst_label, snd_label = self.work_list.popleft()
             transferred: Lattice | None = self.transfer(fst_label)
             old: Lattice | None = self.analysis_list[snd_label]
-            if not issubset(transferred, old):
-                self.analysis_list[snd_label]: Lattice = transferred.update(old)
+
+            if not subset(transferred, old):
+                self.analysis_list[snd_label]: Lattice = transferred + old
 
                 if self.is_call_label(snd_label):
                     sub_cfg_label: int = self.get_cfg_label(snd_label)
@@ -168,9 +171,10 @@ class Analysis:
                 del new[context]
                 new[new_context].stack_go_into_new_frame()
             elif is_class_type(callable_value):
+                class_object: ClassObject = callable_value.extract_class_object()
                 heap: int = record(label, context)
                 value: Value = Value()
-                value.inject_heap_type(heap)
+                value.inject_heap_type(heap, class_object)
                 name: str = "self"
 
                 fake_value: Value = Value()
@@ -239,7 +243,7 @@ class Analysis:
                 field: str = target.attr
                 heaps = list(value.extract_heap_type())
                 for heap in heaps:
-                    state.write_field_to_heap(heap, field, right_value)
+                    state.write_field_to_heap(heap[0], field, right_value)
         return new
 
     def transfer_FunctionDef(self, label) -> Lattice:

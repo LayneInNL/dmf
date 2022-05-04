@@ -13,7 +13,7 @@
 #  limitations under the License.
 import ast
 import logging
-from typing import List
+from typing import List, Set, Tuple
 
 from dmf.analysis.lattice import Lattice
 from dmf.analysis.state import State
@@ -24,6 +24,7 @@ from dmf.analysis.value import (
     BOOL_TYPE,
     STR_TYPE,
     BYTE_TYPE,
+    ClassObject,
 )
 
 
@@ -96,12 +97,14 @@ def get_value(expr: ast.expr, state: State):
         assert isinstance(expr.value, ast.Name)
         name = expr.value.id
         value = state.read_var_from_stack(name)
-        heaps = list(value.extract_heap_type())
-        assert len(heaps) == 1
-        if state.heap_contains(heaps[0], attr):
-            return state.read_field_from_heap(heaps[0], attr)
+        heaps: List[Tuple[int, ClassObject]] = list(value.extract_heap_type())
+        if state.heap_contains(heaps[0][0], attr):
+            return state.read_field_from_heap(heaps[0][0], attr)
         else:
-            # look it up in class objects
-            pass
+            for base in heaps[0][1].mro:
+                attributes = base.attributes
+                if attr in attributes:
+                    return attributes[attr]
+            raise AttributeError
     else:
         assert False

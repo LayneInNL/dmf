@@ -13,8 +13,10 @@
 #  limitations under the License.
 from __future__ import annotations
 
+import logging
 from typing import Dict, List
 
+from dmf.analysis.utils import issubset, update
 from dmf.analysis.value import Value
 
 
@@ -25,10 +27,21 @@ class Frame:
         self.f_globals: Dict[str, Value] | None = None
         self.f_builtins: Dict[str, Value] | None = None
 
+    def __contains__(self, item):
+        return item in self.f_locals
+
+    def __le__(self, other: Frame):
+        return issubset(self.f_locals, other.f_locals)
+
+    def __iadd__(self, other: Frame):
+        update(self.f_locals, other.f_locals)
+        return self
+
     def __repr__(self):
         return self.f_locals.__repr__()
 
     def read_var(self, name):
+        logging.debug("read_var: {}".format(name))
         # Implement LEGB rule
         if name in self.f_locals:
             return self.f_locals[name]
@@ -46,30 +59,10 @@ class Frame:
         if name in self.f_builtins:
             return self.f_builtins[name]
 
-        assert False
-
-    def contains(self, name):
-        return name in self.f_locals
+        raise AttributeError
 
     def write_var(self, name, value):
         self.f_locals[name] = value
-
-    def issubset(self, other: Frame):
-        for var in self.f_locals:
-            if var not in other.f_locals:
-                return False
-            if not self.f_locals[var].issubset(other.f_locals[var]):
-                return False
-        return True
-
-    def update(self, other: Frame):
-        for var in other.f_locals:
-            if var not in self.f_locals:
-                self.f_locals[var] = other.f_locals[var]
-            else:
-                self.f_locals[var].update(other.f_locals[var])
-
-        return self
 
     def hybrid_copy(self):
         copied = Frame()
@@ -91,6 +84,14 @@ class Stack:
     def __init__(self):
         self.stack: List[Frame] = []
 
+    def __le__(self, other: Stack):
+        return self.top_frame() <= other.top_frame()
+
+    def __iadd__(self, other: Stack):
+        top_frame = self.top_frame()
+        top_frame += other.top_frame()
+        return self
+
     def __repr__(self):
         return self.stack.__repr__()
 
@@ -108,12 +109,6 @@ class Stack:
 
     def write_var(self, name, value):
         return self.top_frame().write_var(name, value)
-
-    def issubset(self, other: Stack):
-        return self.top_frame().issubset(other.top_frame())
-
-    def update(self, other: Stack):
-        self.top_frame().update(other.top_frame())
 
     def hybrid_copy(self):
         copied = Stack()
