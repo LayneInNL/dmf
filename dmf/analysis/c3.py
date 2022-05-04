@@ -12,12 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+# https://stackoverflow.com/questions/54197122/how-does-c3-algorithm-for-mro-in-python-work
+
 
 def c3(cls):
     if cls is object:
         return [object]
 
-    return [cls] + merge([c3(base) for base in cls.__bases__])
+    return [cls] + merge([c3(base) for base in cls.bases])
 
 
 def merge(mro_list):

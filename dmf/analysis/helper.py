@@ -13,7 +13,7 @@
 #  limitations under the License.
 import ast
 import logging
-from typing import List, Dict
+from typing import List
 
 from dmf.analysis.lattice import Lattice
 from dmf.analysis.state import State
@@ -29,18 +29,16 @@ from dmf.analysis.value import (
 
 def is_func_type(value: Value):
     func_type = value.extract_func_type()
-    class_type = value.extract_class_type()
-    if func_type and not class_type:
+    if func_type:
         return True
     return False
 
 
 def is_class_type(value: Value):
-    func_type = value.extract_func_type()
-    class_type = value.extract_class_type()
-    if not func_type and class_type:
-        return True
-    return False
+    class_object = value.extract_class_object()
+    if class_object is None:
+        return False
+    return True
 
 
 def get_func_or_class_label(name: str, lattice: Lattice):
@@ -50,9 +48,8 @@ def get_func_or_class_label(name: str, lattice: Lattice):
     logging.debug("Value is {}".format(value))
     func_labels = list(value.extract_func_type())
     if not func_labels:
-        class_label_value = value.extract_class_type()
-        frame: Dict[str, Value] = class_label_value
-        func_value: Value = frame["__init__"]
+        class_object: ClassObject = value.extract_class_object()
+        func_value: Value = class_object.attributes["__init__"]
         func_labels = list(func_value.extract_func_type())
     return func_labels[0]
 

@@ -13,11 +13,9 @@
 #  limitations under the License.
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from dmf.analysis.value import Value
-
-# BUILTIN_DICT = {"True": "True", "False": "False", "None": "None"}
 
 
 class Frame:

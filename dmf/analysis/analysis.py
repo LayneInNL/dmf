@@ -32,6 +32,7 @@ from dmf.analysis.stack import Frame
 from dmf.analysis.state import State
 from dmf.analysis.value import (
     Value,
+    builtin_object,
 )
 from dmf.py2flows.py2flows.cfg.flows import CFG
 
@@ -181,6 +182,8 @@ class Analysis:
                 new[new_context].stack_go_into_new_frame()
                 new[new_context].write_var_to_stack(name, value)
                 new[new_context].write_var_to_stack(fake_name, fake_value)
+            else:
+                assert False
         return new
 
     def transfer_inter_return(self, return_label):
@@ -270,7 +273,18 @@ class Analysis:
                 class_name: str = stmt.name
                 frame: Frame = ret_state.top_frame_on_stack()
                 value: Value = Value()
-                value.inject_class_type(frame.f_locals)
+                value.inject_class_type(
+                    stmt.name,
+                    [
+                        call[ret_context]
+                        .read_var_from_stack(base_class.id)
+                        .extract_class_object()
+                        for base_class in stmt.bases
+                    ]
+                    if stmt.bases
+                    else [builtin_object],
+                    frame.f_locals,
+                )
                 new_call[ret_context].write_var_to_stack(class_name, value)
             return new_call
 

@@ -17,7 +17,7 @@ class Base:
     value = 2
 
     def __init__(self):
-        self.v = self.value
+        self.v = 2
 
 
 b = Base()
