@@ -23,8 +23,6 @@ NUM_TYPE = "NUM"
 BYTE_TYPE = "BYTE"
 STR_TYPE = "STR"
 
-BASIC_TYPES = (NONE_TYPE, BOOL_TYPE, NUM_TYPE, BYTE_TYPE, STR_TYPE)
-
 
 def static_c3(class_object):
     if class_object is builtin_object:
@@ -63,17 +61,20 @@ class ClassObject:
         return "name: {} x dict: {}".format(self.name, self.attributes.__repr__())
 
     def __le__(self, other: ClassObject):
-        return self.issubset(other)
-
-    def __iadd__(self, other: ClassObject):
-        return self.update(other)
-
-    def issubset(self, other: ClassObject):
         return issubset(self.attributes, other.attributes)
 
-    def update(self, other: ClassObject):
-        update(self.attributes, other.attributes)
-        return self
+    def __iadd__(self, other: ClassObject):
+        return update(self.attributes, other.attributes)
+
+    def __getitem__(self, item: str):
+        if item in self.attributes:
+            return self.attributes[item]
+
+        for base in self.mro:
+            if item in base.attributes:
+                return base.attributes[item]
+
+        raise AttributeError
 
 
 builtin_object = ClassObject("object", [], {})
@@ -108,7 +109,7 @@ class Value:
         if isinstance(self.class_types, ClassObject) and isinstance(
             other.class_types, ClassObject
         ):
-            self.class_types.update(other.class_types)
+            self.class_types += other.class_types
         elif self.class_types is None and other.class_types is None:
             pass
         elif self.class_types is not None and other.class_types is None:
@@ -128,8 +129,20 @@ class Value:
     def extract_heap_type(self):
         return self.heap_types
 
-    def inject_prim_type(self, p_type: str):
-        self.prim_types.add(p_type)
+    def inject_none(self):
+        self.prim_types.add(NONE_TYPE)
+
+    def inject_bool(self):
+        self.prim_types.add(BOOL_TYPE)
+
+    def inject_num(self):
+        self.prim_types.add(NUM_TYPE)
+
+    def inject_byte(self):
+        self.prim_types.add(BYTE_TYPE)
+
+    def inject_str(self):
+        self.prim_types.add(STR_TYPE)
 
     def extract_prim_type(self):
         return self.prim_types

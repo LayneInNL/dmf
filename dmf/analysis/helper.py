@@ -19,30 +19,25 @@ from dmf.analysis.lattice import Lattice
 from dmf.analysis.state import State
 from dmf.analysis.value import (
     Value,
-    NUM_TYPE,
-    NONE_TYPE,
-    BOOL_TYPE,
-    STR_TYPE,
-    BYTE_TYPE,
     ClassObject,
 )
 
 
-def is_func_type(value: Value):
+def is_func(value: Value):
     func_type = value.extract_func_type()
     if func_type:
         return True
     return False
 
 
-def is_class_type(value: Value):
+def is_class(value: Value):
     class_object = value.extract_class_object()
     if class_object is None:
         return False
     return True
 
 
-def get_func_or_class_label(name: str, lattice: Lattice):
+def get_func_label(name: str, lattice: Lattice):
     values: List[State] = list(lattice.values())
     state: State = values[0]
     value: Value = state.read_var_from_stack(name)
@@ -55,7 +50,7 @@ def get_func_or_class_label(name: str, lattice: Lattice):
     return func_labels[0]
 
 
-def get_callable_name(expr: ast.expr):
+def get_func_name(expr: ast.expr):
     assert isinstance(expr, ast.Call)
     if isinstance(expr.func, ast.Name):
         return expr.func.id
@@ -71,25 +66,26 @@ def merge(label, heap, context):
     return context[-1:] + (label,)
 
 
-def get_value(expr: ast.expr, state: State):
+def compute_value_of_expr(expr: ast.expr, state: State):
     if isinstance(expr, ast.Num):
         value = Value()
-        value.inject_prim_type(NUM_TYPE)
+        value.inject_num()
         return value
     elif isinstance(expr, ast.NameConstant):
         value = Value()
         if expr.value is None:
-            value.inject_prim_type(NONE_TYPE)
+            value.inject_none()
         else:
-            value.inject_prim_type(BOOL_TYPE)
+            value.inject_bool()
         return value
     elif isinstance(expr, (ast.Str, ast.JoinedStr)):
         value = Value()
-        value.inject_prim_type(STR_TYPE)
+        value.inject_str()
         return value
     elif isinstance(expr, ast.Bytes):
         value = Value()
-        value.inject_prim_type(BYTE_TYPE)
+        value.inject_byte()
+        return value
     elif isinstance(expr, ast.Name):
         return state.read_var_from_stack(expr.id)
     elif isinstance(expr, ast.Attribute):
@@ -97,14 +93,11 @@ def get_value(expr: ast.expr, state: State):
         assert isinstance(expr.value, ast.Name)
         name = expr.value.id
         value = state.read_var_from_stack(name)
-        heaps: List[Tuple[int, ClassObject]] = list(value.extract_heap_type())
-        if state.heap_contains(heaps[0][0], attr):
-            return state.read_field_from_heap(heaps[0][0], attr)
-        else:
-            for base in heaps[0][1].mro:
-                attributes = base.attributes
-                if attr in attributes:
-                    return attributes[attr]
-            raise AttributeError
+        heaps: Set[Tuple[int, ClassObject]] = value.extract_heap_type()
+        ret_value = Value()
+        for (lab, cls) in heaps:
+            tmp_value = state.read_field_from_heap(lab, cls, attr)
+            ret_value += tmp_value
+        return ret_value
     else:
         assert False

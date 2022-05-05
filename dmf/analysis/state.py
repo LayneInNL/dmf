@@ -14,7 +14,7 @@
 from __future__ import annotations
 from dmf.analysis.heap import Heap
 from dmf.analysis.stack import Stack, Frame
-from dmf.analysis.value import Value
+from dmf.analysis.value import Value, ClassObject
 
 
 class State:
@@ -38,8 +38,11 @@ class State:
         res += "\n"
         return res
 
-    def read_field_from_heap(self, heap_context: int, filed_name: str):
-        return self.heap.read_from_field(heap_context, filed_name)
+    def read_field_from_heap(self, hcontext: int, cls: ClassObject, field: str):
+        if self.heap_contains(hcontext, field):
+            self.heap.read_from_field(hcontext, field)
+        else:
+            return cls[field]
 
     def write_field_to_heap(self, heap_context: int, field_name: str, value: Value):
         self.heap.write_to_field(heap_context, field_name, value)
