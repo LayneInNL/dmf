@@ -38,11 +38,11 @@ class Heap:
     def __repr__(self):
         return self.heap.__repr__()
 
-    def write_to_field(self, heap_context: int, field_name: str, value: Value):
-        self.heap[heap_context][field_name] = value
+    def write_to_field(self, hcontext: int, field: str, value: Value):
+        self.heap[hcontext][field] = value
 
-    def read_from_field(self, heap_context: int, field_name: str):
-        return self.heap[heap_context][field_name]
+    def read_from_field(self, hcontext: int, field: str):
+        return self.heap[hcontext][field]
 
     def hybrid_copy(self):
         copied = Heap()

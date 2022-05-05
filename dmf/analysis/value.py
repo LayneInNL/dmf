@@ -13,6 +13,7 @@
 #  limitations under the License.
 from __future__ import annotations
 
+import logging
 from typing import Set, Dict, List, Tuple
 
 from dmf.analysis.utils import issubset, update
@@ -84,50 +85,80 @@ class Value:
     def __init__(self):
         self.heap_types: Set[Tuple[int, ClassObject]] = set()
         self.prim_types: Set[str] = set()
-        self.func_types: Set[int] = set()
-        self.class_types: ClassObject | None = None
+        self.func_type: int | None = None
+        self.class_type: ClassObject | None = None
 
     def __le__(self, other: Value):
 
         res1 = self.heap_types.issubset(other.heap_types)
         res2 = self.prim_types.issubset(other.prim_types)
-        res3 = self.func_types.issubset(other.func_types)
-        if self.class_types is None and other.class_types is None:
-            res4 = True
-        elif self.class_types is None and other.class_types is not None:
-            res4 = False
-        elif self.class_types is not None and other.class_types is None:
-            res4 = False
-        else:
-            res4 = self.class_types <= other.class_types
+        if self.func_type is None:
+            if other.func_type is None:
+                res3 = True
+            elif other.func_type is not None:
+                res3 = False
+        elif self.func_type is not None:
+            if other.func_type is None:
+                res3 = False
+            else:
+                if self.func_type == other.func_type:
+                    res3 = True
+                else:
+                    logging.debug(
+                        "new {}, old {}".format(self.func_type, other.func_type)
+                    )
+                    assert False
+        if self.class_type is None:
+            if other.class_type is None:
+                res4 = True
+            elif other.class_type is not None:
+                res4 = False
+        elif self.class_type is not None:
+            if other.class_type is None:
+                res4 = False
+            else:
+                res4 = self.class_type <= other.class_type
         return all((res1, res2, res3, res4))
 
     def __iadd__(self, other: Value):
         self.heap_types.update(other.heap_types)
         self.prim_types.update(other.prim_types)
-        self.func_types.update(other.func_types)
-        if isinstance(self.class_types, ClassObject) and isinstance(
-            other.class_types, ClassObject
+        if self.func_type is None:
+            if other.func_type is None:
+                pass
+            elif other.func_type is not None:
+                self.func_type = other.func_type
+        elif self.func_type is not None:
+            if other.func_type is None:
+                pass
+            elif other.func_type is not None:
+                if self.func_type == other.func_type:
+                    pass
+                else:
+                    logging.debug(
+                        "new {}, old {}".format(self.func_type, other.func_type)
+                    )
+                    assert False
+
+        if isinstance(self.class_type, ClassObject) and isinstance(
+            other.class_type, ClassObject
         ):
-            self.class_types += other.class_types
-        elif self.class_types is None and other.class_types is None:
+            self.class_type += other.class_type
+        elif self.class_type is None and other.class_type is None:
             pass
-        elif self.class_types is not None and other.class_types is None:
+        elif self.class_type is not None and other.class_type is None:
             pass
-        elif self.class_types is None and other.class_types is not None:
+        elif self.class_type is None and other.class_type is not None:
             pass
         return self
 
     def __repr__(self):
         return "{} x {} x {} x {}".format(
-            self.heap_types, self.prim_types, self.func_types, self.class_types
+            self.heap_types, self.prim_types, self.func_type, self.class_type
         )
 
     def inject_heap_type(self, heap: int, class_object: ClassObject):
         self.heap_types.add((heap, class_object))
-
-    def extract_heap_type(self):
-        return self.heap_types
 
     def inject_none(self):
         self.prim_types.add(NONE_TYPE)
@@ -144,21 +175,28 @@ class Value:
     def inject_str(self):
         self.prim_types.add(STR_TYPE)
 
-    def extract_prim_type(self):
-        return self.prim_types
-
     def inject_func_type(self, label: int):
-        self.func_types.add(label)
-
-    def extract_func_type(self):
-        return self.func_types
+        if self.func_type is None:
+            self.func_type = label
+        else:
+            logging.debug("new {}, old {}".format(label, self.func_type))
+            assert False
 
     def inject_class_type(self, name, bases, frame: Dict[str, Value]):
         class_object: ClassObject = ClassObject(name, bases, frame)
-        if self.class_types is None:
-            self.class_types = class_object
+        if self.class_type is None:
+            self.class_type = class_object
         else:
-            self.class_types += class_object
+            self.class_type += class_object
+
+    def extract_heap_type(self) -> Set[Tuple[int, ClassObject]]:
+        return self.heap_types
+
+    def extract_prim_type(self):
+        return self.prim_types
+
+    def extract_func_label(self):
+        return self.func_type
 
     def extract_class_object(self) -> ClassObject:
-        return self.class_types
+        return self.class_type

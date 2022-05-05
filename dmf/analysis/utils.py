@@ -13,6 +13,11 @@
 #  limitations under the License.
 from typing import Dict, Any
 
+self_flag = "self"
+init_flag = "init"
+implicit_return = "19951107"
+implicit_init_flag = "19970303"
+
 
 def subset(lattice1, lattice2):
     if lattice1 is None:

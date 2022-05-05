@@ -24,38 +24,25 @@ from dmf.analysis.value import (
 
 
 def is_func(value: Value):
-    func_type = value.extract_func_type()
-    if func_type:
+    func = value.extract_func_label()
+    cls = value.extract_class_object()
+    if func is not None and cls is not None:
+        assert False
+
+    if func is not None:
         return True
     return False
 
 
 def is_class(value: Value):
-    class_object = value.extract_class_object()
-    if class_object is None:
+    func = value.extract_func_label()
+    cls = value.extract_class_object()
+    if func is not None and cls is not None:
+        assert False
+
+    if cls is None:
         return False
     return True
-
-
-def get_func_label(name: str, lattice: Lattice):
-    values: List[State] = list(lattice.values())
-    state: State = values[0]
-    value: Value = state.read_var_from_stack(name)
-    logging.debug("Value is {}".format(value))
-    func_labels = list(value.extract_func_type())
-    if not func_labels:
-        class_object: ClassObject = value.extract_class_object()
-        func_value: Value = class_object.attributes["__init__"]
-        func_labels = list(func_value.extract_func_type())
-    return func_labels[0]
-
-
-def get_func_name(expr: ast.expr):
-    assert isinstance(expr, ast.Call)
-    if isinstance(expr.func, ast.Name):
-        return expr.func.id
-    else:
-        assert False
 
 
 def record(label, context):
@@ -66,7 +53,7 @@ def merge(label, heap, context):
     return context[-1:] + (label,)
 
 
-def compute_value_of_expr(expr: ast.expr, state: State):
+def compute_value_of_expr(expr: ast.expr, state: State) -> Value:
     if isinstance(expr, ast.Num):
         value = Value()
         value.inject_num()
@@ -99,5 +86,18 @@ def compute_value_of_expr(expr: ast.expr, state: State):
             tmp_value = state.read_field_from_heap(lab, cls, attr)
             ret_value += tmp_value
         return ret_value
+    elif isinstance(expr, ast.Call):
+        if isinstance(expr.func, ast.Name):
+            return compute_value_of_expr(expr.func, state)
+        elif isinstance(expr.func, ast.Attribute):
+            instance_value = compute_value_of_expr(expr.func.value, state)
+            heaps = instance_value.extract_heap_type()
+            value = Value()
+            for hcontext, cls in heaps:
+                attribute_value = state.read_field_from_heap(
+                    hcontext, cls, expr.func.attr
+                )
+                value += attribute_value()
+            return value
     else:
         assert False

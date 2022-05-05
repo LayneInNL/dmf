@@ -23,14 +23,12 @@ from dmf.analysis.helper import (
     is_class,
     merge,
     record,
-    get_func_name,
     compute_value_of_expr,
-    get_func_label,
 )
 from dmf.analysis.lattice import Lattice
 from dmf.analysis.stack import Frame
 from dmf.analysis.state import State
-from dmf.analysis.utils import subset
+from dmf.analysis.utils import subset, implicit_return, self_flag, implicit_init_flag
 from dmf.analysis.value import (
     Value,
     builtin_object,
@@ -56,9 +54,6 @@ class Analysis:
         self.analysis_list: Dict[int, Lattice] | None = None
 
         self.sub_cfgs: Dict[int, CFG] = cfg.sub_cfgs
-        self.implicit_return_name = "19951107"
-        self.implicit_func_init_flag = "19970303"
-        self.self = "self"
 
     def compute_fixed_point(self):
         self.initialize()
@@ -83,20 +78,21 @@ class Analysis:
                 self.analysis_list[snd_label]: Lattice = transferred + old
 
                 if self.is_call_label(snd_label):
+                    logging.debug("Current snd_label: {}".format(snd_label))
                     # get sub_cfg label, so that we can add entry and exit labels on the fly
                     sub_cfg_label: int = self.get_cfg_label(snd_label)
                     sub_cfg: CFG = self.sub_cfgs[sub_cfg_label]
-                    self.sub_cfgs.update(sub_cfg.sub_cfgs)
-                    self.blocks.update(sub_cfg.blocks)
-                    self.flows.update(sub_cfg.flows)
-                    self.inter_flows.update(sub_cfg.inter_flows)
-                    return_label: int = self.get_return_label(snd_label)
                     entry_label, exit_label = (
                         sub_cfg.start_block.bid,
                         sub_cfg.final_block.bid,
                     )
+                    return_label: int = self.get_return_label(snd_label)
                     self.flows.add((snd_label, entry_label))
                     self.flows.add((exit_label, return_label))
+                    self.sub_cfgs.update(sub_cfg.sub_cfgs)
+                    self.blocks.update(sub_cfg.blocks)
+                    self.flows.update(sub_cfg.flows)
+                    self.inter_flows.update(sub_cfg.inter_flows)
 
                 added_flows: List[Tuple[int, int]] = [
                     (l2, l3) for l2, l3 in self.flows if l2 == snd_label
@@ -108,10 +104,33 @@ class Analysis:
         if isinstance(stmt, ast.ClassDef):
             return call_label
         elif isinstance(stmt, ast.Assign):
-            name: str = get_func_name(stmt.value)
+            call: ast.Call = stmt.value
             lattice: Lattice = self.analysis_list[call_label]
-            label: int = get_func_label(name, lattice)
-            return label
+            if isinstance(call.func, ast.Name):
+                # v = func()
+                # v = class()
+                name = call.func.id
+                for ctx, state in lattice.items():
+                    method_value = state.read_var_from_stack(name)
+                    if is_func(method_value):
+                        return method_value.extract_func_label()
+                    elif is_class(method_value):
+                        cls = method_value.extract_class_object()
+                        init = cls["__init__"]
+                        return init.extract_func_label()
+
+            elif isinstance(call.func, ast.Attribute):
+                for ctx, state in lattice.items():
+                    v = compute_value_of_expr(call.func.value, state)
+                    method = call.func.attr
+                    heaps = v.extract_heap_type()
+                    for hctx, cls in heaps:
+                        method_value: Value = state.read_field_from_heap(
+                            hctx, cls, method
+                        )
+                        return method_value.extract_func_label()
+        else:
+            assert False
 
     def is_call_label(self, label: int) -> bool:
         for a, _, _, _ in self.inter_flows:
@@ -134,6 +153,14 @@ class Analysis:
         for a, _, _, b in self.inter_flows:
             if a == call_label:
                 return b
+
+    def is_class_func_label(self, label):
+        stmt: ast.FunctionDef = self.blocks[label].stmt[0]
+        positional_args = stmt.args.args
+        if positional_args and isinstance(positional_args[0], ast.Name):
+            if positional_args[0].arg == "self":
+                return True
+        return False
 
     def present(self):
         all_labels = set()
@@ -162,7 +189,6 @@ class Analysis:
 
     def transfer_inter_call(self, call_label):
         value_expr: ast.Call = self.blocks[call_label].stmt[0].value
-        func_name: str = get_func_name(value_expr)
         old: Lattice = self.analysis_list[call_label]
         new: Lattice = old.hybrid_copy()
 
@@ -171,23 +197,31 @@ class Analysis:
             new[new_context]: State = new[context]
             del new[context]
             new[new_context].stack_go_into_new_frame()
-            func_value: Value = state.read_var_from_stack(func_name)
-            if is_class(func_value):
-                class_object: ClassObject = func_value.extract_class_object()
-                heap: int = record(call_label, context)
-                value: Value = Value()
-                value.inject_heap_type(heap, class_object)
-                name: str = "self"
+            if isinstance(value_expr.func, ast.Name):
+                # ret = func()
+                # ret = class()
+                func_value: Value = compute_value_of_expr(value_expr, state)
+                if is_class(func_value):
+                    class_object: ClassObject = func_value.extract_class_object()
+                    heap: int = record(call_label, context)
+                    value: Value = Value()
+                    value.inject_heap_type(heap, class_object)
 
-                fake_value: Value = Value()
-                fake_name: str = self.implicit_func_init_flag
+                    fake_value: Value = Value()
+                    fake_name: str = implicit_init_flag
 
-                new[new_context].write_var_to_stack(name, value)
-                new[new_context].write_var_to_stack(fake_name, fake_value)
-            elif is_func(func_value):
-                continue
-            else:
-                assert False
+                    new[new_context].write_var_to_stack(self_flag, value)
+                    new[new_context].write_var_to_stack(fake_name, fake_value)
+                elif is_func(func_value):
+                    pass
+            elif isinstance(value_expr.func, ast.Attribute):
+                # ret = v.method(args)
+                v: Value = compute_value_of_expr(value_expr.func.value, state)
+                method = value_expr.func.attr
+                heaps = v.extract_heap_type()
+                for hcontext, cls in heaps:
+                    method_value = state.read_field_from_heap(hcontext, cls, method)
+                    new[new_context].write_var_to_stack(self_flag, v)
         return new
 
     def transfer_inter_return(self, return_label):
@@ -201,9 +235,9 @@ class Analysis:
         for context, state in new_call.items():
             context_at_call: Tuple = merge(call_label, None, context)
             return_state = ret[context_at_call]
-            ret_name: str = self.implicit_return_name
-            if return_state.stack_contains(self.implicit_func_init_flag):
-                ret_name = self.self
+            ret_name: str = implicit_return
+            if return_state.stack_contains(implicit_init_flag):
+                ret_name = self_flag
             ret_value = return_state.read_var_from_stack(ret_name)
             if isinstance(target, ast.Name):
                 assign_name: str = target.id
@@ -311,7 +345,7 @@ class Analysis:
 
         for _, state in new.items():
             ret_value: Value = state.read_var_from_stack(ret_name)
-            state.write_var_to_stack(self.implicit_return_name, ret_value)
+            state.write_var_to_stack(implicit_return, ret_value)
         return new
 
     def heap_to_class_name(self, heap: int):
