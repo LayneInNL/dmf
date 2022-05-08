@@ -13,38 +13,77 @@
 #  limitations under the License.
 from __future__ import annotations
 
-from collections import defaultdict
-from typing import Dict
+from typing import Dict, Tuple
 
-from dmf.analysis.utils import issubset_twodict, update_twodict
-from dmf.analysis.value import Value
+from dmf.analysis.utils import issubset_twodict, update_twodict, issubset, update
+from dmf.analysis.value import Value, ClsObj
+
+
+class Singleton:
+    def __init__(self, cls_obj):
+        self.cls_obj = cls_obj
+        self.internal: Dict[str, Value] = {}
+
+    def __le__(self, other: Singleton):
+        return issubset(self.internal, other.internal)
+
+    def __iadd__(self, other: Singleton):
+        update(self.internal, other.internal)
+        return self
+
+    def __contains__(self, field):
+        return field in self.internal
+
+    def __setitem__(self, field, value):
+        self.internal[field] = value
+
+    def __getitem__(self, field):
+        return self.internal[field]
+
+
+class Summary:
+    def __init__(self):
+        self.internal: Dict[ClsObj, Dict[str, Value]] = {}
+
+    def __le__(self, other: Summary):
+        return issubset_twodict(self.internal, other.internal)
+
+    def __iadd__(self, other: Summary):
+        update_twodict(self.internal, other.internal)
+        return self
 
 
 class Heap:
-    def __init__(self):
-        self.heap: Dict[int, Dict[str, Value]] = defaultdict(dict)
+    def __init__(self, heap: Heap = None):
+        self.singleton: Dict[int, Singleton] = {}
+        self.summary: Dict[int, Summary] = {}
+        if heap is not None:
+            self.singleton.update(heap.singleton)
+            self.summary.update(heap.summary)
 
-    def __contains__(self, item):
-        hcontext, field = item
-        return field in self.heap[hcontext]
+    def __contains__(self, item: Tuple[int, str]):
+        heap_ctx, field = item
+        return field in self.singleton[heap_ctx]
 
     def __le__(self, other: Heap):
-        return issubset_twodict(self.heap, other.heap)
+        return issubset(self.singleton, other.singleton) and issubset(
+            self.summary, other.summary
+        )
 
     def __iadd__(self, other: Heap):
-        update_twodict(self.heap, other.heap)
+        self.singleton.update(other.singleton)
+        self.summary.update(other.summary)
         return self
 
     def __repr__(self):
-        return self.heap.__repr__()
+        return "Singleton: {}, Summary {}".format(self.singleton, self.summary)
 
-    def write_to_field(self, hcontext: int, field: str, value: Value):
-        self.heap[hcontext][field] = value
+    def write_to_field(self, heap_ctx: int, field: str, value: Value):
+        self.singleton[heap_ctx][field] = value
 
-    def read_from_field(self, hcontext: int, field: str):
-        return self.heap[hcontext][field]
+    def read_from_field(self, heap_ctx: int, field: str):
+        return self.singleton[heap_ctx][field]
 
-    def hybrid_copy(self):
-        copied = Heap()
-        copied += self
+    def copy(self):
+        copied = Heap(self)
         return copied

@@ -12,19 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 import ast
-import logging
-from typing import List, Set, Tuple
+from typing import Set, Tuple
 
-from dmf.analysis.lattice import Lattice
 from dmf.analysis.state import State
-from dmf.analysis.value import (
-    Value,
-    ClassObject,
-)
+from dmf.analysis.value import Value, ClsObj
 
 
 def is_func(value: Value):
-    func = value.extract_func_label()
+    func = value.extract_func_types()
     cls = value.extract_class_object()
     if func is not None and cls is not None:
         assert False
@@ -35,7 +30,7 @@ def is_func(value: Value):
 
 
 def is_class(value: Value):
-    func = value.extract_func_label()
+    func = value.extract_func_types()
     cls = value.extract_class_object()
     if func is not None and cls is not None:
         assert False
@@ -80,7 +75,7 @@ def compute_value_of_expr(expr: ast.expr, state: State) -> Value:
         assert isinstance(expr.value, ast.Name)
         name = expr.value.id
         value = state.read_var_from_stack(name)
-        heaps: Set[Tuple[int, ClassObject]] = value.extract_heap_type()
+        heaps: Set[Tuple[int, ClsObj]] = value.extract_heap_types()
         ret_value = Value()
         for (lab, cls) in heaps:
             tmp_value = state.read_field_from_heap(lab, cls, attr)
@@ -91,7 +86,7 @@ def compute_value_of_expr(expr: ast.expr, state: State) -> Value:
             return compute_value_of_expr(expr.func, state)
         elif isinstance(expr.func, ast.Attribute):
             instance_value = compute_value_of_expr(expr.func.value, state)
-            heaps = instance_value.extract_heap_type()
+            heaps = instance_value.extract_heap_types()
             value = Value()
             for hcontext, cls in heaps:
                 attribute_value = state.read_field_from_heap(
@@ -99,5 +94,17 @@ def compute_value_of_expr(expr: ast.expr, state: State) -> Value:
                 )
                 value += attribute_value()
             return value
+    elif isinstance(expr, (ast.Compare, ast.BoolOp)):
+        value = Value()
+        value.inject_bool()
+        return value
+    elif isinstance(expr, ast.BinOp):
+        left_value = compute_value_of_expr(expr.left, state)
+        right_value = compute_value_of_expr(expr.right, state)
+        left_prims = left_value.extract_prim_types()
+        right_prims = right_value.extract_prim_types()
+        value = Value()
+        pass
+
     else:
         assert False

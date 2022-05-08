@@ -11,12 +11,19 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+from __future__ import annotations
+from collections import defaultdict
 from typing import Dict, Any
 
 self_flag = "self"
 init_flag = "init"
 implicit_return = "19951107"
 implicit_init_flag = "19970303"
+
+
+class LatticeDict(defaultdict):
+    def __repr__(self):
+        return dict.__repr__(self)
 
 
 def subset(lattice1, lattice2):

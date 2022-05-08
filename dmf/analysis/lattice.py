@@ -18,52 +18,71 @@ from typing import Tuple, Dict
 from dmf.analysis.state import State
 from dmf.analysis.utils import issubset
 
+LATTICE_BOT = None
+
 
 class Lattice:
-    def __init__(self):
-        self.lattice: Dict[Tuple, State] = {}
+    def __init__(self, lattice: Lattice = None):
+        self.internal: Dict[Tuple, State] = {}
+        if lattice is not None:
+            for ctx, state in lattice.items():
+                self.internal[ctx] = state.copy()
 
-    def __setitem__(self, context, state):
-        self.lattice[context] = state
+    def __setitem__(self, ctx, state):
+        self.internal[ctx] = state
 
     def __getitem__(self, context):
-        return self.lattice[context]
+        return self.internal[context]
 
     def __delitem__(self, context):
-        del self.lattice[context]
+        del self.internal[context]
 
     def __contains__(self, context):
-        return context in self.lattice
+        return context in self.internal
 
     def __le__(self, other: Lattice):
 
-        return issubset(self.lattice, other.lattice)
+        return issubset(self.internal, other.internal)
 
-    def __add__(self, other: Lattice | None):
-        if other is None:
-            return self
-        for context in other.lattice:
-            if context not in self.lattice:
-                self.lattice[context] = other.lattice[context]
+    def __add__(self, other: Lattice):
+        for context in other.internal:
+            if context not in self.internal:
+                self.internal[context] = other.internal[context]
             else:
-                self.lattice[context] += other.lattice[context]
+                self.internal[context] += other.internal[context]
 
         return self
 
     def __repr__(self):
-        return self.lattice.__repr__()
+        return self.internal.__repr__()
 
     def items(self):
-        return self.lattice.items()
+        return self.internal.items()
 
     def keys(self):
-        return self.lattice.keys()
+        return self.internal.keys()
 
     def values(self):
-        return self.lattice.values()
+        return self.internal.values()
 
-    def hybrid_copy(self):
-        copied: Lattice = Lattice()
-        for context, state in self.lattice.items():
-            copied[context] = state.hybrid_copy()
+    def copy(self):
+        copied: Lattice = Lattice(self)
         return copied
+
+
+def issubset_lattice(lattice1: Lattice | LATTICE_BOT, lattice2: Lattice | LATTICE_BOT):
+    if lattice1 == LATTICE_BOT:
+        return True
+
+    if lattice2 == LATTICE_BOT:
+        return False
+
+    return lattice1 <= lattice2
+
+
+def update_lattice(lattice1: Lattice, lattice2: Lattice | LATTICE_BOT):
+    if lattice2 == LATTICE_BOT:
+        return lattice1
+
+    lattice1 += lattice2
+    return lattice1

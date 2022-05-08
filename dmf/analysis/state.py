@@ -14,13 +14,17 @@
 from __future__ import annotations
 from dmf.analysis.heap import Heap
 from dmf.analysis.stack import Stack, Frame
-from dmf.analysis.value import Value, ClassObject
+from dmf.analysis.value import Value, ClsObj
 
 
 class State:
-    def __init__(self):
-        self.stack: Stack = Stack()
-        self.heap: Heap = Heap()
+    def __init__(self, state: State = None):
+        if state is not None:
+            self.stack: Stack = state.stack.copy()
+            self.heap: Heap = state.heap.copy()
+        else:
+            self.stack: Stack = Stack()
+            self.heap: Heap = Heap()
 
     def __le__(self, other: State):
         return self.stack <= other.stack and self.heap <= other.heap
@@ -38,9 +42,9 @@ class State:
         res += "\n"
         return res
 
-    def read_field_from_heap(self, hcontext: int, cls: ClassObject, field: str):
-        if self.heap_contains(hcontext, field):
-            self.heap.read_from_field(hcontext, field)
+    def read_field_from_heap(self, heap_ctx: int, cls: ClsObj, field: str):
+        if self.heap_contains(heap_ctx, field):
+            self.heap.read_from_field(heap_ctx, field)
         else:
             return cls[field]
 
@@ -69,11 +73,8 @@ class State:
         self.stack.write_var(var, value)
 
     def stack_go_into_new_frame(self):
-        self.stack.go_into_new_frame()
+        self.stack.next_ns()
 
-    def hybrid_copy(self):
-        copied = State()
-        copied.stack = self.stack.hybrid_copy()
-        copied.heap = self.heap.hybrid_copy()
-
+    def copy(self):
+        copied = State(self)
         return copied

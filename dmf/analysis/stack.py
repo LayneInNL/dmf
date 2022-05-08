@@ -13,76 +13,77 @@
 #  limitations under the License.
 from __future__ import annotations
 
-import logging
 from typing import Dict, List
 
-from dmf.analysis.utils import issubset, update
-from dmf.analysis.value import Value
+from dmf.analysis.value import Value, VALUE_TOP, ValueDict
+
+
+def new_local_ns(old_ns: ValueDict = None):
+    new_ns = ValueDict(lambda: VALUE_TOP)
+    if old_ns is not None:
+        new_ns.update(old_ns)
+
+    return new_ns
 
 
 class Frame:
-    def __init__(self):
-        self.f_locals: Dict[str, Value] | None = {}
-        self.f_back: Frame | None = None
-        self.f_globals: Dict[str, Value] | None = None
-        self.f_builtins: Dict[str, Value] | None = None
+    def __init__(self, f_locals, f_back, f_globals, f_builtins):
+        self.f_locals: ValueDict[str, Value | VALUE_TOP] = f_locals
+        self.f_back: Frame | None = f_back
+        self.f_globals: Dict[str, Value] = f_globals
+        self.f_builtins: Dict[str, Value] = f_builtins
 
-    def __contains__(self, item):
-        return item in self.f_locals
+    def __contains__(self, var):
+        return var in self.f_locals
 
     def __le__(self, other: Frame):
-        return issubset(self.f_locals, other.f_locals)
+        return self.f_locals <= other.f_locals
 
     def __iadd__(self, other: Frame):
-        update(self.f_locals, other.f_locals)
+        self.f_locals += other.f_locals
         return self
 
     def __repr__(self):
         return self.f_locals.__repr__()
 
-    def read_var(self, name):
-        logging.debug("read_var: {}".format(name))
+    def read_var(self, var):
         # Implement LEGB rule
-        if name in self.f_locals:
-            return self.f_locals[name]
+        if var in self.f_locals:
+            return self.f_locals[var]
 
         parent_frame: Frame = self.f_back
         while parent_frame is not None and parent_frame.f_globals is self.f_globals:
-            if name in parent_frame.f_locals:
-                return parent_frame.f_locals[name]
+            if var in parent_frame.f_locals:
+                return parent_frame.f_locals[var]
             else:
                 parent_frame = parent_frame.f_back
 
-        if name in self.f_globals:
-            return self.f_globals[name]
+        if var in self.f_globals:
+            return self.f_globals[var]
 
-        if name in self.f_builtins:
-            return self.f_builtins[name]
+        if var in self.f_builtins:
+            return self.f_builtins[var]
 
         raise AttributeError
 
-    def write_var(self, name, value):
-        self.f_locals[name] = value
+    def write_var(self, var, value):
+        self.f_locals[var] = value
 
-    def hybrid_copy(self):
-        copied = Frame()
-        copied.f_locals.update(self.f_locals)
-        copied.f_globals = self.f_globals
-        copied.f_back = self.f_back
+    def copy(self):
+        copied = Frame(
+            new_local_ns(self.f_locals), self.f_back, self.f_globals, self.f_builtins
+        )
 
         return copied
 
 
-def create_first_frame():
-    frame = Frame()
-    frame.f_globals = frame.f_locals = {}
-    frame.f_back = None
-    return frame
-
-
 class Stack:
-    def __init__(self):
+    def __init__(self, stack: Stack = None):
         self.stack: List[Frame] = []
+        if stack is not None:
+            for frame in stack.stack[:-1]:
+                self.push_frame(frame)
+            self.push_frame(stack.stack[-1].copy())
 
     def __le__(self, other: Stack):
         return self.top_frame() <= other.top_frame()
@@ -104,23 +105,19 @@ class Stack:
     def top_frame(self) -> Frame:
         return self.stack[-1]
 
-    def read_var(self, name):
-        return self.top_frame().read_var(name)
+    def read_var(self, var):
+        return self.top_frame().read_var(var)
 
-    def write_var(self, name, value):
-        return self.top_frame().write_var(name, value)
+    def write_var(self, var, value):
+        return self.top_frame().write_var(var, value)
 
-    def hybrid_copy(self):
-        copied = Stack()
-        for frame in self.stack[:-1]:
-            copied.push_frame(frame)
-        copied.push_frame(self.stack[-1].hybrid_copy())
-
+    def copy(self):
+        copied = Stack(self)
         return copied
 
-    def go_into_new_frame(self):
+    def next_ns(self):
         curr_frame = self.top_frame()
-        new_frame = Frame()
-        new_frame.f_back = curr_frame
-        new_frame.f_globals = curr_frame.f_globals
+        new_frame = Frame(
+            new_local_ns(), curr_frame, curr_frame.f_globals, curr_frame.f_builtins
+        )
         self.push_frame(new_frame)

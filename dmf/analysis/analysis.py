@@ -25,33 +25,40 @@ from dmf.analysis.helper import (
     record,
     compute_value_of_expr,
 )
-from dmf.analysis.lattice import Lattice
-from dmf.analysis.stack import Frame
+from dmf.analysis.lattice import Lattice, LATTICE_BOT, update_lattice
+from dmf.analysis.stack import Frame, new_local_ns
 from dmf.analysis.state import State
-from dmf.analysis.utils import subset, implicit_return, self_flag, implicit_init_flag
+from dmf.analysis.utils import (
+    subset,
+    implicit_return,
+    self_flag,
+    implicit_init_flag,
+)
 from dmf.analysis.value import (
     Value,
     builtin_object,
-    ClassObject,
+    ClsObj,
 )
 from dmf.py2flows.py2flows.cfg.flows import CFG
 
 
-class PrettyDefaultDict(defaultdict):
-    __repr__ = dict.__repr__
+class AnalysisDict(defaultdict):
+    def __repr__(self):
+        return dict.__repr__(self)
 
 
 class Analysis:
-    def __init__(self, cfg: CFG, extremal_value):
+    def __init__(self, cfg: CFG):
         self.flows = cfg.flows
-        self.inter_flows = cfg.inter_flows
+        self.call_return_flows = cfg.call_return_flows
+        self.entry_exit_flows = set()
         self.extremal_label = cfg.start_block.bid
-        self.extremal_value = extremal_value
+        self.extremal_value = None
         logging.debug("Extremal value is: {}".format(self.extremal_value))
         self.blocks = cfg.blocks
 
         self.work_list: Deque[Tuple[int, int]] = deque()
-        self.analysis_list: Dict[int, Lattice] | None = None
+        self.analysis_list: None = None
 
         self.sub_cfgs: Dict[int, CFG] = cfg.sub_cfgs
 
@@ -61,21 +68,33 @@ class Analysis:
         self.present()
 
     def initialize(self):
+        state = State()
+        initial_namespace = new_local_ns()
+        initial_frame = Frame(initial_namespace, None, initial_namespace, None)
+        state.push_frame_to_stack(initial_frame)
+        lattice = Lattice()
+        lattice[()] = state
+        self.extremal_value = lattice
+
         # add flows to work_list
         self.work_list.extend(self.flows)
         # default init analysis_list
-        self.analysis_list: Dict[int, Lattice] = PrettyDefaultDict(lambda: None)
+        self.analysis_list: AnalysisDict[int, Lattice | LATTICE_BOT] = AnalysisDict(
+            lambda: LATTICE_BOT
+        )
         # update extremal label
         self.analysis_list[self.extremal_label] = self.extremal_value
 
     def iterate(self):
         while self.work_list:
             fst_label, snd_label = self.work_list.popleft()
-            transferred: Lattice | None = self.transfer(fst_label)
-            old: Lattice | None = self.analysis_list[snd_label]
+            transferred: Lattice | LATTICE_BOT = self.transfer(fst_label)
+            old: Lattice | LATTICE_BOT = self.analysis_list[snd_label]
 
             if not subset(transferred, old):
-                self.analysis_list[snd_label]: Lattice = transferred + old
+                self.analysis_list[snd_label]: Lattice = update_lattice(
+                    transferred, old
+                )
 
                 if self.is_call_label(snd_label):
                     logging.debug("Current snd_label: {}".format(snd_label))
@@ -92,7 +111,7 @@ class Analysis:
                     self.sub_cfgs.update(sub_cfg.sub_cfgs)
                     self.blocks.update(sub_cfg.blocks)
                     self.flows.update(sub_cfg.flows)
-                    self.inter_flows.update(sub_cfg.inter_flows)
+                    self.call_return_flows.update(sub_cfg.call_return_flows)
 
                 added_flows: List[Tuple[int, int]] = [
                     (l2, l3) for l2, l3 in self.flows if l2 == snd_label
@@ -113,11 +132,11 @@ class Analysis:
                 for ctx, state in lattice.items():
                     method_value = state.read_var_from_stack(name)
                     if is_func(method_value):
-                        return method_value.extract_func_label()
+                        return method_value.extract_func_types()
                     elif is_class(method_value):
                         cls = method_value.extract_class_object()
                         init = cls["__init__"]
-                        return init.extract_func_label()
+                        return init.extract_func_types()
 
             elif isinstance(call.func, ast.Attribute):
                 for ctx, state in lattice.items():
@@ -128,29 +147,29 @@ class Analysis:
                         method_value: Value = state.read_field_from_heap(
                             hctx, cls, method
                         )
-                        return method_value.extract_func_label()
+                        return method_value.extract_func_types()
         else:
             assert False
 
     def is_call_label(self, label: int) -> bool:
-        for a, _, _, _ in self.inter_flows:
+        for a, _ in self.call_return_flows:
             if a == label:
                 return True
         return False
 
     def is_return_label(self, label: int):
-        for _, _, _, b in self.inter_flows:
+        for _, b in self.call_return_flows:
             if b == label:
                 return True
         return False
 
     def get_call_label(self, return_label: int) -> int:
-        for a, _, _, b in self.inter_flows:
+        for a, b in self.call_return_flows:
             if b == return_label:
                 return a
 
     def get_return_label(self, call_label: int) -> int:
-        for a, _, _, b in self.inter_flows:
+        for a, b in self.call_return_flows:
             if a == call_label:
                 return b
 
@@ -174,9 +193,9 @@ class Analysis:
             )
             logging.debug("Effect at label {}: {}".format(label, self.transfer(label)))
 
-    def transfer(self, label: int) -> Lattice | None:
-        if self.analysis_list[label] is None:
-            return None
+    def transfer(self, label: int) -> Lattice | LATTICE_BOT:
+        if self.analysis_list[label] == LATTICE_BOT:
+            return LATTICE_BOT
 
         return self.do_transfer(label)
 
@@ -188,9 +207,9 @@ class Analysis:
         return handler(label)
 
     def transfer_inter_call(self, call_label):
-        value_expr: ast.Call = self.blocks[call_label].stmt[0].value
+        value_expr: ast.Call = self.blocks[call_label].stmt[0].internal
         old: Lattice = self.analysis_list[call_label]
-        new: Lattice = old.hybrid_copy()
+        new: Lattice = old.copy()
 
         for context, state in old.items():
             new_context: Tuple = merge(call_label, None, context)
@@ -202,7 +221,7 @@ class Analysis:
                 # ret = class()
                 func_value: Value = compute_value_of_expr(value_expr, state)
                 if is_class(func_value):
-                    class_object: ClassObject = func_value.extract_class_object()
+                    class_object: ClsObj = func_value.extract_class_object()
                     heap: int = record(call_label, context)
                     value: Value = Value()
                     value.inject_heap_type(heap, class_object)
@@ -218,7 +237,7 @@ class Analysis:
                 # ret = v.method(args)
                 v: Value = compute_value_of_expr(value_expr.func.value, state)
                 method = value_expr.func.attr
-                heaps = v.extract_heap_type()
+                heaps = v.extract_heap_types()
                 for hcontext, cls in heaps:
                     method_value = state.read_field_from_heap(hcontext, cls, method)
                     new[new_context].write_var_to_stack(self_flag, v)
@@ -230,7 +249,7 @@ class Analysis:
 
         call_label: int = self.get_call_label(return_label)
         call: Lattice = self.analysis_list[call_label]
-        new_call: Lattice = call.hybrid_copy()
+        new_call: Lattice = call.copy()
         ret: Lattice = self.analysis_list[return_label]
         for context, state in new_call.items():
             context_at_call: Tuple = merge(call_label, None, context)
@@ -263,9 +282,9 @@ class Analysis:
             return self.transfer_inter_return(label)
 
         old: Lattice = self.analysis_list[label]
-        new: Lattice = old.hybrid_copy()
+        new: Lattice = old.copy()
 
-        for _, state in new.items():
+        for ctx, state in new.items():
             right_value: Value = compute_value_of_expr(stmt.value, state)
             target: ast.expr = stmt.targets[0]
             if isinstance(target, ast.Name):
@@ -276,20 +295,24 @@ class Analysis:
                 name: str = target.value.id
                 value: Value = state.read_var_from_stack(name)
                 field: str = target.attr
-                heaps = value.extract_heap_type()
+                heaps = value.extract_heap_types()
                 for heap in heaps:
                     state.write_field_to_heap(heap[0], field, right_value)
         return new
 
     def transfer_FunctionDef(self, label) -> Lattice:
         stmt: ast.FunctionDef = self.blocks[label].stmt[0]
+        func_cfg: CFG = self.sub_cfgs[label]
         old: Lattice = self.analysis_list[label]
-        new: Lattice = old.hybrid_copy()
+        new: Lattice = old.copy()
 
         func_name: str = stmt.name
+        entry_label, exit_label = func_cfg.start_block.bid, func_cfg.final_block.bid
+        self.entry_exit_flows.add((entry_label, exit_label))
+        args = stmt.args
         for _, state in new.items():
             value = Value()
-            value.inject_func_type(label)
+            value.inject_func_type(label, entry_label, exit_label, args)
             state.write_var_to_stack(func_name, value)
 
         return new
@@ -297,7 +320,7 @@ class Analysis:
     def transfer_ClassDef(self, label: int) -> Lattice:
         if self.is_call_label(label):
             old: Lattice = self.analysis_list[label]
-            new: Lattice = old.hybrid_copy()
+            new: Lattice = old.copy()
             for _, state in new.items():
                 state.stack_go_into_new_frame()
             return new
@@ -307,12 +330,13 @@ class Analysis:
             class_name: str = stmt.name
             call_label = self.get_call_label(label)
             call: Lattice = self.analysis_list[call_label]
-            new_call: Lattice = call.hybrid_copy()
+            new_call: Lattice = call.copy()
             ret: Lattice = self.analysis_list[label]
             for ret_context, ret_state in ret.items():
                 frame: Frame = ret_state.top_frame_on_stack()
                 value: Value = Value()
                 value.inject_class_type(
+                    call_label,
                     class_name,
                     [
                         call[ret_context]
@@ -341,14 +365,9 @@ class Analysis:
         assert isinstance(stmt.value, ast.Name)
         ret_name: str = stmt.value.id
         old: Lattice = self.analysis_list[label]
-        new: Lattice = old.hybrid_copy()
+        new: Lattice = old.copy()
 
         for _, state in new.items():
             ret_value: Value = state.read_var_from_stack(ret_name)
             state.write_var_to_stack(implicit_return, ret_value)
         return new
-
-    def heap_to_class_name(self, heap: int):
-        stmt: ast.ClassDef = self.blocks[heap].stmt[0]
-        class_name: str = stmt.name
-        return class_name

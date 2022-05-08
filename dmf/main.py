@@ -16,9 +16,6 @@ import argparse
 import logging
 import os.path
 
-from dmf.analysis.lattice import Lattice
-from dmf.analysis.stack import create_first_frame
-from dmf.analysis.state import State
 from dmf.analysis.analysis import Analysis
 from dmf.analysis.manager import ModuleManager
 from dmf.analysis.object_types.module import Module
@@ -39,12 +36,6 @@ if __name__ == "__main__":
     module_manager = ModuleManager()
     module_manager[abs_path] = first_module
 
-    state = State()
-    initial_frame = create_first_frame()
-    state.push_frame_to_stack(initial_frame)
-    lattice = Lattice()
-    lattice[()] = state
-
     cfg = construct_CFG(abs_path)
-    mfp = Analysis(cfg, lattice)
+    mfp = Analysis(cfg)
     mfp.compute_fixed_point()
