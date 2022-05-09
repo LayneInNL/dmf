@@ -16,7 +16,7 @@ from __future__ import annotations
 import ast
 import logging
 from collections import defaultdict, deque
-from typing import Dict, Tuple, Deque, List
+from typing import Dict, Tuple, Deque, List, Set
 
 from dmf.analysis.helper import (
     is_func,
@@ -38,6 +38,7 @@ from dmf.analysis.value import (
     Value,
     builtin_object,
     ClsObj,
+    FuncObj,
 )
 from dmf.py2flows.py2flows.cfg.flows import CFG
 
@@ -99,26 +100,29 @@ class Analysis:
                 if self.is_call_label(snd_label):
                     logging.debug("Current snd_label: {}".format(snd_label))
                     # get sub_cfg label, so that we can add entry and exit labels on the fly
-                    sub_cfg_label: int = self.get_cfg_label(snd_label)
-                    sub_cfg: CFG = self.sub_cfgs[sub_cfg_label]
-                    entry_label, exit_label = (
-                        sub_cfg.start_block.bid,
-                        sub_cfg.final_block.bid,
-                    )
-                    return_label: int = self.get_return_label(snd_label)
-                    self.flows.add((snd_label, entry_label))
-                    self.flows.add((exit_label, return_label))
-                    self.sub_cfgs.update(sub_cfg.sub_cfgs)
-                    self.blocks.update(sub_cfg.blocks)
-                    self.flows.update(sub_cfg.flows)
-                    self.call_return_flows.update(sub_cfg.call_return_flows)
+                    func_sets: Set[FuncObj] = self.get_cfg_label(snd_label)
+                    for func in func_sets:
+                        label, entry_label, exit_label, args = (
+                            func.label,
+                            func.entry_label,
+                            func.exit_label,
+                            func.arguments,
+                        )
+                        sub_cfg: CFG = self.sub_cfgs[label]
+                        return_label: int = self.get_return_label(snd_label)
+                        self.flows.add((snd_label, entry_label))
+                        self.flows.add((exit_label, return_label))
+                        self.sub_cfgs.update(sub_cfg.sub_cfgs)
+                        self.blocks.update(sub_cfg.blocks)
+                        self.flows.update(sub_cfg.flows)
+                        self.call_return_flows.update(sub_cfg.call_return_flows)
 
                 added_flows: List[Tuple[int, int]] = [
                     (l2, l3) for l2, l3 in self.flows if l2 == snd_label
                 ]
                 self.work_list.extendleft(added_flows)
 
-    def get_cfg_label(self, call_label: int) -> int:
+    def get_cfg_label(self, call_label: int):
         stmt: ast.stmt = self.blocks[call_label].stmt[0]
         if isinstance(stmt, ast.ClassDef):
             return call_label
@@ -134,7 +138,7 @@ class Analysis:
                     if is_func(method_value):
                         return method_value.extract_func_types()
                     elif is_class(method_value):
-                        cls = method_value.extract_class_object()
+                        cls = method_value.extract_class_types()
                         init = cls["__init__"]
                         return init.extract_func_types()
 
@@ -156,6 +160,17 @@ class Analysis:
             if a == label:
                 return True
         return False
+
+    def is_entry_label(self, label: int):
+        for a, _ in self.entry_exit_flows:
+            if a == label:
+                return True
+        return False
+
+    def is_exit_label(self, label: int):
+        for _, b in self.entry_exit_flows:
+            if b == label:
+                return True
 
     def is_return_label(self, label: int):
         for _, b in self.call_return_flows:
@@ -206,42 +221,53 @@ class Analysis:
         handler = getattr(self, "transfer_" + stmt_name)
         return handler(label)
 
-    def transfer_inter_call(self, call_label):
-        value_expr: ast.Call = self.blocks[call_label].stmt[0].internal
+    def transfer_inter_call(self, call_label: int):
+        stmt: ast.Assign = self.blocks[call_label].stmt[0]
+        call: ast.Call = stmt.value
         old: Lattice = self.analysis_list[call_label]
         new: Lattice = old.copy()
 
-        for context, state in old.items():
-            new_context: Tuple = merge(call_label, None, context)
-            new[new_context]: State = new[context]
-            del new[context]
-            new[new_context].stack_go_into_new_frame()
-            if isinstance(value_expr.func, ast.Name):
-                # ret = func()
-                # ret = class()
-                func_value: Value = compute_value_of_expr(value_expr, state)
-                if is_class(func_value):
-                    class_object: ClsObj = func_value.extract_class_object()
-                    heap: int = record(call_label, context)
-                    value: Value = Value()
-                    value.inject_heap_type(heap, class_object)
-
-                    fake_value: Value = Value()
-                    fake_name: str = implicit_init_flag
-
-                    new[new_context].write_var_to_stack(self_flag, value)
-                    new[new_context].write_var_to_stack(fake_name, fake_value)
-                elif is_func(func_value):
-                    pass
-            elif isinstance(value_expr.func, ast.Attribute):
-                # ret = v.method(args)
-                v: Value = compute_value_of_expr(value_expr.func.value, state)
-                method = value_expr.func.attr
-                heaps = v.extract_heap_types()
-                for hcontext, cls in heaps:
-                    method_value = state.read_field_from_heap(hcontext, cls, method)
-                    new[new_context].write_var_to_stack(self_flag, v)
+        for ctx, state in old.items():
+            new_ctx: Tuple = merge(call_label, None, ctx)
+            new[new_ctx]: State = new[ctx]
+            new[new_ctx].stack_go_into_new_frame()
+            if new_ctx != ctx:
+                del new[ctx]
+        for ctx, state in new.items():
+            for idx, arg in enumerate(call.args):
+                if isinstance(arg, ast.Starred):
+                    assert False
+                value = compute_value_of_expr(arg, state)
+                state.write_var_to_stack(idx, value)
+            for keyword, keyword_value in call.keywords:
+                if keyword is None:
+                    assert False
+                else:
+                    value = compute_value_of_expr(keyword_value, state)
+                    state.write_var_to_stack(keyword, value)
         return new
+
+    def transfer_inter_entry(self, entry_label: int):
+        stmt = self.blocks[entry_label].bid
+        if isinstance(stmt, ast.Pass):
+            return self.analysis_list[entry_label]
+        elif isinstance(stmt, ast.FunctionDef):
+            arguments = stmt.args
+            args = arguments.args
+            vararg = arguments.vararg
+            kwonlyargs = arguments.kwonlyargs
+            kw_defaults = arguments.kw_defaults
+            kwarg = arguments.kwarg
+            defaults = arguments.defaults
+
+            old: Lattice = self.analysis_list[entry_label]
+            new: Lattice = old.copy()
+            for ctx, state in new.items():
+                i = 0
+                while i in state.top_frame_on_stack():
+                    state.write_var_to_stack(
+                        args[i].arg, state.read_var_from_stack(i, state)
+                    )
 
     def transfer_inter_return(self, return_label):
         stmt: ast.Assign = self.blocks[return_label].stmt[0]

@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 import ast
-from typing import Set, Tuple
+from typing import Set, Tuple, List
 
 from dmf.analysis.state import State
 from dmf.analysis.value import Value, ClsObj
@@ -20,22 +20,14 @@ from dmf.analysis.value import Value, ClsObj
 
 def is_func(value: Value):
     func = value.extract_func_types()
-    cls = value.extract_class_object()
-    if func is not None and cls is not None:
-        assert False
-
-    if func is not None:
+    if func:
         return True
     return False
 
 
 def is_class(value: Value):
-    func = value.extract_func_types()
-    cls = value.extract_class_object()
-    if func is not None and cls is not None:
-        assert False
-
-    if cls is None:
+    cls = value.extract_class_types()
+    if cls:
         return False
     return True
 
