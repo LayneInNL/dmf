@@ -12,8 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 from __future__ import annotations
+
+import ast
+from typing import Set, Tuple
+
 from dmf.analysis.heap import Heap
-from dmf.analysis.stack import Stack, Frame
+from dmf.analysis.stack import Stack, Frame, new_local_ns
 from dmf.analysis.value import Value, ClsObj
 
 
@@ -25,6 +29,9 @@ class State:
         else:
             self.stack: Stack = Stack()
             self.heap: Heap = Heap()
+            ns = new_local_ns()
+            frame: Frame = Frame(ns, None, ns, None)
+            self.push_frame_to_stack(frame)
 
     def __le__(self, other: State):
         return self.stack <= other.stack and self.heap <= other.heap
@@ -78,3 +85,86 @@ class State:
     def copy(self):
         copied = State(self)
         return copied
+
+
+STATE_BOT = None
+
+
+def issubset_state(state1: State | STATE_BOT, state2: State | STATE_BOT):
+    if state1 is None:
+        return True
+
+    if state2 is None:
+        return False
+
+    return state1 <= state2
+
+
+def update_state(state1: State, state2: State | STATE_BOT):
+    if state2 == STATE_BOT:
+        return state1
+
+    state1 += state2
+    return state1
+
+
+def compute_value_of_expr(expr: ast.expr, state: State) -> Value:
+    if isinstance(expr, ast.Num):
+        value = Value()
+        value.inject_num()
+        return value
+    elif isinstance(expr, ast.NameConstant):
+        value = Value()
+        if expr.value is None:
+            value.inject_none()
+        else:
+            value.inject_bool()
+        return value
+    elif isinstance(expr, (ast.Str, ast.JoinedStr)):
+        value = Value()
+        value.inject_str()
+        return value
+    elif isinstance(expr, ast.Bytes):
+        value = Value()
+        value.inject_byte()
+        return value
+    elif isinstance(expr, ast.Name):
+        return state.read_var_from_stack(expr.id)
+    elif isinstance(expr, ast.Attribute):
+        attr = expr.attr
+        assert isinstance(expr.value, ast.Name)
+        name = expr.value.id
+        value = state.read_var_from_stack(name)
+        heaps: Set[Tuple[int, ClsObj]] = value.extract_heap_types()
+        ret_value = Value()
+        for (lab, cls) in heaps:
+            tmp_value = state.read_field_from_heap(lab, cls, attr)
+            ret_value += tmp_value
+        return ret_value
+    elif isinstance(expr, ast.Call):
+        if isinstance(expr.func, ast.Name):
+            return compute_value_of_expr(expr.func, state)
+        elif isinstance(expr.func, ast.Attribute):
+            instance_value = compute_value_of_expr(expr.func.value, state)
+            heaps = instance_value.extract_heap_types()
+            value = Value()
+            for hcontext, cls in heaps:
+                attribute_value = state.read_field_from_heap(
+                    hcontext, cls, expr.func.attr
+                )
+                value += attribute_value()
+            return value
+    elif isinstance(expr, (ast.Compare, ast.BoolOp)):
+        value = Value()
+        value.inject_bool()
+        return value
+    elif isinstance(expr, ast.BinOp):
+        left_value = compute_value_of_expr(expr.left, state)
+        right_value = compute_value_of_expr(expr.right, state)
+        left_prims = left_value.extract_prim_types()
+        right_prims = right_value.extract_prim_types()
+        value = Value()
+        pass
+
+    else:
+        assert False

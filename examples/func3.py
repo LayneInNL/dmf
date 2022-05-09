@@ -13,9 +13,9 @@
 #  limitations under the License.
 
 
-def test(x, y, z=10):
+def test():
     a = 3
     return a
 
 
-b = test(1, 2)
+b = test()

@@ -15,25 +15,20 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, Any
 
-self_flag = "self"
-init_flag = "init"
-implicit_return = "19951107"
-implicit_init_flag = "19970303"
-
 
 class LatticeDict(defaultdict):
     def __repr__(self):
         return dict.__repr__(self)
 
 
-def subset(lattice1, lattice2):
-    if lattice1 is None:
+def subset(state1, state2):
+    if state1 is None:
         return True
 
-    if lattice2 is None:
+    if state2 is None:
         return False
 
-    return lattice1 <= lattice2
+    return state1 <= state2
 
 
 # check if dict1 is a subset of dict2

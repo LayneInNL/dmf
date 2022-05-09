@@ -11,18 +11,20 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-x = 1
-if x:
+from typing import Tuple
 
-    def test():
-        a = 3
-        return a
-
-else:
-
-    def test():
-        a = False
-        return a
+Ctx = Tuple
+ProgramPoint = Tuple[int, Ctx]
 
 
-c = test()
+def make_program_point_flow(fst_lab, fst_ctx, snd_lab, snd_ctx):
+    return (fst_lab, fst_ctx), (snd_lab, snd_ctx)
+
+
+def make_IF(call_label, return_label, context1, entry_label, exit_label, context2):
+    return (
+        (call_label, context1),
+        (entry_label, context2),
+        (exit_label, context2),
+        (return_label, context1),
+    )

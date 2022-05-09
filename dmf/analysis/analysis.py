@@ -16,30 +16,32 @@ from __future__ import annotations
 import ast
 import logging
 from collections import defaultdict, deque
-from typing import Dict, Tuple, Deque, List, Set
+from typing import Dict, Tuple, Deque, Set
 
-from dmf.analysis.helper import (
-    is_func,
-    is_class,
-    merge,
-    record,
+from dmf.analysis.flows import (
+    is_call_label,
+    get_return_point,
+    get_call_point,
+    is_return_label,
+    get_return_label,
+    get_call_label,
+    is_entry_point,
+)
+from dmf.analysis.helper import merge, record
+from dmf.analysis.pp import (
+    ProgramPoint,
+    make_program_point_flow,
+    make_IF,
+)
+from dmf.analysis.stack import Frame
+from dmf.analysis.state import (
+    State,
+    issubset_state,
+    update_state,
+    STATE_BOT,
     compute_value_of_expr,
 )
-from dmf.analysis.lattice import Lattice, LATTICE_BOT, update_lattice
-from dmf.analysis.stack import Frame, new_local_ns
-from dmf.analysis.state import State
-from dmf.analysis.utils import (
-    subset,
-    implicit_return,
-    self_flag,
-    implicit_init_flag,
-)
-from dmf.analysis.value import (
-    Value,
-    builtin_object,
-    ClsObj,
-    FuncObj,
-)
+from dmf.analysis.value import Value, builtin_object, RETURN, FuncObj, ClsObj
 from dmf.py2flows.py2flows.cfg.flows import CFG
 
 
@@ -48,18 +50,23 @@ class AnalysisDict(defaultdict):
         return dict.__repr__(self)
 
 
+Flow = Tuple[ProgramPoint, ProgramPoint]
+
+
 class Analysis:
     def __init__(self, cfg: CFG):
         self.flows = cfg.flows
+        self.IF: Set[
+            Tuple[ProgramPoint, ProgramPoint, ProgramPoint, ProgramPoint]
+        ] = set()
         self.call_return_flows = cfg.call_return_flows
-        self.entry_exit_flows = set()
-        self.extremal_label = cfg.start_block.bid
-        self.extremal_value = None
+        self.extremal_label = (cfg.start_block.bid, ())
+        self.extremal_value = State()
         logging.debug("Extremal value is: {}".format(self.extremal_value))
         self.blocks = cfg.blocks
 
-        self.work_list: Deque[Tuple[int, int]] = deque()
-        self.analysis_list: None = None
+        self.work_list: Deque[Flow] = deque()
+        self.analysis_list: AnalysisDict[ProgramPoint, State | STATE_BOT] | None = None
 
         self.sub_cfgs: Dict[int, CFG] = cfg.sub_cfgs
 
@@ -69,331 +76,286 @@ class Analysis:
         self.present()
 
     def initialize(self):
-        state = State()
-        initial_namespace = new_local_ns()
-        initial_frame = Frame(initial_namespace, None, initial_namespace, None)
-        state.push_frame_to_stack(initial_frame)
-        lattice = Lattice()
-        lattice[()] = state
-        self.extremal_value = lattice
-
         # add flows to work_list
-        self.work_list.extend(self.flows)
+        self.work_list.extendleft(self.DELTA(self.extremal_label))
         # default init analysis_list
-        self.analysis_list: AnalysisDict[int, Lattice | LATTICE_BOT] = AnalysisDict(
-            lambda: LATTICE_BOT
-        )
+        self.analysis_list: AnalysisDict[
+            ProgramPoint, State | STATE_BOT
+        ] = AnalysisDict(lambda: STATE_BOT)
         # update extremal label
         self.analysis_list[self.extremal_label] = self.extremal_value
 
     def iterate(self):
         while self.work_list:
-            fst_label, snd_label = self.work_list.popleft()
-            transferred: Lattice | LATTICE_BOT = self.transfer(fst_label)
-            old: Lattice | LATTICE_BOT = self.analysis_list[snd_label]
+            program_point1, program_point2 = self.work_list.popleft()
+            transferred: State | STATE_BOT = self.transfer(program_point1)
+            old: State | STATE_BOT = self.analysis_list[program_point2]
 
-            if not subset(transferred, old):
-                self.analysis_list[snd_label]: Lattice = update_lattice(
+            if not issubset_state(transferred, old):
+                self.analysis_list[program_point2]: State = update_state(
                     transferred, old
                 )
 
-                if self.is_call_label(snd_label):
-                    logging.debug("Current snd_label: {}".format(snd_label))
-                    # get sub_cfg label, so that we can add entry and exit labels on the fly
-                    func_sets: Set[FuncObj] = self.get_cfg_label(snd_label)
-                    for func in func_sets:
-                        label, entry_label, exit_label, args = (
-                            func.label,
-                            func.entry_label,
-                            func.exit_label,
-                            func.arguments,
-                        )
-                        sub_cfg: CFG = self.sub_cfgs[label]
-                        return_label: int = self.get_return_label(snd_label)
-                        self.flows.add((snd_label, entry_label))
-                        self.flows.add((exit_label, return_label))
-                        self.sub_cfgs.update(sub_cfg.sub_cfgs)
-                        self.blocks.update(sub_cfg.blocks)
-                        self.flows.update(sub_cfg.flows)
-                        self.call_return_flows.update(sub_cfg.call_return_flows)
+                self.LAMBDA(program_point2)
 
-                added_flows: List[Tuple[int, int]] = [
-                    (l2, l3) for l2, l3 in self.flows if l2 == snd_label
-                ]
-                self.work_list.extendleft(added_flows)
-
-    def get_cfg_label(self, call_label: int):
-        stmt: ast.stmt = self.blocks[call_label].stmt[0]
-        if isinstance(stmt, ast.ClassDef):
-            return call_label
-        elif isinstance(stmt, ast.Assign):
-            call: ast.Call = stmt.value
-            lattice: Lattice = self.analysis_list[call_label]
-            if isinstance(call.func, ast.Name):
-                # v = func()
-                # v = class()
-                name = call.func.id
-                for ctx, state in lattice.items():
-                    method_value = state.read_var_from_stack(name)
-                    if is_func(method_value):
-                        return method_value.extract_func_types()
-                    elif is_class(method_value):
-                        cls = method_value.extract_class_types()
-                        init = cls["__init__"]
-                        return init.extract_func_types()
-
-            elif isinstance(call.func, ast.Attribute):
-                for ctx, state in lattice.items():
-                    v = compute_value_of_expr(call.func.value, state)
-                    method = call.func.attr
-                    heaps = v.extract_heap_type()
-                    for hctx, cls in heaps:
-                        method_value: Value = state.read_field_from_heap(
-                            hctx, cls, method
-                        )
-                        return method_value.extract_func_types()
-        else:
-            assert False
-
-    def is_call_label(self, label: int) -> bool:
-        for a, _ in self.call_return_flows:
-            if a == label:
-                return True
-        return False
-
-    def is_entry_label(self, label: int):
-        for a, _ in self.entry_exit_flows:
-            if a == label:
-                return True
-        return False
-
-    def is_exit_label(self, label: int):
-        for _, b in self.entry_exit_flows:
-            if b == label:
-                return True
-
-    def is_return_label(self, label: int):
-        for _, b in self.call_return_flows:
-            if b == label:
-                return True
-        return False
-
-    def get_call_label(self, return_label: int) -> int:
-        for a, b in self.call_return_flows:
-            if b == return_label:
-                return a
-
-    def get_return_label(self, call_label: int) -> int:
-        for a, b in self.call_return_flows:
-            if a == call_label:
-                return b
-
-    def is_class_func_label(self, label):
-        stmt: ast.FunctionDef = self.blocks[label].stmt[0]
-        positional_args = stmt.args.args
-        if positional_args and isinstance(positional_args[0], ast.Name):
-            if positional_args[0].arg == "self":
-                return True
-        return False
+                added_program_points = self.DELTA(program_point2)
+                print(added_program_points)
+                self.work_list.extendleft(added_program_points)
 
     def present(self):
-        all_labels = set()
-        logging.debug("All flows {}".format(self.flows))
-        for flow in self.flows:
-            all_labels.update(flow)
-
-        for label in all_labels:
+        for program_point, state in self.analysis_list.items():
             logging.debug(
-                "Context at label {}: {}".format(label, self.analysis_list[label])
+                "Context at program point {}: {}".format(program_point, state)
             )
-            logging.debug("Effect at label {}: {}".format(label, self.transfer(label)))
+            logging.debug(
+                "Effect at program point {}: {}".format(
+                    program_point, self.transfer(program_point)
+                )
+            )
 
-    def transfer(self, label: int) -> Lattice | LATTICE_BOT:
-        if self.analysis_list[label] == LATTICE_BOT:
-            return LATTICE_BOT
+    def LAMBDA(self, program_point: ProgramPoint):
+        label, context = program_point
+        if not is_call_label(label, self.call_return_flows):
+            return
+        stmt = self.get_stmt_by_label(label)
+        if isinstance(stmt, ast.ClassDef):
+            self.LAMBDA_ClassDef(program_point)
+        elif isinstance(stmt, ast.Assign):
+            if isinstance(stmt.value, ast.Call):
+                if isinstance(stmt.value.func, ast.Name):
+                    self.LAMBDA_Name(program_point)
 
-        return self.do_transfer(label)
+    def LAMBDA_ClassDef(self, program_point: ProgramPoint):
+        label, context = program_point
+        return_label = get_return_label(label, self.call_return_flows)
+        class_cfg = self.sub_cfgs[label]
+        self.flows.update(class_cfg.flows)
+        self.blocks.update(class_cfg.blocks)
+        self.sub_cfgs.update(class_cfg.sub_cfgs)
+        entry_label, exit_label = (
+            class_cfg.start_block.bid,
+            class_cfg.final_block.bid,
+        )
+        new_ctx = merge(label, None, context)
+        self.IF.add(
+            make_IF(
+                label,
+                return_label,
+                context,
+                entry_label,
+                exit_label,
+                new_ctx,
+            )
+        )
 
-    def do_transfer(self, label: int) -> Lattice:
-        stmt: ast.stmt = self.blocks[label].stmt[0]
+    def LAMBDA_Name(self, program_point: ProgramPoint):
+        label, context = program_point
+        stmt = self.get_stmt_by_label(label)
+        state = self.analysis_list[program_point]
+        rhs_value: Value = state.read_var_from_stack(stmt.value.func.id)
+        func_types = rhs_value.extract_func_types()
+        self.LAMBDA_Func_Types(program_point, func_types)
+        class_types = rhs_value.extract_class_types()
+        self.LAMBDA_Class_Types(program_point, class_types)
 
+    def LAMBDA_Func_Types(self, program_point: ProgramPoint, func_types: Set[FuncObj]):
+        if not func_types:
+            return
+
+        label, context = program_point
+        return_label = get_return_label(label, self.call_return_flows)
+        new_context = merge(label, None, context)
+        for func_type in func_types:
+            IF = make_IF(
+                label,
+                return_label,
+                context,
+                func_type.entry_label,
+                func_type.exit_label,
+                new_context,
+            )
+            self.IF.add(IF)
+
+    def LAMBDA_Class_Types(self, program_point: ProgramPoint, class_types: Set[ClsObj]):
+        if not class_types:
+            return
+
+        for cls_type in class_types:
+            self.do_class_type(program_point, cls_type)
+
+    def do_class_type(self, program_point: ProgramPoint, class_type: ClsObj):
+        label, context = program_point
+        return_label = get_return_label(label, self.call_return_flows)
+        init_method = class_type.get_init()
+        func_types = init_method.extract_func_types()
+        assert len(func_types) == 1
+        new_context = merge(label, None, context)
+        for func_type in func_types:
+            entry_label, exit_label = func_type.entry_label, func_type.exit_label
+            IF = make_IF(
+                label, return_label, context, entry_label, exit_label, new_context
+            )
+            self.IF.add(IF)
+
+    def DELTA(self, program_point: ProgramPoint):
+        label, context = program_point
+        added = []
+        for fst_lab, snd_lab in self.flows:
+            if label == fst_lab:
+                added.append(make_program_point_flow(label, context, snd_lab, context))
+        for (
+            call_point,
+            entry_point,
+            exit_point,
+            return_point,
+        ) in self.IF:
+            if program_point == call_point:
+                added.append((call_point, entry_point))
+                added.append((exit_point, return_point))
+            elif program_point == exit_point:
+                added.append((exit_point, return_point))
+        return added
+
+    def transfer(self, program_point: ProgramPoint) -> State | STATE_BOT:
+        label, context = program_point
+        if self.analysis_list[program_point] == STATE_BOT:
+            return STATE_BOT
+
+        if is_call_label(label, self.call_return_flows):
+            return self.transfer_call(program_point)
+        if is_entry_point(program_point, self.IF):
+            return self.transfer_entry(program_point)
+        if is_return_label(label, self.call_return_flows):
+            return self.transfer_return(program_point)
+        return self.do_transfer(program_point)
+
+    def get_stmt_by_label(self, label):
+        return self.blocks[label].stmt[0]
+
+    def do_transfer(self, program_point: ProgramPoint) -> State:
+        label, context = program_point
+        stmt: ast.stmt = self.get_stmt_by_label(label)
         stmt_name: str = stmt.__class__.__name__
         handler = getattr(self, "transfer_" + stmt_name)
-        return handler(label)
+        return handler(program_point)
 
-    def transfer_inter_call(self, call_label: int):
-        stmt: ast.Assign = self.blocks[call_label].stmt[0]
-        call: ast.Call = stmt.value
-        old: Lattice = self.analysis_list[call_label]
-        new: Lattice = old.copy()
+    def transfer_Assign(self, program_point: ProgramPoint) -> State:
+        label, context = program_point
+        stmt: ast.Assign = self.get_stmt_by_label(label)
 
-        for ctx, state in old.items():
-            new_ctx: Tuple = merge(call_label, None, ctx)
-            new[new_ctx]: State = new[ctx]
-            new[new_ctx].stack_go_into_new_frame()
-            if new_ctx != ctx:
-                del new[ctx]
-        for ctx, state in new.items():
-            for idx, arg in enumerate(call.args):
-                if isinstance(arg, ast.Starred):
-                    assert False
-                value = compute_value_of_expr(arg, state)
-                state.write_var_to_stack(idx, value)
-            for keyword, keyword_value in call.keywords:
-                if keyword is None:
-                    assert False
-                else:
-                    value = compute_value_of_expr(keyword_value, state)
-                    state.write_var_to_stack(keyword, value)
-        return new
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
 
-    def transfer_inter_entry(self, entry_label: int):
-        stmt = self.blocks[entry_label].bid
-        if isinstance(stmt, ast.Pass):
-            return self.analysis_list[entry_label]
-        elif isinstance(stmt, ast.FunctionDef):
-            arguments = stmt.args
-            args = arguments.args
-            vararg = arguments.vararg
-            kwonlyargs = arguments.kwonlyargs
-            kw_defaults = arguments.kw_defaults
-            kwarg = arguments.kwarg
-            defaults = arguments.defaults
-
-            old: Lattice = self.analysis_list[entry_label]
-            new: Lattice = old.copy()
-            for ctx, state in new.items():
-                i = 0
-                while i in state.top_frame_on_stack():
-                    state.write_var_to_stack(
-                        args[i].arg, state.read_var_from_stack(i, state)
-                    )
-
-    def transfer_inter_return(self, return_label):
-        stmt: ast.Assign = self.blocks[return_label].stmt[0]
+        rhs_value: Value = compute_value_of_expr(stmt.value, new)
         target: ast.expr = stmt.targets[0]
-
-        call_label: int = self.get_call_label(return_label)
-        call: Lattice = self.analysis_list[call_label]
-        new_call: Lattice = call.copy()
-        ret: Lattice = self.analysis_list[return_label]
-        for context, state in new_call.items():
-            context_at_call: Tuple = merge(call_label, None, context)
-            return_state = ret[context_at_call]
-            ret_name: str = implicit_return
-            if return_state.stack_contains(implicit_init_flag):
-                ret_name = self_flag
-            ret_value = return_state.read_var_from_stack(ret_name)
-            if isinstance(target, ast.Name):
-                assign_name: str = target.id
-                state.write_var_to_stack(assign_name, ret_value)
-            elif isinstance(target, ast.Attribute):
-                assert isinstance(target.value, ast.Name)
-                instance: str = target.value.id
-                value = state.read_var_from_stack(instance)
-                field: str = target.attr
-                heaps = value.extract_heap_type()
-                for heap in heaps:
-                    state.write_field_to_heap(heap, field, ret_value)
-            state.heap = return_state.heap
-        return new_call
-
-    def transfer_Assign(self, label: int) -> Lattice:
-        stmt: ast.Assign = self.blocks[label].stmt[0]
-        assert len(stmt.targets) == 1
-
-        if self.is_call_label(label):
-            return self.transfer_inter_call(label)
-        elif self.is_return_label(label):
-            return self.transfer_inter_return(label)
-
-        old: Lattice = self.analysis_list[label]
-        new: Lattice = old.copy()
-
-        for ctx, state in new.items():
-            right_value: Value = compute_value_of_expr(stmt.value, state)
-            target: ast.expr = stmt.targets[0]
-            if isinstance(target, ast.Name):
-                name: str = target.id
-                state.write_var_to_stack(name, right_value)
-            elif isinstance(target, ast.Attribute):
-                assert isinstance(target.value, ast.Name)
-                name: str = target.value.id
-                value: Value = state.read_var_from_stack(name)
-                field: str = target.attr
-                heaps = value.extract_heap_types()
-                for heap in heaps:
-                    state.write_field_to_heap(heap[0], field, right_value)
+        if isinstance(target, ast.Name):
+            name: str = target.id
+            new.write_var_to_stack(name, rhs_value)
+        # elif isinstance(target, ast.Attribute):
+        #     assert isinstance(target.value, ast.Name)
+        #     name: str = target.value.id
+        #     value: Value = new.read_var_from_stack(name)
+        #     field: str = target.attr
+        #     heaps = value.extract_heap_types()
+        #     for heap in heaps:
+        #         new.write_field_to_heap(heap[0], field, rhs_value)
+        else:
+            assert False
         return new
 
-    def transfer_FunctionDef(self, label) -> Lattice:
-        stmt: ast.FunctionDef = self.blocks[label].stmt[0]
+    def transfer_call(self, program_point: ProgramPoint):
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
+
+        new.stack_go_into_new_frame()
+
+        return new
+
+    def transfer_entry(self, program_point: ProgramPoint):
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
+        return new
+
+    def transfer_exit(self, program_point: ProgramPoint):
+        pass
+
+    def transfer_return(self, program_point: ProgramPoint):
+        return_label, return_context = program_point
+        stmt: ast.Assign = self.get_stmt_by_label(return_label)
+        target: ast.expr = stmt.targets[0]
+        return_state = self.analysis_list[program_point]
+        new_return_state = return_state.copy()
+        call_label = get_call_label(return_label, self.call_return_flows)
+        call_state: State = self.analysis_list[(call_label, return_context)]
+        new_call_state = call_state.copy()
+        return_value = return_state.read_var_from_stack(RETURN)
+        print(return_value)
+        if isinstance(target, ast.Name):
+            new_call_state.write_var_to_stack(target.id, return_value)
+        new_call_state.heap = new_return_state.heap
+        return new_call_state
+
+    def transfer_FunctionDef(self, program_point: ProgramPoint):
+        label, context = program_point
+        stmt: ast.FunctionDef = self.get_stmt_by_label(label)
         func_cfg: CFG = self.sub_cfgs[label]
-        old: Lattice = self.analysis_list[label]
-        new: Lattice = old.copy()
+        self.flows.update(func_cfg.flows)
+        self.blocks.update(func_cfg.blocks)
+        self.sub_cfgs.update(func_cfg.sub_cfgs)
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
 
         func_name: str = stmt.name
         entry_label, exit_label = func_cfg.start_block.bid, func_cfg.final_block.bid
-        self.entry_exit_flows.add((entry_label, exit_label))
         args = stmt.args
-        for _, state in new.items():
-            value = Value()
-            value.inject_func_type(label, entry_label, exit_label, args)
-            state.write_var_to_stack(func_name, value)
+
+        value = Value()
+        value.inject_func_type(label, entry_label, exit_label, args)
+
+        new.write_var_to_stack(func_name, value)
 
         return new
 
-    def transfer_ClassDef(self, label: int) -> Lattice:
-        if self.is_call_label(label):
-            old: Lattice = self.analysis_list[label]
-            new: Lattice = old.copy()
-            for _, state in new.items():
-                state.stack_go_into_new_frame()
+    def transfer_ClassDef(self, program_point: ProgramPoint):
+        label, context = program_point
+        if is_call_label(label, self.call_return_flows):
+            old: State = self.analysis_list[program_point]
+            new: State = old.copy()
+            return new
+        elif is_return_label(label, self.call_return_flows):
+            stmt: ast.ClassDef = self.get_stmt_by_label(label)
+            call_point = get_call_point(program_point, self.IF)
+            call_label = call_point[0]
+            old: State = self.analysis_list[call_point]
+            new: State = old.copy()
+            return_state: State = self.analysis_list[program_point]
+
+            class_name = stmt.name
+            frame: Frame = return_state.top_frame_on_stack()
+            value = Value()
+            value.inject_class_type(
+                call_label, class_name, [builtin_object], frame.f_locals
+            )
+            new.write_var_to_stack(class_name, value)
             return new
 
-        elif self.is_return_label(label):
-            stmt: ast.ClassDef = self.blocks[label].stmt[0]
-            class_name: str = stmt.name
-            call_label = self.get_call_label(label)
-            call: Lattice = self.analysis_list[call_label]
-            new_call: Lattice = call.copy()
-            ret: Lattice = self.analysis_list[label]
-            for ret_context, ret_state in ret.items():
-                frame: Frame = ret_state.top_frame_on_stack()
-                value: Value = Value()
-                value.inject_class_type(
-                    call_label,
-                    class_name,
-                    [
-                        call[ret_context]
-                        .read_var_from_stack(base_class.id)
-                        .extract_class_object()
-                        for base_class in stmt.bases
-                    ]
-                    if stmt.bases
-                    else [builtin_object],
-                    frame.f_locals,
-                )
-                new_call[ret_context].write_var_to_stack(class_name, value)
-            return new_call
+    def transfer_Pass(self, program_point: ProgramPoint) -> State:
+        return self.analysis_list[program_point]
 
-    def transfer_Pass(self, label: int) -> Lattice:
-        return self.analysis_list[label]
+    def transfer_If(self, program_point: ProgramPoint) -> State:
+        return self.analysis_list[program_point]
 
-    def transfer_If(self, label: int) -> Lattice:
-        return self.analysis_list[label]
+    def transfer_While(self, program_point: ProgramPoint) -> State:
+        return self.analysis_list[program_point]
 
-    def transfer_While(self, label: int) -> Lattice:
-        return self.analysis_list[label]
-
-    def transfer_Return(self, label: int) -> Lattice:
-        stmt: ast.Return = self.blocks[label].stmt[0]
+    def transfer_Return(self, program_point: ProgramPoint) -> State:
+        label, context = program_point
+        stmt: ast.Return = self.get_stmt_by_label(label)
         assert isinstance(stmt.value, ast.Name)
         ret_name: str = stmt.value.id
-        old: Lattice = self.analysis_list[label]
-        new: Lattice = old.copy()
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
 
-        for _, state in new.items():
-            ret_value: Value = state.read_var_from_stack(ret_name)
-            state.write_var_to_stack(implicit_return, ret_value)
+        ret_value: Value = new.read_var_from_stack(ret_name)
+        new.write_var_to_stack(RETURN, ret_value)
         return new

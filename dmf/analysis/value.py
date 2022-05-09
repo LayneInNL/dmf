@@ -14,9 +14,8 @@
 from __future__ import annotations
 
 import ast
-import logging
 from collections import defaultdict
-from typing import Set, Dict, List, Tuple
+from typing import Set, Dict, List
 
 from dmf.analysis.prim import (
     PrimType,
@@ -30,6 +29,10 @@ from dmf.analysis.utils import issubset, update
 
 # None to denote TOP type. it can save memory consumption.
 VALUE_TOP = None
+self_flag = "self"
+init_flag = "init"
+RETURN = "19951107"
+implicit_init_flag = "19970303"
 
 
 def static_c3(class_object):
@@ -111,6 +114,9 @@ class ClsObj:
 
     def __hash__(self):
         return self.label
+
+    def get_init(self):
+        return self["__init__"]
 
 
 builtin_object = ClsObj(0, "object", [], {})
