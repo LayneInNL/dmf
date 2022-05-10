@@ -49,14 +49,14 @@ class State:
         res += "\n"
         return res
 
-    def read_field_from_heap(self, heap_ctx: int, cls: ClsObj, field: str):
-        if self.heap_contains(heap_ctx, field):
-            self.heap.read_from_field(heap_ctx, field)
-        else:
-            return cls[field]
+    def add_heap_and_cls(self, heap_ctx: int, cls_obj: ClsObj):
+        self.heap.add_heap_and_cls(heap_ctx, cls_obj)
 
-    def write_field_to_heap(self, heap_context: int, field_name: str, value: Value):
-        self.heap.write_to_field(heap_context, field_name, value)
+    def read_field_from_heap(self, heap_ctx: int, field: str):
+        return self.heap.read_from_field(heap_ctx, field)
+
+    def write_field_to_heap(self, heap_ctx: int, field: str, value: Value):
+        self.heap.write_to_field(heap_ctx, field, value)
 
     def push_frame_to_stack(self, frame: Frame):
         self.stack.push_frame(frame)
@@ -135,35 +135,36 @@ def compute_value_of_expr(expr: ast.expr, state: State) -> Value:
         assert isinstance(expr.value, ast.Name)
         name = expr.value.id
         value = state.read_var_from_stack(name)
-        heaps: Set[Tuple[int, ClsObj]] = value.extract_heap_types()
+        heaps: Set[int] = value.extract_heap_types()
         ret_value = Value()
-        for (lab, cls) in heaps:
-            tmp_value = state.read_field_from_heap(lab, cls, attr)
+        for lab in heaps:
+            tmp_value = state.read_field_from_heap(lab, attr)
             ret_value += tmp_value
         return ret_value
     elif isinstance(expr, ast.Call):
         if isinstance(expr.func, ast.Name):
             return compute_value_of_expr(expr.func, state)
         elif isinstance(expr.func, ast.Attribute):
-            instance_value = compute_value_of_expr(expr.func.value, state)
-            heaps = instance_value.extract_heap_types()
-            value = Value()
-            for hcontext, cls in heaps:
-                attribute_value = state.read_field_from_heap(
-                    hcontext, cls, expr.func.attr
-                )
-                value += attribute_value()
-            return value
+            # instance_value = compute_value_of_expr(expr.func.value, state)
+            # heaps = instance_value.extract_heap_types()
+            # value = Value()
+            # for hcontext, cls in heaps:
+            #     attribute_value = state.read_field_from_heap(
+            #         hcontext, cls, expr.func.attr
+            #     )
+            #     value += attribute_value()
+            # return value
+            pass
     elif isinstance(expr, (ast.Compare, ast.BoolOp)):
         value = Value()
         value.inject_bool()
         return value
     elif isinstance(expr, ast.BinOp):
-        left_value = compute_value_of_expr(expr.left, state)
-        right_value = compute_value_of_expr(expr.right, state)
-        left_prims = left_value.extract_prim_types()
-        right_prims = right_value.extract_prim_types()
-        value = Value()
+        # left_value = compute_value_of_expr(expr.left, state)
+        # right_value = compute_value_of_expr(expr.right, state)
+        # left_prims = left_value.extract_prim_types()
+        # right_prims = right_value.extract_prim_types()
+        # value = Value()
         pass
 
     else:

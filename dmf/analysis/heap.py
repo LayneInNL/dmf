@@ -21,8 +21,11 @@ from dmf.analysis.value import Value, ClsObj
 
 class Singleton:
     def __init__(self, cls_obj):
-        self.cls_obj = cls_obj
         self.internal: Dict[str, Value] = {}
+        self.cls_obj: ClsObj = cls_obj
+
+    def __repr__(self):
+        return "dict {} cls {}".format(self.internal, self.cls_obj)
 
     def __le__(self, other: Singleton):
         return issubset(self.internal, other.internal)
@@ -38,7 +41,11 @@ class Singleton:
         self.internal[field] = value
 
     def __getitem__(self, field):
-        return self.internal[field]
+        # At first retrieve dict of instance itself.
+        if field in self.internal:
+            return self.internal[field]
+        else:
+            return self.cls_obj[field]
 
 
 class Summary:
@@ -55,34 +62,38 @@ class Summary:
 
 class Heap:
     def __init__(self, heap: Heap = None):
-        self.singleton: Dict[int, Singleton] = {}
-        self.summary: Dict[int, Summary] = {}
+        self.singletons: Dict[int, Singleton] = {}
+        self.summaries: Dict[int, Summary] = {}
         if heap is not None:
-            self.singleton.update(heap.singleton)
-            self.summary.update(heap.summary)
+            self.singletons.update(heap.singletons)
+            self.summaries.update(heap.summaries)
 
     def __contains__(self, item: Tuple[int, str]):
         heap_ctx, field = item
-        return field in self.singleton[heap_ctx]
+        return field in self.singletons[heap_ctx]
 
     def __le__(self, other: Heap):
-        return issubset(self.singleton, other.singleton) and issubset(
-            self.summary, other.summary
+        return issubset(self.singletons, other.singletons) and issubset(
+            self.summaries, other.summaries
         )
 
     def __iadd__(self, other: Heap):
-        self.singleton.update(other.singleton)
-        self.summary.update(other.summary)
+        self.singletons.update(other.singletons)
+        self.summaries.update(other.summaries)
         return self
 
     def __repr__(self):
-        return "Singleton: {}, Summary {}".format(self.singleton, self.summary)
+        return "Singleton: {}, Summary {}".format(self.singletons, self.summaries)
+
+    def add_heap_and_cls(self, heap_ctx, cls_obj):
+        singleton = Singleton(cls_obj)
+        self.singletons[heap_ctx] = singleton
 
     def write_to_field(self, heap_ctx: int, field: str, value: Value):
-        self.singleton[heap_ctx][field] = value
+        self.singletons[heap_ctx][field] = value
 
     def read_from_field(self, heap_ctx: int, field: str):
-        return self.singleton[heap_ctx][field]
+        return self.singletons[heap_ctx][field]
 
     def copy(self):
         copied = Heap(self)

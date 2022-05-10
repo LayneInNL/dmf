@@ -29,10 +29,6 @@ from dmf.analysis.utils import issubset, update
 
 # None to denote TOP type. it can save memory consumption.
 VALUE_TOP = None
-self_flag = "self"
-init_flag = "init"
-RETURN = "19951107"
-implicit_init_flag = "19970303"
 
 
 def static_c3(class_object):
@@ -88,7 +84,7 @@ class ClsObj:
         self.bases: List[ClsObj] = bases
         self.attributes = attributes
         if bases:
-            self.mro = static_c3(self)
+            self.mro: List[ClsObj] = static_c3(self)
 
     def __repr__(self):
         return "name: {} x dict: {}".format(self.name, self.attributes.__repr__())
@@ -127,11 +123,19 @@ builtin_object = ClsObj(0, "object", [], {})
 
 
 class Value:
-    def __init__(self):
+    def __init__(self, heap_type=None, prim_type=None, func_type=None, class_type=None):
         self.heap_types: Set[int] = set()
+        if heap_type:
+            self.heap_types.add(heap_type)
         self.prim_types: Set[PrimType] = set()
+        if prim_type:
+            self.prim_types.add(prim_type)
         self.func_types: Set[FuncObj] = set()
+        if func_type:
+            self.func_types.add(func_type)
         self.class_types: Set[ClsObj] = set()
+        if class_type:
+            self.class_types.add(class_type)
 
     def __le__(self, other: Value):
 
@@ -229,3 +233,9 @@ def update_value(value1: Value | VALUE_TOP, value2: Value | VALUE_TOP):
     else:
         value1 += value2
         return value1
+
+
+SELF_FLAG = "self"
+INIT_FLAG = "19970303"
+INIT_FLAG_VALUE = Value()
+RETURN_FLAG = "19951107"
