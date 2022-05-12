@@ -278,8 +278,10 @@ class Analysis(Base):
         )
         self.IF.add(inter_flow)
 
-    def LAMBDA_Class_Types(self, program_point: ProgramPoint, class_types: Set[ClsObj]):
-        for cls_type in class_types:
+    def LAMBDA_Class_Types(
+        self, program_point: ProgramPoint, class_types: Dict[int, ClsObj]
+    ):
+        for label, cls_type in class_types.items():
             self.build_inter_flow_for_class_type(program_point, cls_type)
 
     def build_inter_flow_for_class_type(
@@ -393,7 +395,7 @@ class Analysis(Base):
             # get a copy of heap
             new_return_state = return_state.copy()
 
-            call_label = self.get_call_label(return_lab, self.call_return_flows)
+            call_label = self.get_call_label(return_lab)
             call_state: State = self.analysis_list[(call_label, return_ctx)]
             # get a copy of stack
             new_call_state = call_state.copy()
@@ -425,8 +427,18 @@ class Analysis(Base):
         class_name = stmt.name
         frame: Frame = return_state.top_frame_on_stack()
         value = Value()
+        bases = []
+        for base in stmt.bases:
+            assert isinstance(base, ast.Name)
+            base_value = new.read_var_from_stack(base.id)
+            class_types = base_value.extract_class_types()
+            assert len(class_types) == 1
+            for cls_obj in class_types:
+                bases.append(cls_obj)
         value.inject_class_type(
-            call_label, class_name, [builtin_object], frame.f_locals
+            call_label,
+            [builtin_object] if not bases else bases,
+            frame.f_locals,
         )
         new.write_var_to_stack(class_name, value)
         return new

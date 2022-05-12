@@ -67,7 +67,7 @@ class FuncObj:
         return self.label == other.label
 
     def __hash__(self):
-        return self.label
+        return hash(self.label)
 
     def __repr__(self):
         return "({}, {}, {}, {}".format(
@@ -76,24 +76,22 @@ class FuncObj:
 
 
 class ClsObj:
-    def __init__(
-        self, label: int, name: str, bases: List[ClsObj], attributes: Dict[str, Value]
-    ):
+    def __init__(self, label: int, bases: List[ClsObj], attributes: Dict[str, Value]):
         self.label = label
-        self.name: str = name
         self.bases: List[ClsObj] = bases
-        self.attributes = attributes
+        self.attributes: Dict[str, Value] = attributes
         if bases:
             self.mro: List[ClsObj] = static_c3(self)
 
     def __repr__(self):
-        return "name: {} x dict: {}".format(self.name, self.attributes.__repr__())
+        return "label: {} x dict: {}".format(self.label, self.attributes.__repr__())
 
     def __le__(self, other: ClsObj):
         return issubset(self.attributes, other.attributes)
 
     def __iadd__(self, other: ClsObj):
-        return update(self.attributes, other.attributes)
+        update(self.attributes, other.attributes)
+        return self
 
     def __getitem__(self, attribute: str):
         if attribute in self.attributes:
@@ -115,7 +113,7 @@ class ClsObj:
         return self["__init__"]
 
 
-builtin_object = ClsObj(0, "object", [], {})
+builtin_object = ClsObj(0, [], {})
 
 
 # in order to denote TOP, we need a special value. Since python doesn't support algebraic data types,
@@ -123,33 +121,41 @@ builtin_object = ClsObj(0, "object", [], {})
 
 
 class Value:
-    def __init__(self, heap_type=None, prim_type=None, func_type=None, class_type=None):
+    def __init__(self, heap_type=None):
         self.heap_types: Set[int] = set()
         if heap_type:
             self.heap_types.add(heap_type)
         self.prim_types: Set[PrimType] = set()
-        if prim_type:
-            self.prim_types.add(prim_type)
         self.func_types: Set[FuncObj] = set()
-        if func_type:
-            self.func_types.add(func_type)
-        self.class_types: Set[ClsObj] = set()
-        if class_type:
-            self.class_types.add(class_type)
+        self.class_types: Dict[int, ClsObj] = {}
 
     def __le__(self, other: Value):
 
         res1 = self.heap_types <= other.heap_types
+        if not res1:
+            return False
         res2 = self.prim_types <= other.prim_types
+        if not res2:
+            return False
         res3 = self.func_types <= other.func_types
-        res4 = self.class_types <= other.class_types
-        return all((res1, res2, res3, res4))
+        if not res3:
+            return False
+        for label in self.class_types:
+            if label not in other.class_types:
+                return False
+            if not self.class_types[label] <= other.class_types[label]:
+                return False
+        return True
 
     def __iadd__(self, other: Value):
         self.heap_types |= other.heap_types
         self.prim_types |= other.prim_types
         self.func_types |= other.func_types
-        self.class_types |= other.class_types
+        for label in other.class_types:
+            if label not in self.class_types:
+                self.class_types[label] = other.class_types[label]
+            else:
+                self.class_types[label] += other.class_types[label]
         return self
 
     def __repr__(self):
@@ -179,9 +185,9 @@ class Value:
         func_obj = FuncObj(label, entry_label, exit_label, arguments)
         self.func_types.add(func_obj)
 
-    def inject_class_type(self, label, name, bases, frame: Dict[str, Value]):
-        class_object: ClsObj = ClsObj(label, name, bases, frame)
-        self.class_types.add(class_object)
+    def inject_class_type(self, label, bases, frame: Dict[str, Value]):
+        class_object: ClsObj = ClsObj(label, bases, frame)
+        self.class_types[label] = class_object
 
     def extract_heap_types(self):
         return self.heap_types
@@ -192,7 +198,7 @@ class Value:
     def extract_func_types(self):
         return self.func_types
 
-    def extract_class_types(self):
+    def extract_class_types(self) -> Dict[int, ClsObj]:
         return self.class_types
 
 
