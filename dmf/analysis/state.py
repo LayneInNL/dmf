@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import ast
-from typing import Set, Tuple
+from typing import Set
 
 from dmf.analysis.heap import Heap
 from dmf.analysis.stack import Stack, Frame, new_local_ns

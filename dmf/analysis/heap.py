@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Dict, Tuple
 
-from dmf.analysis.utils import issubset_twodict, update_twodict, issubset, update
+from dmf.analysis.value_util import issubset_twodict, update_twodict, issubset, update
 from dmf.analysis.value import Value, ClsObj
 
 

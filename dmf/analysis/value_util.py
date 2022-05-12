@@ -12,23 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 from __future__ import annotations
-from collections import defaultdict
+
 from typing import Dict, Any
-
-
-class LatticeDict(defaultdict):
-    def __repr__(self):
-        return dict.__repr__(self)
-
-
-def subset(state1, state2):
-    if state1 is None:
-        return True
-
-    if state2 is None:
-        return False
-
-    return state1 <= state2
 
 
 # check if dict1 is a subset of dict2

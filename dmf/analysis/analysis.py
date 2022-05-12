@@ -18,14 +18,14 @@ import logging
 from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, Set
 
-from dmf.analysis.flows import (
+from dmf.analysis.flow_util import (
     ProgramPoint,
     Flow,
     Inter_Flow,
     Lab,
     Basic_Flow,
 )
-from dmf.analysis.helper import merge, record
+from dmf.analysis.ctx_util import merge, record
 from dmf.analysis.stack import Frame
 from dmf.analysis.state import (
     State,
@@ -44,7 +44,7 @@ from dmf.analysis.value import (
     SELF_FLAG,
     INIT_FLAG_VALUE,
 )
-from dmf.py2flows.py2flows.cfg.flows import CFG
+from dmf.flows import CFG
 
 
 class Base:

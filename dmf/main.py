@@ -17,9 +17,7 @@ import logging
 import os.path
 
 from dmf.analysis.analysis import Analysis
-from dmf.analysis.manager import ModuleManager
-from dmf.analysis.object_types.module import Module
-from dmf.py2flows.py2flows.main import construct_CFG
+from dmf.flows import construct_CFG
 
 logging.basicConfig(level=logging.DEBUG)
 parser = argparse.ArgumentParser()
@@ -29,12 +27,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     abs_path = os.path.abspath(args.file_path)
     logging.debug("Entry file is: {}".format(abs_path))
-
-    first_module = Module(abs_path)
-    first_module.name = __name__
-
-    module_manager = ModuleManager()
-    module_manager[abs_path] = first_module
 
     cfg = construct_CFG(abs_path)
     mfp = Analysis(cfg)

@@ -12,26 +12,5 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from dmf.analysis.value import Value
-
-
-def is_func(value: Value):
-    func = value.extract_func_types()
-    if func:
-        return True
-    return False
-
-
-def is_class(value: Value):
-    cls = value.extract_class_types()
-    if cls:
-        return False
-    return True
-
-
-def record(label, context):
-    return label
-
-
-def merge(label, heap, context):
-    return context[-1:] + (label,)
+from .cfg import construct_CFG
+from .flows import CFG

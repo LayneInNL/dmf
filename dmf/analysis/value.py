@@ -25,7 +25,7 @@ from dmf.analysis.prim import (
     PRIM_BOOL,
     PRIM_NONE,
 )
-from dmf.analysis.utils import issubset, update
+from dmf.analysis.value_util import issubset, update
 
 # None to denote TOP type. it can save memory consumption.
 VALUE_TOP = None
