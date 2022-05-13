@@ -14,7 +14,10 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import logging
+import os.path
+import sys
 from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, Set
 
@@ -44,11 +47,13 @@ from dmf.analysis.value import (
     SELF_FLAG,
     INIT_FLAG_VALUE,
 )
-from dmf.flows import CFG
+from dmf.flows import CFG, construct_CFG
 
 
 class Base:
-    def __init__(self, cfg: CFG):
+    def __init__(self, entry_file_path: str):
+        cfg: CFG = construct_CFG(entry_file_path)
+
         self.flows: Set[Basic_Flow] = cfg.flows
         self.IF: Set[Inter_Flow] = set()
         self.call_return_flows: Set[Basic_Flow] = cfg.call_return_flows
@@ -56,6 +61,16 @@ class Base:
         self.extremal_value: State = State()
         self.blocks = cfg.blocks
         self.sub_cfgs: Dict[Lab, CFG] = cfg.sub_cfgs
+
+        # working directory for the analyzed project
+        # mimic current working directory
+        self.work_dir = os.path.dirname(entry_file_path)
+        self.main_file = entry_file_path
+        # mimic sys.modules
+        self.proj_work_modules = {}
+        # mimic sys.path
+        self.proj_work_path = []
+        self.proj_work_path.append(self.work_dir)
 
     def get_stmt_by_label(self, label: Lab):
         return self.blocks[label].stmt[0]
@@ -140,8 +155,8 @@ class Base:
 
 
 class Analysis(Base):
-    def __init__(self, cfg: CFG):
-        super().__init__(cfg)
+    def __init__(self, entry_file_path: str):
+        super().__init__(entry_file_path)
         self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsObj | None]] = {}
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: defaultdict[ProgramPoint, State | STATE_BOT] | None = None
@@ -319,11 +334,26 @@ class Analysis(Base):
         return self.do_transfer(program_point)
 
     def do_transfer(self, program_point: ProgramPoint) -> State:
+        logging.debug(f"Transfer {program_point}")
         label, context = program_point
         stmt: ast.stmt = self.get_stmt_by_label(label)
         stmt_name: str = stmt.__class__.__name__
         handler = getattr(self, "transfer_" + stmt_name)
         return handler(program_point)
+
+    def transfer_Import(self, program_point: ProgramPoint) -> State:
+        sys_path = sys.path
+        sys_modules = sys.modules
+        sys.path = self.proj_work_path
+        sys.modules = self.proj_work_modules
+        sys.path = self.proj_work_path
+        sys.modules = self.proj_work_modules
+        res = importlib.import_module("lib")
+        print(res)
+        print(sys.path)
+        print(sys.modules)
+        sys.path = sys_path
+        sys.modules = sys_modules
 
     def transfer_Assign(self, program_point: ProgramPoint) -> State:
         label, context = program_point

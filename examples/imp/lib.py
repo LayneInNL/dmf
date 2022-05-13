@@ -11,23 +11,4 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
-import argparse
-import logging
-import os.path
-
-from analysis import Analysis
-
-logging.basicConfig(level=logging.DEBUG)
-parser = argparse.ArgumentParser()
-parser.add_argument("entry_file_path", help="the entry file path")
-
-if __name__ == "__main__":
-    args = parser.parse_args()
-    entry_file_path = args.entry_file_path
-    logging.debug("Entry file path is: {}".format(entry_file_path))
-    abs_path = os.path.abspath(entry_file_path)
-    logging.debug("Entry file path is: {}".format(abs_path))
-
-    mfp = Analysis(abs_path)
-    mfp.compute_fixed_point()
+a = 5
