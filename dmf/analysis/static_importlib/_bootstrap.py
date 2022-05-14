@@ -695,7 +695,8 @@ def _load_unlocked(spec):
                 raise ImportError("missing loader", name=spec.name)
             # A namespace package so do nothing.
         else:
-            spec.loader.exec_module(module)
+            pass
+            # spec.loader.exec_module(module)
 
     # We don't ensure that the import-related module attributes get
     # set in the builtins.analysis_modules replacement case.  Such modules are on

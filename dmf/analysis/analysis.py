@@ -174,6 +174,11 @@ class Analysis(Base):
         )
         builtins.analysis_modules["__main__"] = main_module
 
+        # insert being analyzed dir into sys.path
+        dir_name = os.path.dirname(entry_file_path)
+        sys.path.insert(0, dir_name)
+        logging.debug("updated sys.path {}".format(sys.path))
+
         self.extremal_value: State = State()
 
     def compute_fixed_point(self):
