@@ -3,8 +3,8 @@ import tempfile
 
 from . import abc as resources_abc
 from contextlib import contextmanager, suppress
-from static_importlib import import_module
-from static_importlib.abc import ResourceLoader
+from importlib import import_module
+from importlib.abc import ResourceLoader
 from io import BytesIO, TextIOWrapper
 from pathlib import Path
 from types import ModuleType
@@ -97,7 +97,7 @@ def open_binary(package: Package, resource: Resource) -> BinaryIO:
         return open(full_path, mode='rb')
     except OSError:
         # Just assume the loader is a resource loader; all the relevant
-        # static_importlib.machinery loaders are and an AttributeError for
+        # importlib.machinery loaders are and an AttributeError for
         # get_data() will make it clear what is needed from the loader.
         loader = cast(ResourceLoader, package.__spec__.loader)
         data = None
@@ -131,7 +131,7 @@ def open_text(package: Package,
         return open(full_path, mode='r', encoding=encoding, errors=errors)
     except OSError:
         # Just assume the loader is a resource loader; all the relevant
-        # static_importlib.machinery loaders are and an AttributeError for
+        # importlib.machinery loaders are and an AttributeError for
         # get_data() will make it clear what is needed from the loader.
         loader = cast(ResourceLoader, package.__spec__.loader)
         data = None

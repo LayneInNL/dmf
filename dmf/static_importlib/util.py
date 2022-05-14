@@ -1,15 +1,15 @@
 """Utility code for constructing importers, etc."""
 from . import abc
-from .bootstrap import module_from_spec
-from .bootstrap import _resolve_name
-from .bootstrap import spec_from_loader
-from .bootstrap import _find_spec
-from .bootstrap_external import MAGIC_NUMBER
-from .bootstrap_external import _RAW_MAGIC_NUMBER
-from .bootstrap_external import cache_from_source
-from .bootstrap_external import decode_source
-from .bootstrap_external import source_from_cache
-from .bootstrap_external import spec_from_file_location
+from ._bootstrap import module_from_spec
+from ._bootstrap import _resolve_name
+from ._bootstrap import spec_from_loader
+from ._bootstrap import _find_spec
+from ._bootstrap_external import MAGIC_NUMBER
+from ._bootstrap_external import _RAW_MAGIC_NUMBER
+from ._bootstrap_external import cache_from_source
+from ._bootstrap_external import decode_source
+from ._bootstrap_external import source_from_cache
+from ._bootstrap_external import spec_from_file_location
 
 from contextlib import contextmanager
 import _imp
@@ -83,7 +83,7 @@ def find_spec(name, package=None):
     If the name is for submodule (contains a dot), the parent module is
     automatically imported.
 
-    The name and package arguments work the same as static_importlib.import_module().
+    The name and package arguments work the same as importlib.import_module().
     In other words, relative module names (with leading dots) work.
 
     """

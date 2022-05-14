@@ -14,13 +14,13 @@
 from __future__ import annotations
 
 import ast
-import importlib
 import logging
 import os.path
 import sys
 from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, Set
 
+from dmf.analysis.ctx_util import merge, record
 from dmf.analysis.flow_util import (
     ProgramPoint,
     Flow,
@@ -28,7 +28,6 @@ from dmf.analysis.flow_util import (
     Lab,
     Basic_Flow,
 )
-from dmf.analysis.ctx_util import merge, record
 from dmf.analysis.stack import Frame
 from dmf.analysis.state import (
     State,
@@ -52,6 +51,14 @@ from dmf.flows import CFG, construct_CFG
 
 class Base:
     def __init__(self, entry_file_path: str):
+        main_module = type(sys)("__main__")
+        main_module.__file__ = entry_file_path
+        logging.debug(
+            "__main__ module has been created {} {}".format(
+                main_module.__name__,
+                main_module.__file__,
+            )
+        )
         cfg: CFG = construct_CFG(entry_file_path)
 
         self.flows: Set[Basic_Flow] = cfg.flows

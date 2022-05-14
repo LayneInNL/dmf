@@ -1,6 +1,6 @@
 """Abstract base classes related to import."""
-from . import bootstrap
-from . import bootstrap_external
+from . import _bootstrap
+from . import _bootstrap_external
 from . import machinery
 try:
     import _frozen_importlib
@@ -11,7 +11,7 @@ except ImportError as exc:
 try:
     import _frozen_importlib_external
 except ImportError as exc:
-    _frozen_importlib_external = bootstrap_external
+    _frozen_importlib_external = _bootstrap_external
 import abc
 import warnings
 
@@ -77,7 +77,7 @@ class MetaPathFinder(Finder):
 
     def invalidate_caches(self):
         """An optional method for clearing the finder's cache, if any.
-        This method is used by static_importlib.invalidate_caches().
+        This method is used by importlib.invalidate_caches().
         """
 
 _register(MetaPathFinder, machinery.BuiltinImporter, machinery.FrozenImporter,
@@ -295,7 +295,7 @@ _register(FileLoader, machinery.SourceFileLoader,
             machinery.SourcelessFileLoader)
 
 
-class SourceLoader(bootstrap_external.SourceLoader, ResourceLoader, ExecutionLoader):
+class SourceLoader(_bootstrap_external.SourceLoader, ResourceLoader, ExecutionLoader):
 
     """Abstract base class for loading source code (and optionally any
     corresponding bytecode).
