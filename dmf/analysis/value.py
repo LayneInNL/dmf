@@ -208,6 +208,8 @@ class ValueDict(defaultdict):
 
     def __le__(self, other: ValueDict):
         for key in self:
+            if key.startswith("__") and key.endswith("__"):
+                continue
             if key not in other:
                 return False
             if not issubset_value(self[key], other[key]):
@@ -216,6 +218,8 @@ class ValueDict(defaultdict):
 
     def __iadd__(self, other: ValueDict):
         for key in other:
+            if key.startswith("__") and key.endswith("__"):
+                continue
             self[key] = update_value(self[key], other[key])
         return self
 

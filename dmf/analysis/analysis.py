@@ -17,6 +17,7 @@ import ast
 import logging
 import os.path
 import sys
+import builtins
 from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, Set
 
@@ -47,25 +48,18 @@ from dmf.analysis.value import (
     INIT_FLAG_VALUE,
 )
 from dmf.flows import CFG, construct_CFG
+from .static_importlib import import_module
 
 
 class Base:
     def __init__(self, entry_file_path: str):
-        main_module = type(sys)("__main__")
-        main_module.__file__ = entry_file_path
-        logging.debug(
-            "__main__ module has been created {} {}".format(
-                main_module.__name__,
-                main_module.__file__,
-            )
-        )
+
         cfg: CFG = construct_CFG(entry_file_path)
 
         self.flows: Set[Basic_Flow] = cfg.flows
         self.IF: Set[Inter_Flow] = set()
         self.call_return_flows: Set[Basic_Flow] = cfg.call_return_flows
         self.extremal_point: ProgramPoint = (cfg.start_block.bid, ())
-        self.extremal_value: State = State()
         self.blocks = cfg.blocks
         self.sub_cfgs: Dict[Lab, CFG] = cfg.sub_cfgs
 
@@ -167,6 +161,20 @@ class Analysis(Base):
         self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsObj | None]] = {}
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: defaultdict[ProgramPoint, State | STATE_BOT] | None = None
+
+        builtins.analysis = self
+        builtins.analysis_modules = {}
+        main_module = type(sys)("__main__")
+        main_module.__file__ = entry_file_path
+        logging.debug(
+            "__main__ module has been created {} {}".format(
+                main_module.__name__,
+                main_module.__file__,
+            )
+        )
+        builtins.analysis_modules["__main__"] = main_module
+
+        self.extremal_value: State = State()
 
     def compute_fixed_point(self):
         self.initialize()

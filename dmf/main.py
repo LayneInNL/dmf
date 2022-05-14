@@ -27,7 +27,7 @@ if __name__ == "__main__":
     entry_file_path = args.entry_file_path
     logging.debug("Entry file path is: {}".format(entry_file_path))
     abs_path = os.path.abspath(entry_file_path)
-    logging.debug("Entry file path is: {}".format(abs_path))
+    logging.debug("Absolute entry file path is: {}".format(abs_path))
 
-    mfp = Analysis(abs_path)
-    mfp.compute_fixed_point()
+    mf = Analysis(abs_path)
+    mf.compute_fixed_point()

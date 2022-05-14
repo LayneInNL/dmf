@@ -14,11 +14,13 @@
 from __future__ import annotations
 
 import ast
+import builtins
+import logging
 from typing import Set
 
 from dmf.analysis.heap import Heap
 from dmf.analysis.stack import Stack, Frame, new_local_ns
-from dmf.analysis.value import Value, ClsObj
+from dmf.analysis.value import Value, ClsObj, ValueDict
 
 
 class State:
@@ -27,10 +29,21 @@ class State:
             self.stack: Stack = state.stack.copy()
             self.heap: Heap = state.heap.copy()
         else:
+            # if state is None, it's the initial state
             self.stack: Stack = Stack()
             self.heap: Heap = Heap()
-            ns = new_local_ns()
-            frame: Frame = Frame(ns, None, ns, None)
+
+            # create a dict for analysis
+            main_module = builtins.analysis_modules["__main__"]
+            updated_dict = ValueDict()
+            updated_dict.update(main_module.__dict__)
+            main_module.__mydict__ = updated_dict
+            logging.debug("__main__ __mydict__ {}".format(main_module.__mydict__))
+
+            # create first frame
+            frame: Frame = Frame(
+                main_module.__mydict__, None, main_module.__mydict__, None
+            )
             self.push_frame_to_stack(frame)
 
     def __le__(self, other: State):

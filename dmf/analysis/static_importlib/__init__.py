@@ -1,5 +1,5 @@
 """A pure Python implementation of import."""
-__all__ = ['__import__', 'import_module', 'invalidate_caches', 'reload']
+__all__ = ["__import__", "import_module", "invalidate_caches", "reload"]
 
 # Bootstrap help #####################################################
 
@@ -10,42 +10,48 @@ __all__ = ['__import__', 'import_module', 'invalidate_caches', 'reload']
 # of a fully initialised version (either the frozen one or the one
 # initialised below if the frozen one is not available).
 import _imp  # Just the builtin component, NOT the full Python module
+import logging
 import sys
+import builtins
 
 try:
     import _frozen_importlib as _bootstrap
 except ImportError:
     from . import _bootstrap
+
     _bootstrap._setup(sys, _imp)
 else:
     # importlib._bootstrap is the built-in import, ensure we don't create
     # a second copy of the module.
-    _bootstrap.__name__ = 'importlib._bootstrap'
-    _bootstrap.__package__ = 'importlib'
+    _bootstrap.__name__ = "importlib._bootstrap"
+    _bootstrap.__package__ = "importlib"
     try:
-        _bootstrap.__file__ = __file__.replace('__init__.py', '_bootstrap.py')
+        _bootstrap.__file__ = __file__.replace("__init__.py", "_bootstrap.py")
     except NameError:
         # __file__ is not guaranteed to be defined, e.g. if this code gets
         # frozen by a tool like cx_Freeze.
         pass
-    sys.modules['importlib._bootstrap'] = _bootstrap
+    sys.modules["importlib._bootstrap"] = _bootstrap
 
 try:
     import _frozen_importlib_external as _bootstrap_external
 except ImportError:
     from . import _bootstrap_external
+
     _bootstrap_external._setup(_bootstrap)
     _bootstrap._bootstrap_external = _bootstrap_external
 else:
-    _bootstrap_external.__name__ = 'importlib._bootstrap_external'
-    _bootstrap_external.__package__ = 'importlib'
+    _bootstrap_external.__name__ = "importlib._bootstrap_external"
+    _bootstrap_external.__package__ = "importlib"
     try:
-        _bootstrap_external.__file__ = __file__.replace('__init__.py', '_bootstrap_external.py')
+        _bootstrap_external.__file__ = __file__.replace(
+            "__init__.py", "_bootstrap_external.py"
+        )
     except NameError:
         # __file__ is not guaranteed to be defined, e.g. if this code gets
         # frozen by a tool like cx_Freeze.
         pass
-    sys.modules['importlib._bootstrap_external'] = _bootstrap_external
+    sys.modules["importlib._bootstrap_external"] = _bootstrap_external
 
 # To simplify imports in test code
 _w_long = _bootstrap_external._w_long
@@ -67,7 +73,7 @@ def invalidate_caches():
     """Call the invalidate_caches() method on all meta path finders stored in
     sys.meta_path (where implemented)."""
     for finder in sys.meta_path:
-        if hasattr(finder, 'invalidate_caches'):
+        if hasattr(finder, "invalidate_caches"):
             finder.invalidate_caches()
 
 
@@ -79,19 +85,21 @@ def find_loader(name, path=None):
     This function is deprecated in favor of importlib.util.find_spec().
 
     """
-    warnings.warn('Deprecated since Python 3.4. '
-                  'Use importlib.util.find_spec() instead.',
-                  DeprecationWarning, stacklevel=2)
+    warnings.warn(
+        "Deprecated since Python 3.4. " "Use importlib.util.find_spec() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     try:
         loader = sys.modules[name].__loader__
         if loader is None:
-            raise ValueError('{}.__loader__ is None'.format(name))
+            raise ValueError("{}.__loader__ is None".format(name))
         else:
             return loader
     except KeyError:
         pass
     except AttributeError:
-        raise ValueError('{}.__loader__ is not set'.format(name)) from None
+        raise ValueError("{}.__loader__ is not set".format(name)) from None
 
     spec = _bootstrap._find_spec(name, path)
     # We won't worry about malformed specs (missing attributes).
@@ -99,10 +107,8 @@ def find_loader(name, path=None):
         return None
     if spec.loader is None:
         if spec.submodule_search_locations is None:
-            raise ImportError('spec for {} missing loader'.format(name),
-                              name=name)
-        raise ImportError('namespace packages do not have loaders',
-                          name=name)
+            raise ImportError("spec for {} missing loader".format(name), name=name)
+        raise ImportError("namespace packages do not have loaders", name=name)
     return spec.loader
 
 
@@ -115,13 +121,15 @@ def import_module(name, package=None):
 
     """
     level = 0
-    if name.startswith('.'):
+    if name.startswith("."):
         if not package:
-            msg = ("the 'package' argument is required to perform a relative "
-                   "import for {!r}")
+            msg = (
+                "the 'package' argument is required to perform a relative "
+                "import for {!r}"
+            )
             raise TypeError(msg.format(name))
         for character in name:
-            if character != '.':
+            if character != ".":
                 break
             level += 1
     return _bootstrap._gcd_import(name[level:], package, level)
@@ -143,21 +151,20 @@ def reload(module):
     except AttributeError:
         name = module.__name__
 
-    if sys.modules.get(name) is not module:
-        msg = "module {} not in sys.modules"
+    if builtin.analysis_modules.get(name) is not module:
+        msg = "module {} not in builtin.analysis_modules"
         raise ImportError(msg.format(name), name=name)
     if name in _RELOADING:
         return _RELOADING[name]
     _RELOADING[name] = module
     try:
-        parent_name = name.rpartition('.')[0]
+        parent_name = name.rpartition(".")[0]
         if parent_name:
             try:
-                parent = sys.modules[parent_name]
+                parent = builtin.analysis_modules[parent_name]
             except KeyError:
-                msg = "parent {!r} not in sys.modules"
-                raise ImportError(msg.format(parent_name),
-                                  name=parent_name) from None
+                msg = "parent {!r} not in builtin.analysis_modules"
+                raise ImportError(msg.format(parent_name), name=parent_name) from None
             else:
                 pkgpath = parent.__path__
         else:
@@ -165,10 +172,12 @@ def reload(module):
         target = module
         spec = module.__spec__ = _bootstrap._find_spec(name, pkgpath, target)
         if spec is None:
-            raise ModuleNotFoundError(f"spec not found for the module {name!r}", name=name)
+            raise ModuleNotFoundError(
+                f"spec not found for the module {name!r}", name=name
+            )
         _bootstrap._exec(spec, module)
-        # The module may have replaced itself in sys.modules!
-        return sys.modules[name]
+        # The module may have replaced itself in builtin.analysis_modules!
+        return builtin.analysis_modules[name]
     finally:
         try:
             del _RELOADING[name]
