@@ -688,12 +688,25 @@ class CFGVisitor(ast.NodeVisitor):
         self.visit(new_if)
 
     def visit_Import(self, node: ast.Import) -> None:
-        add_stmt(self.curr_block, node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        for name in node.names:
+            # call node
+            call_node = self.curr_block
+            single_import: ast.Import = ast.Import(names=[name])
+            add_stmt(call_node, single_import)
+            # return node
+            return_node = self.add_edge(self.curr_block.bid, self.new_block().bid)
+            add_stmt(return_node, single_import)
+            self.add_call_return_flows(call_node.bid, return_node.bid)
+            # the node after return node
+            self.curr_block = self.add_edge(return_node.bid, self.new_block().bid)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        add_stmt(self.curr_block, node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        call_node = self.curr_block
+        add_stmt(call_node, node)
+        return_node = self.add_edge(call_node.bid, self.new_block().bid)
+        add_stmt(return_node, node)
+        self.add_call_return_flows(call_node.bid, return_node.bid)
+        self.curr_block = self.add_edge(return_node.bid, self.new_block().bid)
 
     def visit_Global(self, node: ast.Global) -> None:
         add_stmt(self.curr_block, node)

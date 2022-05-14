@@ -341,19 +341,19 @@ class Analysis(Base):
         handler = getattr(self, "transfer_" + stmt_name)
         return handler(program_point)
 
-    def transfer_Import(self, program_point: ProgramPoint) -> State:
-        sys_path = sys.path
-        sys_modules = sys.modules
-        sys.path = self.proj_work_path
-        sys.modules = self.proj_work_modules
-        sys.path = self.proj_work_path
-        sys.modules = self.proj_work_modules
-        res = importlib.import_module("lib")
-        print(res)
-        print(sys.path)
-        print(sys.modules)
-        sys.path = sys_path
-        sys.modules = sys_modules
+    # def transfer_Import(self, program_point: ProgramPoint) -> State:
+    #     sys_path = sys.path
+    #     sys_modules = sys.modules
+    #     sys.path = self.proj_work_path
+    #     sys.modules = self.proj_work_modules
+    #     sys.path = self.proj_work_path
+    #     sys.modules = self.proj_work_modules
+    #     res = importlib.import_module("lib")
+    #     print(res)
+    #     print(sys.path)
+    #     print(sys.modules)
+    #     sys.path = sys_path
+    #     sys.modules = sys_modules
 
     def transfer_Assign(self, program_point: ProgramPoint) -> State:
         label, context = program_point
