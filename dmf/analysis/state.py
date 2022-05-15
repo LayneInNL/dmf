@@ -144,6 +144,10 @@ def compute_value_of_expr(expr: ast.expr, state: State) -> Value:
         for lab in heaps:
             tmp_value = state.read_field_from_heap(lab, attr)
             ret_value += tmp_value
+        mods = value.extract_module_types()
+        for mod_name in mods:
+            tmp_value = mods[mod_name].read_var_from_module(attr)
+            ret_value += tmp_value
         return ret_value
     elif isinstance(expr, ast.Call):
         if isinstance(expr.func, ast.Name):

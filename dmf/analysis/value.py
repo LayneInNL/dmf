@@ -138,8 +138,18 @@ class Module:
     def __setitem__(self, key, value):
         self.namespace[key] = value
 
-    def __repr__(self):
-        return self.state.__repr__()
+    def read_var_from_module(self, var):
+        return self.state.read_var_from_stack(var)
+
+    # def __repr__(self):
+    #     return self.state.__repr__()
+
+    def __le__(self, other):
+        return self.state <= other.state
+
+    def __iadd__(self, other):
+        self.state += other.state
+        return self
 
 
 class Value:
@@ -150,6 +160,7 @@ class Value:
         self.prim_types: Set[PrimType] = set()
         self.func_types: Set[FuncObj] = set()
         self.class_types: Dict[int, ClsObj] = {}
+        self.module_types: Dict[str, Module] = {}
 
     def __le__(self, other: Value):
 
@@ -167,6 +178,11 @@ class Value:
                 return False
             if not self.class_types[label] <= other.class_types[label]:
                 return False
+        for label in self.module_types:
+            if label not in other.module_types:
+                return False
+            if not self.module_types[label] <= other.module_types[label]:
+                return False
         return True
 
     def __iadd__(self, other: Value):
@@ -178,11 +194,20 @@ class Value:
                 self.class_types[label] = other.class_types[label]
             else:
                 self.class_types[label] += other.class_types[label]
+        for label in other.module_types:
+            if label not in self.module_types:
+                self.module_types[label] = other.module_types[label]
+            else:
+                self.module_types[label] += other.module_types[label]
         return self
 
     def __repr__(self):
-        return "{} x {} x {} x {}".format(
-            self.heap_types, self.prim_types, self.func_types, self.class_types
+        return "{} x {} x {} x {} x {}".format(
+            self.heap_types,
+            self.prim_types,
+            self.func_types,
+            self.class_types,
+            self.module_types,
         )
 
     def inject_heap_type(self, heap_ctx: int):
@@ -211,6 +236,9 @@ class Value:
         class_object: ClsObj = ClsObj(label, bases, frame)
         self.class_types[label] = class_object
 
+    def inject_module_type(self, qualname, module):
+        self.module_types[qualname] = module
+
     def extract_heap_types(self):
         return self.heap_types
 
@@ -222,6 +250,9 @@ class Value:
 
     def extract_class_types(self) -> Dict[int, ClsObj]:
         return self.class_types
+
+    def extract_module_types(self):
+        return self.module_types
 
 
 class ValueDict(defaultdict):

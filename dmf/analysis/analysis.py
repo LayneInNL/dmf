@@ -445,10 +445,22 @@ class Analysis(Base):
 
     def transfer_Import(self, program_point: ProgramPoint):
         lab, ctx = program_point
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
         stmt: ast.Import = self.get_stmt_by_label(lab)
-        mod = builtins.import_module(stmt.names[0].name)
+        module_name = stmt.names[0].name
+        as_name = stmt.names[0].asname
+        mod = builtins.import_module(module_name)
+        value = Value()
+        if as_name is None:
+            # no asname
+            value.inject_module_type(module_name, mod)
+            new.write_var_to_stack(module_name, value)
+        else:
+            value.inject_module_type(as_name, mod)
+            new.write_var_to_stack(as_name, value)
         logging.debug("Import module {}".format(mod))
-        assert False
+        return new
 
     def transfer_ClassDef_return(self, program_point: ProgramPoint):
         return_state: State = self.analysis_list[program_point]
