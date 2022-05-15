@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import ast
+import builtins
 import logging
 import os.path
 from collections import defaultdict, deque
@@ -111,6 +112,7 @@ class Base:
         self.blocks.update(cfg.blocks)
         self.flows.update(cfg.flows)
         self.sub_cfgs.update(cfg.sub_cfgs)
+        self.call_return_flows.update(cfg.call_return_flows)
 
     def DELTA(self, program_point: ProgramPoint):
         added = []
@@ -156,6 +158,7 @@ class Base:
 class Analysis(Base):
     def __init__(self, module: Module):
         file = module["__file__"]
+        print(file)
         super().__init__(file)
         self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsObj | None]] = {}
         self.work_list: Deque[Flow] = deque()
@@ -350,20 +353,6 @@ class Analysis(Base):
         handler = getattr(self, "transfer_" + stmt_name)
         return handler(program_point)
 
-    # def transfer_Import(self, program_point: ProgramPoint) -> State:
-    #     sys_path = sys.path
-    #     sys_modules = sys.modules
-    #     sys.path = self.proj_work_path
-    #     sys.modules = self.proj_work_modules
-    #     sys.path = self.proj_work_path
-    #     sys.modules = self.proj_work_modules
-    #     res = importlib.import_module("lib")
-    #     print(res)
-    #     print(sys.path)
-    #     print(sys.modules)
-    #     sys.path = sys_path
-    #     sys.modules = sys_modules
-
     def transfer_Assign(self, program_point: ProgramPoint) -> State:
         label, context = program_point
         stmt: ast.Assign = self.get_stmt_by_label(label)
@@ -401,6 +390,8 @@ class Analysis(Base):
             new: State = old.copy()
             new.stack_go_into_new_frame()
             return new
+        else:
+            assert False
 
     def transfer_entry(self, program_point: ProgramPoint):
         entry_lab, entry_ctx = program_point
@@ -451,6 +442,13 @@ class Analysis(Base):
             return new_call_state
         else:
             assert False
+
+    def transfer_Import(self, program_point: ProgramPoint):
+        lab, ctx = program_point
+        stmt: ast.Import = self.get_stmt_by_label(lab)
+        mod = builtins.import_module(stmt.names[0].name)
+        logging.debug("Import module {}".format(mod))
+        assert False
 
     def transfer_ClassDef_return(self, program_point: ProgramPoint):
         return_state: State = self.analysis_list[program_point]

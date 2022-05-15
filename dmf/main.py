@@ -18,8 +18,8 @@ import logging
 import os.path
 import sys
 
-# from analysis import Analysis
-from dmf import static_importlib
+print(sys.path)
+
 
 logging.basicConfig(level=logging.DEBUG)
 parser = argparse.ArgumentParser()
@@ -44,5 +44,8 @@ if __name__ == "__main__":
 
     mod_file = os.path.basename(entry_file_path)
     mod_name = mod_file.rpartition(".")[0]
-    main_module = static_importlib.import_module(mod_name)
+    # from analysis import Analysis
+    import dmf.static_importlib
+
+    main_module = dmf.static_importlib.import_module(mod_name)
     print(main_module)

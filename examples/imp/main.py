@@ -12,8 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-# import lib
-#
-# b = lib.a
+import lib
 
-a = 5
+b = lib.a

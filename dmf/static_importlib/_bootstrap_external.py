@@ -20,6 +20,8 @@ work. One should use importlib as the public-facing version of this module.
 # anything specified at the class level.
 
 # Bootstrap-related code ######################################################
+import builtins
+
 _CASE_INSENSITIVE_PLATFORMS_STR_KEY = ("win",)
 _CASE_INSENSITIVE_PLATFORMS_BYTES_KEY = "cygwin", "darwin"
 _CASE_INSENSITIVE_PLATFORMS = (
@@ -1538,12 +1540,12 @@ def _setup(_bootstrap_module):
     _imp = _bootstrap._imp
 
     # Directly load built-in modules needed during bootstrap.
-    self_module = builtins.analysis_modules[__name__]
+    self_module = sys.modules[__name__]
     for builtin_name in ("_io", "_warnings", "builtins", "marshal"):
-        if builtin_name not in builtins.analysis_modules:
+        if builtin_name not in sys.modules:
             builtin_module = _bootstrap._builtin_from_name(builtin_name)
         else:
-            builtin_module = builtins.analysis_modules[builtin_name]
+            builtin_module = sys.modules[builtin_name]
         setattr(self_module, builtin_name, builtin_module)
 
     # Directly load the os module (needed during bootstrap).
@@ -1552,8 +1554,8 @@ def _setup(_bootstrap_module):
         # Assumption made in _path_join()
         assert all(len(sep) == 1 for sep in path_separators)
         path_sep = path_separators[0]
-        if builtin_os in builtins.analysis_modules:
-            os_module = builtins.analysis_modules[builtin_os]
+        if builtin_os in sys.modules:
+            os_module = sys.modules[builtin_os]
             break
         else:
             try:
@@ -1566,6 +1568,8 @@ def _setup(_bootstrap_module):
     setattr(self_module, "_os", os_module)
     setattr(self_module, "path_sep", path_sep)
     setattr(self_module, "path_separators", "".join(path_separators))
+
+    import _frozen_importlib as _bootstrap
 
     # Directly load the _thread module (needed during bootstrap).
     thread_module = _bootstrap._builtin_from_name("_thread")
@@ -1587,6 +1591,70 @@ def _setup(_bootstrap_module):
         SOURCE_SUFFIXES.append(".pyw")
         if "_d.pyd" in EXTENSION_SUFFIXES:
             WindowsRegistryFinder.DEBUG_BUILD = True
+
+
+# def _setup(_bootstrap_module):
+#     """Setup the path-based importers for importlib by importing needed
+#     built-in modules and injecting them into the global namespace.
+#
+#     Other components are extracted from the core bootstrap module.
+#
+#     """
+#     global sys, _imp, _bootstrap
+#     _bootstrap = _bootstrap_module
+#     sys = _bootstrap.sys
+#     _imp = _bootstrap._imp
+#
+#     # Directly load built-in modules needed during bootstrap.
+#     self_module = builtins.analysis_modules[__name__]
+#     for builtin_name in ("_io", "_warnings", "builtins", "marshal"):
+#         if builtin_name not in builtins.analysis_modules:
+#             builtin_module = _bootstrap._builtin_from_name(builtin_name)
+#         else:
+#             builtin_module = builtins.analysis_modules[builtin_name]
+#         setattr(self_module, builtin_name, builtin_module)
+#
+#     # Directly load the os module (needed during bootstrap).
+#     os_details = ("posix", ["/"]), ("nt", ["\\", "/"])
+#     for builtin_os, path_separators in os_details:
+#         # Assumption made in _path_join()
+#         assert all(len(sep) == 1 for sep in path_separators)
+#         path_sep = path_separators[0]
+#         if builtin_os in builtins.analysis_modules:
+#             os_module = builtins.analysis_modules[builtin_os]
+#             break
+#         else:
+#             try:
+#                 os_module = _bootstrap._builtin_from_name(builtin_os)
+#                 break
+#             except ImportError:
+#                 continue
+#     else:
+#         raise ImportError("importlib requires posix or nt")
+#     setattr(self_module, "_os", os_module)
+#     setattr(self_module, "path_sep", path_sep)
+#     setattr(self_module, "path_separators", "".join(path_separators))
+#
+#     # Directly load the _thread module (needed during bootstrap).
+#     thread_module = _bootstrap._builtin_from_name("_thread")
+#     setattr(self_module, "_thread", thread_module)
+#
+#     # Directly load the _weakref module (needed during bootstrap).
+#     weakref_module = _bootstrap._builtin_from_name("_weakref")
+#     setattr(self_module, "_weakref", weakref_module)
+#
+#     # Directly load the winreg module (needed during bootstrap).
+#     if builtin_os == "nt":
+#         winreg_module = _bootstrap._builtin_from_name("winreg")
+#         setattr(self_module, "_winreg", winreg_module)
+#
+#     # Constants
+#     setattr(self_module, "_relax_case", _make_relax_case())
+#     EXTENSION_SUFFIXES.extend(_imp.extension_suffixes())
+#     if builtin_os == "nt":
+#         SOURCE_SUFFIXES.append(".pyw")
+#         if "_d.pyd" in EXTENSION_SUFFIXES:
+#             WindowsRegistryFinder.DEBUG_BUILD = True
 
 
 def _install(_bootstrap_module):
