@@ -120,6 +120,24 @@ builtin_object = ClsObj(0, [], {})
 # we have to use functions outside class to do operations.
 
 
+class Module:
+    def __init__(self, module):
+        self.namespace: ValueDict[str, Value | VALUE_TOP] = ValueDict(lambda: VALUE_TOP)
+        self.namespace.update(module.__dict__)
+
+    def value_namespace(self):
+        return self.namespace
+
+    def __getitem__(self, item):
+        return self.namespace[item]
+
+    def __setitem__(self, key, value):
+        self.namespace[key] = value
+
+    def __repr__(self):
+        return self.namespace.__repr__()
+
+
 class Value:
     def __init__(self, heap_type=None):
         self.heap_types: Set[int] = set()

@@ -16,8 +16,6 @@ from __future__ import annotations
 import ast
 import logging
 import os.path
-import sys
-import builtins
 from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, Set
 
@@ -29,6 +27,7 @@ from dmf.analysis.flow_util import (
     Lab,
     Basic_Flow,
 )
+from dmf.analysis.value import Module
 from dmf.analysis.stack import Frame
 from dmf.analysis.state import (
     State,
@@ -48,7 +47,6 @@ from dmf.analysis.value import (
     INIT_FLAG_VALUE,
 )
 from dmf.flows import CFG, construct_CFG
-from .static_importlib import import_module
 
 
 class Base:
@@ -156,30 +154,14 @@ class Base:
 
 
 class Analysis(Base):
-    def __init__(self, entry_file_path: str):
-        super().__init__(entry_file_path)
+    def __init__(self, module: Module):
+        file = module["__file__"]
+        super().__init__(file)
         self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsObj | None]] = {}
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: defaultdict[ProgramPoint, State | STATE_BOT] | None = None
-
-        builtins.analysis = self
-        builtins.analysis_modules = {}
-        main_module = type(sys)("__main__")
-        main_module.__file__ = entry_file_path
-        logging.debug(
-            "__main__ module has been created {} {}".format(
-                main_module.__name__,
-                main_module.__file__,
-            )
-        )
-        builtins.analysis_modules["__main__"] = main_module
-
-        # insert being analyzed dir into sys.path
-        dir_name = os.path.dirname(entry_file_path)
-        sys.path.insert(0, dir_name)
-        logging.debug("updated sys.path {}".format(sys.path))
-
-        self.extremal_value: State = State()
+        ns = module.value_namespace()
+        self.extremal_value: State = State(ns=ns)
 
     def compute_fixed_point(self):
         self.initialize()

@@ -24,27 +24,18 @@ from dmf.analysis.value import Value, ClsObj, ValueDict
 
 
 class State:
-    def __init__(self, state: State = None):
+    def __init__(self, state: State = None, ns=None):
         if state is not None:
             self.stack: Stack = state.stack.copy()
             self.heap: Heap = state.heap.copy()
-        else:
+        elif ns is not None:
             # if state is None, it's the initial state
             self.stack: Stack = Stack()
             self.heap: Heap = Heap()
-
-            # create a dict for analysis
-            main_module = builtins.analysis_modules["__main__"]
-            updated_dict = ValueDict()
-            updated_dict.update(main_module.__dict__)
-            main_module.__mydict__ = updated_dict
-            logging.debug("__main__ __mydict__ {}".format(main_module.__mydict__))
-
-            # create first frame
-            frame: Frame = Frame(
-                main_module.__mydict__, None, main_module.__mydict__, None
-            )
+            frame: Frame = Frame(ns, None, ns, None)
             self.push_frame_to_stack(frame)
+        else:
+            assert False
 
     def __le__(self, other: State):
         return self.stack <= other.stack and self.heap <= other.heap

@@ -13,10 +13,13 @@
 #  limitations under the License.
 
 import argparse
+import builtins
 import logging
 import os.path
+import sys
 
-from analysis import Analysis
+# from analysis import Analysis
+from dmf import static_importlib
 
 logging.basicConfig(level=logging.DEBUG)
 parser = argparse.ArgumentParser()
@@ -25,9 +28,22 @@ parser.add_argument("entry_file_path", help="the entry file path")
 if __name__ == "__main__":
     args = parser.parse_args()
     entry_file_path = args.entry_file_path
-    logging.debug("Entry file path is: {}".format(entry_file_path))
     abs_path = os.path.abspath(entry_file_path)
     logging.debug("Absolute entry file path is: {}".format(abs_path))
 
-    mf = Analysis(abs_path)
-    mf.compute_fixed_point()
+    # our custom modules, simulating sys.modules
+    builtins.analysis_modules = {}
+    # used in analysis
+    builtins.custom_analysis_modules = {}
+    # our custom root path, simulating sys.path
+    # insert being analyzed dir into sys.path
+    dir_name = os.path.dirname(entry_file_path)
+    dir_name = "C:\\Users\\Layne Liu\\PycharmProjects\\cfg\\dmf\\examples\\"
+    sys.path.insert(0, dir_name)
+    logging.debug("updated sys.path {}".format(sys.path))
+
+    mod_file = os.path.basename(entry_file_path)
+    mod_name = mod_file.rpartition(".")[0]
+    # main_module = static_importlib.import_module(mod_name)
+    main_module = static_importlib.import_module("imp.imp2")
+    print(main_module)

@@ -25,8 +25,12 @@ work. One should use importlib as the public-facing version of this module.
 import _imp
 import _thread
 import _weakref
+import logging
 import sys
 import builtins
+
+from dmf.analysis import Analysis
+from dmf.analysis.value import Module
 
 _bootstrap_external = None
 
@@ -695,7 +699,12 @@ def _load_unlocked(spec):
                 raise ImportError("missing loader", name=spec.name)
             # A namespace package so do nothing.
         else:
-            pass
+            custom_module = Module(module)
+            builtins.custom_analysis_modules[spec.name] = custom_module
+            module_namespace = custom_module.value_namespace()
+            logging.debug("namespace {}".format(module_namespace))
+            analysis = Analysis(custom_module)
+            analysis.compute_fixed_point()
             # spec.loader.exec_module(module)
 
     # We don't ensure that the import-related module attributes get
@@ -979,7 +988,9 @@ def _find_and_load_unlocked(name, import_):
             _call_with_frames_removed(import_, parent)
         # Crazy side-effects!
         if name in builtins.analysis_modules:
-            return builtins.analysis_modules[name]
+            # we need custom one
+            return builtins.custom_analysis_modules[name]
+            # return builtins.analysis_modules[name]
         parent_module = builtins.analysis_modules[parent]
         try:
             path = parent_module.__path__
@@ -991,11 +1002,15 @@ def _find_and_load_unlocked(name, import_):
         raise ModuleNotFoundError(_ERR_MSG.format(name), name=name)
     else:
         module = _load_unlocked(spec)
+        custom_module = builtins.custom_analysis_modules[spec.name]
     if parent:
         # Set the module as an attribute on its parent.
         parent_module = builtins.analysis_modules[parent]
+        custom_parent_module = builtins.custom_analysis_modules[parent]
         setattr(parent_module, name.rpartition(".")[2], module)
-    return module
+        custom_parent_module[name.rpartition(".")[2]] = custom_module
+        # setattr(custom_parent_module.namespace, name.rpartition(".")[2], custom_module)
+    return custom_module
 
 
 _NEEDS_LOADING = object()
@@ -1005,6 +1020,7 @@ def _find_and_load(name, import_):
     """Find and load the module."""
     with _ModuleLockManager(name):
         module = builtins.analysis_modules.get(name, _NEEDS_LOADING)
+        custom_module = builtins.custom_analysis_modules.get(name, _NEEDS_LOADING)
         if module is _NEEDS_LOADING:
             return _find_and_load_unlocked(name, import_)
 
@@ -1015,7 +1031,7 @@ def _find_and_load(name, import_):
         raise ModuleNotFoundError(message, name=name)
 
     _lock_unlock_module(name)
-    return module
+    return custom_module
 
 
 def _gcd_import(name, package=None, level=0):
