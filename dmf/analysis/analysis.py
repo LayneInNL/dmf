@@ -53,11 +53,11 @@ class Base:
     def __init__(self, entry_file_path: str):
 
         cfg: CFG = construct_CFG(entry_file_path)
-
         self.flows: Set[Basic_Flow] = cfg.flows
         self.IF: Set[Inter_Flow] = set()
         self.call_return_flows: Set[Basic_Flow] = cfg.call_return_flows
         self.extremal_point: ProgramPoint = (cfg.start_block.bid, ())
+        self.final_point: ProgramPoint = (cfg.final_block.bid, ())
         self.blocks = cfg.blocks
         self.sub_cfgs: Dict[Lab, CFG] = cfg.sub_cfgs
 
@@ -160,6 +160,7 @@ class Analysis(Base):
         self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsObj | None]] = {}
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: defaultdict[ProgramPoint, State | STATE_BOT] | None = None
+        self.analysis_effect_list = {}
         ns = module.value_namespace()
         self.extremal_value: State = State(ns=ns)
 
@@ -184,6 +185,11 @@ class Analysis(Base):
             transferred: State | STATE_BOT = self.transfer(program_point1)
             old: State | STATE_BOT = self.analysis_list[program_point2]
 
+            logging.debug(
+                "Lattice at {} is {}".format(
+                    program_point1, self.analysis_list[program_point1]
+                )
+            )
             if not issubset_state(transferred, old):
                 self.analysis_list[program_point2]: State = update_state(
                     transferred, old
@@ -198,9 +204,10 @@ class Analysis(Base):
             logging.debug(
                 "Context at program point {}: {}".format(program_point, state)
             )
+            self.analysis_effect_list[program_point] = self.transfer(program_point)
             logging.debug(
                 "Effect at program point {}: {}".format(
-                    program_point, self.transfer(program_point)
+                    program_point, self.analysis_effect_list[program_point]
                 )
             )
 

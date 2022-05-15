@@ -696,7 +696,7 @@ class CFGVisitor(ast.NodeVisitor):
             # return node
             return_node = self.add_edge(self.curr_block.bid, self.new_block().bid)
             add_stmt(return_node, single_import)
-            self.add_call_return_flows(call_node.bid, return_node.bid)
+            # self.add_call_return_flows(call_node.bid, return_node.bid)
             # the node after return node
             self.curr_block = self.add_edge(return_node.bid, self.new_block().bid)
 
@@ -705,7 +705,7 @@ class CFGVisitor(ast.NodeVisitor):
         add_stmt(call_node, node)
         return_node = self.add_edge(call_node.bid, self.new_block().bid)
         add_stmt(return_node, node)
-        self.add_call_return_flows(call_node.bid, return_node.bid)
+        # self.add_call_return_flows(call_node.bid, return_node.bid)
         self.curr_block = self.add_edge(return_node.bid, self.new_block().bid)
 
     def visit_Global(self, node: ast.Global) -> None:

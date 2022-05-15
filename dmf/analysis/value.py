@@ -124,9 +124,13 @@ class Module:
     def __init__(self, module):
         self.namespace: ValueDict[str, Value | VALUE_TOP] = ValueDict(lambda: VALUE_TOP)
         self.namespace.update(module.__dict__)
+        self.state = None
 
     def value_namespace(self):
         return self.namespace
+
+    def set_state(self, state):
+        self.state = state
 
     def __getitem__(self, item):
         return self.namespace[item]
@@ -135,7 +139,7 @@ class Module:
         self.namespace[key] = value
 
     def __repr__(self):
-        return self.namespace.__repr__()
+        return self.state.__repr__()
 
 
 class Value:

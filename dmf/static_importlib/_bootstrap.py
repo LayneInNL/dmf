@@ -705,6 +705,7 @@ def _load_unlocked(spec):
             logging.debug("namespace {}".format(module_namespace))
             analysis = Analysis(custom_module)
             analysis.compute_fixed_point()
+            custom_module.set_state(analysis.analysis_effect_list[analysis.final_point])
             # spec.loader.exec_module(module)
 
     # We don't ensure that the import-related module attributes get

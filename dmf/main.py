@@ -38,12 +38,11 @@ if __name__ == "__main__":
     # our custom root path, simulating sys.path
     # insert being analyzed dir into sys.path
     dir_name = os.path.dirname(entry_file_path)
-    dir_name = "C:\\Users\\Layne Liu\\PycharmProjects\\cfg\\dmf\\examples\\"
+    # dir_name = "C:\\Users\\Layne Liu\\PycharmProjects\\cfg\\dmf\\examples\\"
     sys.path.insert(0, dir_name)
     logging.debug("updated sys.path {}".format(sys.path))
 
     mod_file = os.path.basename(entry_file_path)
     mod_name = mod_file.rpartition(".")[0]
-    # main_module = static_importlib.import_module(mod_name)
-    main_module = static_importlib.import_module("imp.imp2")
+    main_module = static_importlib.import_module(mod_name)
     print(main_module)
