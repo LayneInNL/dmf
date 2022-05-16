@@ -54,13 +54,19 @@ class Base:
     def __init__(self, entry_file_path: str):
 
         cfg: CFG = construct_CFG(entry_file_path)
-        self.flows: Set[Basic_Flow] = cfg.flows
+        # call them to builtins
+        builtins.flows.update(cfg.flows)
+        builtins.call_return_flows.update(cfg.call_return_flows)
+        builtins.blocks.update(cfg.blocks)
+        builtins.sub_cfgs.update(cfg.sub_cfgs)
+
+        self.flows: Set[Basic_Flow] = builtins.flows
         self.IF: Set[Inter_Flow] = set()
-        self.call_return_flows: Set[Basic_Flow] = cfg.call_return_flows
+        self.call_return_flows: Set[Basic_Flow] = builtins.call_return_flows
         self.extremal_point: ProgramPoint = (cfg.start_block.bid, ())
         self.final_point: ProgramPoint = (cfg.final_block.bid, ())
-        self.blocks = cfg.blocks
-        self.sub_cfgs: Dict[Lab, CFG] = cfg.sub_cfgs
+        self.blocks = builtins.blocks
+        self.sub_cfgs: Dict[Lab, CFG] = builtins.sub_cfgs
 
         # working directory for the analyzed project
         # mimic current working directory
@@ -254,6 +260,20 @@ class Analysis(Base):
                             None,
                             None,
                         )
+                modules = receiver_value.extract_module_types()
+                for qualname, mod in modules.items():
+                    method = mod.read_var_from_module(attr)
+                    func_types = method.extract_func_types()
+                    assert len(func_types) == 1
+                    new_ctx = merge(call_lab, None, ctx)
+                    for func_type in func_types:
+                        inter_flow = (
+                            (call_lab, ctx),
+                            (func_type.entry_label, new_ctx),
+                            (func_type.exit_label, new_ctx),
+                            (return_lab, ctx),
+                        )
+                        self.IF.add(inter_flow)
         else:
             assert False
 
@@ -460,6 +480,29 @@ class Analysis(Base):
             value.inject_module_type(as_name, mod)
             new.write_var_to_stack(as_name, value)
         logging.debug("Import module {}".format(mod))
+        return new
+
+    def transfer_ImportFrom(self, program_point: ProgramPoint):
+        lab, ctx = program_point
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
+        stmt: ast.ImportFrom = self.get_stmt_by_label(lab)
+        module_name = "" if stmt.module is None else stmt.module
+        dot_number = "." * stmt.level
+        package = new.read_var_from_stack("__package__")
+        mod = builtins.import_module(
+            name=dot_number + module_name,
+            package=package,
+        )
+        logging.debug("ImportFrom module {}".format(mod))
+        aliases = stmt.names
+        for alias in aliases:
+            imported_name = alias.name
+            imported_value = mod.read_var_from_module(imported_name)
+            if alias.asname is None:
+                new.write_var_to_stack(imported_name, imported_value)
+            else:
+                new.write_var_to_stack(alias.asname, imported_value)
         return new
 
     def transfer_ClassDef_return(self, program_point: ProgramPoint):

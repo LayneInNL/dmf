@@ -18,12 +18,26 @@ import logging
 import os.path
 import sys
 
-print(sys.path)
-
 
 logging.basicConfig(level=logging.DEBUG)
 parser = argparse.ArgumentParser()
 parser.add_argument("entry_file_path", help="the entry file path")
+
+
+def add_builtins_attributes():
+    # our custom modules, simulating sys.modules
+    builtins.analysis_modules = {}
+    # used in analysis
+    builtins.custom_analysis_modules = {}
+    # all flows used in analysis
+    builtins.flows = set()
+    # all call_return_flows
+    builtins.call_return_flows = set()
+    # all blocks
+    builtins.blocks = {}
+    # all sub_cfgs
+    builtins.sub_cfgs = {}
+
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -31,10 +45,7 @@ if __name__ == "__main__":
     abs_path = os.path.abspath(entry_file_path)
     logging.debug("Absolute entry file path is: {}".format(abs_path))
 
-    # our custom modules, simulating sys.modules
-    builtins.analysis_modules = {}
-    # used in analysis
-    builtins.custom_analysis_modules = {}
+    add_builtins_attributes()
     # our custom root path, simulating sys.path
     # insert being analyzed dir into sys.path
     dir_name = os.path.dirname(entry_file_path)

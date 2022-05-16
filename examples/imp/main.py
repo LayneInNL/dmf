@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import lib
+# import lib
+from lib2 import a
 
-b = lib.a
+b = a()
