@@ -30,7 +30,7 @@ import sys
 import builtins
 
 from dmf.analysis.analysis import Analysis
-from dmf.analysis.value import Module
+from dmf.analysis.value import Module, AbstractValueDict
 
 _bootstrap_external = None
 
@@ -699,13 +699,13 @@ def _load_unlocked(spec):
                 raise ImportError("missing loader", name=spec.name)
             # A namespace package so do nothing.
         else:
-            custom_module = Module(module)
-            builtins.custom_analysis_modules[spec.name] = custom_module
-            module_namespace = custom_module.value_namespace()
+            module_namespace = AbstractValueDict()
+            module_namespace.update(module.__dict__)
             logging.debug("namespace {}".format(module_namespace))
-            analysis = Analysis(custom_module)
+            analysis = Analysis(spec.origin, module_namespace)
             analysis.compute_fixed_point()
-            custom_module.set_state(analysis.analysis_effect_list[analysis.final_point])
+            custom_module = Module(analysis.analysis_effect_list[analysis.final_point])
+            builtins.custom_analysis_modules[spec.name] = custom_module
             # spec.loader.exec_module(module)
 
     # We don't ensure that the import-related module attributes get

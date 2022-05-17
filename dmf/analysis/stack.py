@@ -15,11 +15,11 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from dmf.analysis.value import Value, VALUE_TOP, ValueDict
+from dmf.analysis.value import AbstractValueDict, AbstractValue
 
 
-def new_local_ns(old_ns: ValueDict = None):
-    new_ns = ValueDict(lambda: VALUE_TOP)
+def new_local_ns(old_ns: AbstractValueDict = None):
+    new_ns = AbstractValueDict()
     if old_ns is not None:
         new_ns.update(old_ns)
 
@@ -28,10 +28,10 @@ def new_local_ns(old_ns: ValueDict = None):
 
 class Frame:
     def __init__(self, f_locals, f_back, f_globals, f_builtins):
-        self.f_locals: ValueDict[str, Value | VALUE_TOP] = f_locals
+        self.f_locals: AbstractValueDict[str, AbstractValue] = f_locals
         self.f_back: Frame | None = f_back
-        self.f_globals: Dict[str, Value] = f_globals
-        self.f_builtins: Dict[str, Value] = f_builtins
+        self.f_globals: AbstractValueDict[str, AbstractValue] = f_globals
+        self.f_builtins: AbstractValueDict[str, AbstractValue] = f_builtins
 
     def __contains__(self, var):
         return var in self.f_locals

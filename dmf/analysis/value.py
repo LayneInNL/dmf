@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict
-from typing import Set, Dict, List
+from typing import Set, Dict, List, Any, Type
 
 from dmf.analysis.prim import (
     PrimType,
@@ -28,7 +28,7 @@ from dmf.analysis.prim import (
 from dmf.analysis.value_util import issubset, update
 
 # None to denote TOP type. it can save memory consumption.
-VALUE_TOP = None
+VALUE_TOP = "TOP"
 
 
 def static_c3(class_object):
@@ -54,25 +54,22 @@ def static_merge(mro_list):
         raise TypeError("No legal mro")
 
 
-class FuncObj:
-    def __init__(
-        self, label: int, entry_label: int, exit_label: int, arguments: ast.arguments
-    ):
-        self.label = label
-        self.entry_label = entry_label
-        self.exit_label = exit_label
-        self.arguments = arguments
+class FuncType:
+    def __init__(self, lab, module, entry_lab, exit_lab):
+        self._lab_ = lab
+        self._module_ = module
+        self._code_ = (entry_lab, exit_lab)
+        self._dict_ = AbstractValueDict()
 
-    def __eq__(self, other: FuncObj):
-        return self.label == other.label
+    def __le__(self, other: FuncType):
+        return self._dict_ <= other._dict_
 
-    def __hash__(self):
-        return hash(self.label)
+    def __iadd__(self, other: FuncType):
+        self._dict_ += other._dict_
+        return self
 
     def __repr__(self):
-        return "({}, {}, {}, {}".format(
-            self.label, self.entry_label, self.exit_label, self.arguments
-        )
+        return self._dict_.__repr__()
 
 
 class ClsObj:
@@ -121,22 +118,8 @@ builtin_object = ClsObj(0, [], {})
 
 
 class Module:
-    def __init__(self, module):
-        self.namespace: ValueDict[str, Value | VALUE_TOP] = ValueDict(lambda: VALUE_TOP)
-        self.namespace.update(module.__dict__)
-        self.state = None
-
-    def value_namespace(self):
-        return self.namespace
-
-    def set_state(self, state):
+    def __init__(self, state):
         self.state = state
-
-    def __getitem__(self, item):
-        return self.namespace[item]
-
-    def __setitem__(self, key, value):
-        self.namespace[key] = value
 
     def read_var_from_module(self, var):
         return self.state.read_var_from_stack(var)
@@ -152,150 +135,137 @@ class Module:
         return self
 
 
+class ListType:
+    def __init__(self):
+        self.types: AbstractValue = AbstractValue()
+
+    def __le__(self, other: ListType):
+        return self.types <= other.types
+
+    def __iadd__(self, other: ListType):
+        self.types += other.types
+        return self
+
+    def __repr__(self):
+        return self.types.__repr__()
+
+    def append(self, other: AbstractValue):
+        self.types += other
+
+    def clear(self):
+        pass
+
+    def copy(self):
+        pass
+
+    def count(self):
+        pass
+
+    def extend(self):
+        pass
+
+    def index(self):
+        pass
+
+    def insert(self):
+        pass
+
+    def pop(self):
+        pass
+
+    def remove(self):
+        pass
+
+    def reverse(self):
+        pass
+
+    def sort(self):
+        pass
+
+
 class Value:
-    def __init__(self, heap_type=None):
-        self.heap_types: Set[int] = set()
-        if heap_type:
-            self.heap_types.add(heap_type)
-        self.prim_types: Set[PrimType] = set()
-        self.func_types: Set[FuncObj] = set()
-        self.class_types: Dict[int, ClsObj] = {}
-        self.module_types: Dict[str, Module] = {}
+    def __init__(self):
+        self.types: Dict[int, Any] = {}
 
     def __le__(self, other: Value):
-
-        res1 = self.heap_types <= other.heap_types
-        if not res1:
-            return False
-        res2 = self.prim_types <= other.prim_types
-        if not res2:
-            return False
-        res3 = self.func_types <= other.func_types
-        if not res3:
-            return False
-        for label in self.class_types:
-            if label not in other.class_types:
+        for v_idx in self.types:
+            if v_idx not in other.types:
                 return False
-            if not self.class_types[label] <= other.class_types[label]:
-                return False
-        for label in self.module_types:
-            if label not in other.module_types:
-                return False
-            if not self.module_types[label] <= other.module_types[label]:
+            if not self.types[v_idx] <= other.types[v_idx]:
                 return False
         return True
 
     def __iadd__(self, other: Value):
-        self.heap_types |= other.heap_types
-        self.prim_types |= other.prim_types
-        self.func_types |= other.func_types
-        for label in other.class_types:
-            if label not in self.class_types:
-                self.class_types[label] = other.class_types[label]
+        for v_idx in other.types:
+            if v_idx not in self.types:
+                self.types[v_idx] = other.types[v_idx]
             else:
-                self.class_types[label] += other.class_types[label]
-        for label in other.module_types:
-            if label not in self.module_types:
-                self.module_types[label] = other.module_types[label]
-            else:
-                self.module_types[label] += other.module_types[label]
+                self.types[v_idx] += other.types[v_idx]
         return self
 
     def __repr__(self):
-        return "{} x {} x {} x {} x {}".format(
-            self.heap_types,
-            self.prim_types,
-            self.func_types,
-            self.class_types,
-            self.module_types,
-        )
+        return self.types.__repr__()
 
-    def inject_heap_type(self, heap_ctx: int):
-        self.heap_types.add(heap_ctx)
-
-    def inject_none(self):
-        self.prim_types.add(PRIM_NONE)
-
-    def inject_bool(self):
-        self.prim_types.add(PRIM_BOOL)
-
-    def inject_num(self):
-        self.prim_types.add(PRIM_NUM)
-
-    def inject_byte(self):
-        self.prim_types.add(PRIM_BYTE)
-
-    def inject_str(self):
-        self.prim_types.add(PRIM_STR)
-
-    def inject_func_type(self, label: int, entry_label, exit_label, arguments):
-        func_obj = FuncObj(label, entry_label, exit_label, arguments)
-        self.func_types.add(func_obj)
-
-    def inject_class_type(self, label, bases, frame: Dict[str, Value]):
-        class_object: ClsObj = ClsObj(label, bases, frame)
-        self.class_types[label] = class_object
-
-    def inject_module_type(self, qualname, module):
-        self.module_types[qualname] = module
-
-    def extract_heap_types(self):
-        return self.heap_types
-
-    def extract_prim_types(self):
-        return self.prim_types
-
-    def extract_func_types(self):
-        return self.func_types
-
-    def extract_class_types(self) -> Dict[int, ClsObj]:
-        return self.class_types
-
-    def extract_module_types(self):
-        return self.module_types
+    def inject_func_type(self, lab, func_type):
+        self.types[lab] = func_type
 
 
-class ValueDict(defaultdict):
+class AbstractValue:
+    def __init__(self, top=False):
+        if top:
+            self.abstract_value: Value | VALUE_TOP = VALUE_TOP
+        else:
+            self.abstract_value: Value | VALUE_TOP = Value()
+
+    def __le__(self, other: AbstractValue):
+        if other.abstract_value == VALUE_TOP:
+            return True
+        if self.abstract_value == VALUE_TOP:
+            return False
+        return self.abstract_value <= other.abstract_value
+
+    def __iadd__(self, other: AbstractValue):
+        if self.abstract_value == VALUE_TOP or other.abstract_value == VALUE_TOP:
+            return VALUE_TOP
+        else:
+            self.abstract_value += other.abstract_value
+            return self.abstract_value
+
+    def __repr__(self):
+        return self.abstract_value.__repr__()
+
+    def inject_func_type(self, lab, func_type):
+        self.abstract_value.inject_func_type(lab, func_type)
+
+
+# Dict[str, AbstractValue|VALUE_TOP]
+class AbstractValueDict(defaultdict):
     def __repr__(self):
         return dict.__repr__(self)
 
-    def __le__(self, other: ValueDict):
+    def __missing__(self, key):
+        self[key] = value = AbstractValue(top=True)
+        return value
+
+    def __le__(self, other: AbstractValueDict):
         for key in self:
             if key.startswith("__") and key.endswith("__"):
                 continue
             if key not in other:
                 return False
-            if not issubset_value(self[key], other[key]):
+            if not self[key] <= other[key]:
                 return False
         return True
 
-    def __iadd__(self, other: ValueDict):
+    def __iadd__(self, other: AbstractValueDict):
         for key in other:
             if key.startswith("__") and key.endswith("__"):
                 continue
-            self[key] = update_value(self[key], other[key])
+            self[key] += other[key]
         return self
 
     def hybrid_copy(self):
-        copied = ValueDict(lambda: VALUE_TOP)
-        copied.update(self)
-        return copied
-
-
-def issubset_value(value1: Value | VALUE_TOP, value2: Value | VALUE_TOP):
-    if value2 == VALUE_TOP:
-        return True
-    if value1 == VALUE_TOP:
-        return False
-    return value1 <= value2
-
-
-def update_value(value1: Value | VALUE_TOP, value2: Value | VALUE_TOP):
-    if value1 == VALUE_TOP or value2 == VALUE_TOP:
-        return VALUE_TOP
-    else:
-        value1 += value2
-        return value1
+        return AbstractValueDict().copy()
 
 
 SELF_FLAG = "self"

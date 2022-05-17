@@ -14,13 +14,11 @@
 from __future__ import annotations
 
 import ast
-import builtins
-import logging
 from typing import Set
 
 from dmf.analysis.heap import Heap
-from dmf.analysis.stack import Stack, Frame, new_local_ns
-from dmf.analysis.value import Value, ClsObj, ValueDict
+from dmf.analysis.stack import Stack, Frame
+from dmf.analysis.value import ClsObj, AbstractValue
 
 
 class State:
@@ -59,7 +57,7 @@ class State:
     def read_field_from_heap(self, heap_ctx: int, field: str):
         return self.heap.read_from_field(heap_ctx, field)
 
-    def write_field_to_heap(self, heap_ctx: int, field: str, value: Value):
+    def write_field_to_heap(self, heap_ctx: int, field: str, value: AbstractValue):
         self.heap.write_to_field(heap_ctx, field, value)
 
     def push_frame_to_stack(self, frame: Frame):
@@ -77,10 +75,10 @@ class State:
     def heap_contains(self, heap_context, field):
         return (heap_context, field) in self.heap
 
-    def read_var_from_stack(self, var: str) -> Value:
+    def read_var_from_stack(self, var: str):
         return self.stack.read_var(var)
 
-    def write_var_to_stack(self, var: str, value: Value):
+    def write_var_to_stack(self, var: str, value):
         self.stack.write_var(var, value)
 
     def stack_go_into_new_frame(self):
@@ -112,24 +110,25 @@ def update_state(state1: State, state2: State | STATE_BOT):
     return state1
 
 
-def compute_value_of_expr(expr: ast.expr, state: State) -> Value:
+def compute_value_of_expr(program_point, expr: ast.expr, state: State):
+    lab, ctx = program_point
     if isinstance(expr, ast.Num):
-        value = Value()
+        value = AbstractValue()
         value.inject_num()
         return value
     elif isinstance(expr, ast.NameConstant):
-        value = Value()
+        value = AbstractValue()
         if expr.value is None:
             value.inject_none()
         else:
-            value.inject_bool()
+            value.inject_bool(-1)
         return value
     elif isinstance(expr, (ast.Str, ast.JoinedStr)):
-        value = Value()
+        value = AbstractValue()
         value.inject_str()
         return value
     elif isinstance(expr, ast.Bytes):
-        value = Value()
+        value = AbstractValue()
         value.inject_byte()
         return value
     elif isinstance(expr, ast.Name):
@@ -140,7 +139,7 @@ def compute_value_of_expr(expr: ast.expr, state: State) -> Value:
         name = expr.value.id
         value = state.read_var_from_stack(name)
         heaps: Set[int] = value.extract_heap_types()
-        ret_value = Value()
+        ret_value = AbstractValue()
         for lab in heaps:
             tmp_value = state.read_field_from_heap(lab, attr)
             ret_value += tmp_value
@@ -151,7 +150,7 @@ def compute_value_of_expr(expr: ast.expr, state: State) -> Value:
         return ret_value
     elif isinstance(expr, ast.Call):
         if isinstance(expr.func, ast.Name):
-            return compute_value_of_expr(expr.func, state)
+            return compute_value_of_expr(program_point, expr.func, state)
         elif isinstance(expr.func, ast.Attribute):
             # instance_value = compute_value_of_expr(expr.func.value, state)
             # heaps = instance_value.extract_heap_types()
@@ -164,8 +163,8 @@ def compute_value_of_expr(expr: ast.expr, state: State) -> Value:
             # return value
             pass
     elif isinstance(expr, (ast.Compare, ast.BoolOp)):
-        value = Value()
-        value.inject_bool()
+        value = AbstractValue()
+        value.inject_bool(-1)
         return value
     elif isinstance(expr, ast.BinOp):
         # left_value = compute_value_of_expr(expr.left, state)
@@ -174,6 +173,9 @@ def compute_value_of_expr(expr: ast.expr, state: State) -> Value:
         # right_prims = right_value.extract_prim_types()
         # value = Value()
         pass
-
+    elif isinstance(expr, ast.List):
+        value = AbstractValue()
+        value.inject_list(lab)
+        return value
     else:
         assert False

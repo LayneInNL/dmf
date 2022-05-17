@@ -28,7 +28,7 @@ from dmf.analysis.flow_util import (
     Lab,
     Basic_Flow,
 )
-from dmf.analysis.value import Module
+from dmf.analysis.value import Module, AbstractValue
 from dmf.analysis.stack import Frame
 from dmf.analysis.state import (
     State,
@@ -41,7 +41,7 @@ from dmf.analysis.value import (
     Value,
     builtin_object,
     RETURN_FLAG,
-    FuncObj,
+    FuncType,
     ClsObj,
     INIT_FLAG,
     SELF_FLAG,
@@ -162,15 +162,15 @@ class Base:
 
 
 class Analysis(Base):
-    def __init__(self, module: Module):
-        file = module["__file__"]
+    def __init__(self, file_path, module_ns):
+        file = file_path
         print(file)
         super().__init__(file)
         self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsObj | None]] = {}
         self.work_list: Deque[Flow] = deque()
-        self.analysis_list: defaultdict[ProgramPoint, State | STATE_BOT] | None = None
+        self.analysis_list: None = None
         self.analysis_effect_list = {}
-        ns = module.value_namespace()
+        ns = module_ns
         self.extremal_value: State = State(ns=ns)
 
     def compute_fixed_point(self):
@@ -193,7 +193,6 @@ class Analysis(Base):
             program_point1, program_point2 = self.work_list.popleft()
             transferred: State | STATE_BOT = self.transfer(program_point1)
             old: State | STATE_BOT = self.analysis_list[program_point2]
-
             logging.debug(
                 "Lattice at {} is {}".format(
                     program_point1, self.analysis_list[program_point1]
@@ -295,7 +294,7 @@ class Analysis(Base):
     def LAMBDA_Name(self, program_point: ProgramPoint, name: str):
         state = self.analysis_list[program_point]
         # get abstract value of name
-        value: Value = state.read_var_from_stack(name)
+        value: AbstractValue = state.read_var_from_stack(name)
         # get func_types
         func_types = value.extract_func_types()
         # deal with func types
@@ -305,13 +304,11 @@ class Analysis(Base):
         # deal with class types
         self.LAMBDA_Class_Types(program_point, class_types)
 
-    def LAMBDA_Func_Types(self, program_point: ProgramPoint, func_types: Set[FuncObj]):
+    def LAMBDA_Func_Types(self, program_point: ProgramPoint, func_types):
         for func_type in func_types:
             self.build_inter_flow_for_func_type(program_point, func_type)
 
-    def build_inter_flow_for_func_type(
-        self, program_point: ProgramPoint, func_type: FuncObj
-    ):
+    def build_inter_flow_for_func_type(self, program_point: ProgramPoint, func_type):
         call_lab, call_ctx = program_point
         entry_lab = func_type.entry_label
         exit_lab = func_type.exit_label
@@ -380,7 +377,7 @@ class Analysis(Base):
         old: State = self.analysis_list[program_point]
         new: State = old.copy()
 
-        rhs_value: Value = compute_value_of_expr(stmt.value, new)
+        rhs_value = compute_value_of_expr(program_point, stmt.value, new)
         target: ast.expr = stmt.targets[0]
         if isinstance(target, ast.Name):
             name: str = target.id
@@ -546,10 +543,10 @@ class Analysis(Base):
 
         func_name: str = stmt.name
         entry_lab, exit_lab = func_cfg.start_block.bid, func_cfg.final_block.bid
-        args = stmt.args
 
         value = Value()
-        value.inject_func_type(lab, entry_lab, exit_lab, args)
+        func_type = FuncType(lab, "", entry_lab, exit_lab)
+        value.inject_func_type(lab, func_type)
 
         new.write_var_to_stack(func_name, value)
 
