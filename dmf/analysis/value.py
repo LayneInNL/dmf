@@ -13,22 +13,11 @@
 #  limitations under the License.
 from __future__ import annotations
 
-import ast
 from collections import defaultdict
-from typing import Set, Dict, List, Any, Type
-
-from dmf.analysis.prim import (
-    PrimType,
-    PRIM_STR,
-    PRIM_BYTE,
-    PRIM_NUM,
-    PRIM_BOOL,
-    PRIM_NONE,
-)
-from dmf.analysis.value_util import issubset, update
+from typing import Dict, Any
 
 # None to denote TOP type. it can save memory consumption.
-VALUE_TOP = "TOP"
+VALUE_TOP = "VALUE_TOP"
 
 
 def static_c3(class_object):
@@ -52,6 +41,44 @@ def static_merge(mro_list):
             )
     else:
         raise TypeError("No legal mro")
+
+
+class Int:
+    def __init__(self):
+        pass
+
+    def __le__(self, other: Int):
+        return True
+
+    def __iadd__(self, other: Int):
+        return self
+
+
+class Bool:
+    def __init__(self):
+        pass
+
+    def __le__(self, other: Bool):
+        return True
+
+    def __iadd__(self, other: Bool):
+        return self
+
+
+class NoneType:
+    def __init__(self):
+        pass
+
+    def __le__(self, other: NoneType):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+
+PRIM_INT = Int()
+PRIM_BOOL = Bool()
+PRIM_NONE = NoneType()
 
 
 class FuncType:
@@ -120,7 +147,7 @@ class Module:
 
 class _Value:
     def __init__(self):
-        self.types: Dict[int, AbstractValue] = {}
+        self.types: Dict[int, Any] = {}
 
     def __le__(self, other: _Value):
         for index in self.types:
@@ -146,6 +173,15 @@ class _Value:
 
     def inject_cls_type(self, lab, cls_type):
         self.types[lab] = cls_type
+
+    def inject_int_type(self):
+        self.types[-1] = PRIM_INT
+
+    def inject_bool_type(self):
+        self.types[-2] = PRIM_BOOL
+
+    def inject_none_type(self):
+        self.types[-3] = PRIM_NONE
 
 
 # Either VALUE_TOP or have some values
@@ -181,6 +217,21 @@ class AbstractValue:
         assert self.abstract_value != VALUE_TOP
         self.abstract_value.inject_cls_type(lab, cls_type)
 
+    def inject_int_type(self):
+        assert self.abstract_value != VALUE_TOP
+        self.abstract_value.inject_int_type()
+
+    def inject_bool_type(self):
+        assert self.abstract_value != VALUE_TOP
+        self.abstract_value.inject_bool_type()
+
+    def inject_none_type(self):
+        assert self.abstract_value != VALUE_TOP
+        self.abstract_value.inject_none_type()
+
+    def extract_types(self):
+
+
 
 # Dict[str, AbstractValue|VALUE_TOP]
 class AbstractValueDict(defaultdict):
@@ -208,11 +259,8 @@ class AbstractValueDict(defaultdict):
             self[key] += other[key]
         return self
 
-    def hybrid_copy(self):
-        return self.copy()
-
 
 SELF_FLAG = "self"
 INIT_FLAG = "19970303"
 INIT_FLAG_VALUE = _Value()
-RETURN_FLAG = "19951107"
+RETURN_FLAG = "__return__"

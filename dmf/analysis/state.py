@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import ast
-from typing import Set
 
 from dmf.analysis.flow_util import ProgramPoint
 from dmf.analysis.heap import Heap
@@ -115,14 +114,18 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
     lab, ctx = program_point
     if isinstance(expr, ast.Num):
         value = AbstractValue()
-        value.inject_num()
+        n = expr.n
+        if isinstance(n, int):
+            value.inject_int_type()
+        else:
+            assert False
         return value
     elif isinstance(expr, ast.NameConstant):
         value = AbstractValue()
         if expr.value is None:
-            value.inject_none()
+            value.inject_none_type()
         else:
-            value.inject_bool(-1)
+            value.inject_bool_type()
         return value
     elif isinstance(expr, (ast.Str, ast.JoinedStr)):
         value = AbstractValue()

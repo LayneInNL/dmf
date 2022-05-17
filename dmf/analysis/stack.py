@@ -21,7 +21,7 @@ from dmf.analysis.value import AbstractValueDict, AbstractValue
 class Frame:
     def __init__(self, f_locals=None, f_back=None, f_globals=None, f_builtins=None):
         self.f_locals: AbstractValueDict[str, AbstractValue] = f_locals
-        self.f_back: Frame | None = f_back
+        self.f_back: Frame | None = None if f_back is None else AbstractValueDict()
         self.f_globals: AbstractValueDict[str, AbstractValue] = f_globals
         self.f_builtins: AbstractValueDict[str, AbstractValue] = f_builtins
         self.is_module = None
@@ -94,7 +94,8 @@ class Stack:
         while end_loc < len(stack.frames):
             while (
                 end_loc < len(stack.frames)
-                and stack.frames[start_loc] is stack.frames[end_loc]
+                # check globals
+                and stack.frames[start_loc].f_globals is stack.frames[end_loc].f_globals
             ):
                 end_loc += 1
             # update global ns
@@ -105,6 +106,8 @@ class Stack:
                 # update module
                 if stack.frames[index].is_module:
                     curr_frame.f_locals = f_globals_copy
+                else:
+                    curr_frame.f_locals = stack.frames[index].f_locals.copy()
             start_loc = end_loc
 
     def __le__(self, other: Stack):

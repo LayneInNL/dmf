@@ -60,12 +60,12 @@ class Base:
         builtins.sub_cfgs.update(cfg.sub_cfgs)
 
         self.flows: Set[Basic_Flow] = builtins.flows
-        self.IF: Set[Inter_Flow] = set()
         self.call_return_flows: Set[Basic_Flow] = builtins.call_return_flows
-        self.extremal_point: ProgramPoint = (cfg.start_block.bid, ())
-        self.final_point: ProgramPoint = (cfg.final_block.bid, ())
         self.blocks = builtins.blocks
         self.sub_cfgs: Dict[Lab, CFG] = builtins.sub_cfgs
+        self.IF: Set[Inter_Flow] = set()
+        self.extremal_point: ProgramPoint = (cfg.start_block.bid, ())
+        self.final_point: ProgramPoint = (cfg.final_block.bid, ())
 
         # working directory for the analyzed project
         # mimic current working directory
@@ -126,7 +126,7 @@ class Base:
         added += self.DELTA_exit_flow(program_point)
         return added
 
-    def DELTA_basic_flow(self, program_point):
+    def DELTA_basic_flow(self, program_point: ProgramPoint):
         added = []
         label, context = program_point
         for fst_lab, snd_lab in self.flows:
@@ -134,7 +134,7 @@ class Base:
                 added.append(((label, context), (snd_lab, context)))
         return added
 
-    def DELTA_call_flow(self, program_point):
+    def DELTA_call_flow(self, program_point: ProgramPoint):
         added = []
         for (
             call_point,
@@ -163,7 +163,6 @@ class Base:
 class Analysis(Base):
     def __init__(self, file_path, module_ns):
         file = file_path
-        print(file)
         super().__init__(file)
         self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsObj | None]] = {}
         self.work_list: Deque[Flow] = deque()
@@ -224,6 +223,7 @@ class Analysis(Base):
         # we are only interested in call labels
         if not self.is_call_label(call_lab):
             return
+
         return_lab = self.get_return_label(call_lab)
         stmt = self.get_stmt_by_label(call_lab)
         # class
@@ -235,56 +235,23 @@ class Analysis(Base):
                 self.LAMBDA_Name(program_point, stmt.func.id)
             elif isinstance(stmt.func, ast.Attribute):
                 state = self.analysis_list[program_point]
-                receiver_value = compute_value_of_expr(stmt.func.value, state)
-                heaps = receiver_value.extract_heap_types()
-                # assume receiver is a heap object for now.
-                attr = stmt.func.attr
-                for heap in heaps:
-                    method = state.read_field_from_heap(heap, attr)
-                    func_types = method.extract_func_types()
-                    assert len(func_types) == 1
-                    new_ctx = merge(call_lab, heap, ctx)
-                    for func_type in func_types:
-                        inter_flow = (
-                            (call_lab, ctx),
-                            (func_type.entry_label, new_ctx),
-                            (func_type.exit_label, new_ctx),
-                            (return_lab, ctx),
-                        )
-                        self.IF.add(inter_flow)
-                        self.self_info[(func_type.entry_label, new_ctx)] = (
-                            heap,
-                            None,
-                            None,
-                        )
-                modules = receiver_value.extract_module_types()
-                for qualname, mod in modules.items():
-                    method = mod.read_var_from_module(attr)
-                    func_types = method.extract_func_types()
-                    assert len(func_types) == 1
-                    new_ctx = merge(call_lab, None, ctx)
-                    for func_type in func_types:
-                        inter_flow = (
-                            (call_lab, ctx),
-                            (func_type.entry_label, new_ctx),
-                            (func_type.exit_label, new_ctx),
-                            (return_lab, ctx),
-                        )
-                        self.IF.add(inter_flow)
+                # get abstract value of receiver object
+                receiver_value = compute_value_of_expr(
+                    program_point, stmt.func.value, state
+                )
         else:
             assert False
 
     def LAMBDA_ClassDef(self, program_point: ProgramPoint):
         call_lab, call_ctx = program_point
         return_lab = self.get_return_label(call_lab)
-        class_cfg = self.sub_cfgs[call_lab]
-        self.add_sub_cfg(class_cfg)
-        new_ctx = merge(call_lab, None, call_ctx)
+        cfg = self.sub_cfgs[call_lab]
+        self.add_sub_cfg(cfg)
         self.IF.add(
             (
                 (call_lab, call_ctx),
-                (class_cfg.start_block.bid, new_ctx),
-                (class_cfg.final_block.bid, new_ctx),
+                (cfg.start_block.bid, call_ctx),
+                (cfg.final_block.bid, call_ctx),
                 (return_lab, call_ctx),
             )
         )
@@ -293,14 +260,7 @@ class Analysis(Base):
         state = self.analysis_list[program_point]
         # get abstract value of name
         value: AbstractValue = state.read_var_from_stack(name)
-        # get func_types
-        func_types = value.extract_func_types()
-        # deal with func types
-        self.LAMBDA_Func_Types(program_point, func_types)
-        # get class types
-        class_types = value.extract_class_types()
-        # deal with class types
-        self.LAMBDA_Class_Types(program_point, class_types)
+        assert False
 
     def LAMBDA_Func_Types(self, program_point: ProgramPoint, func_types):
         for func_type in func_types:
@@ -348,6 +308,8 @@ class Analysis(Base):
             self.self_info[(entry_lab, new_ctx)] = (heap, INIT_FLAG, class_type)
 
     def transfer(self, program_point: ProgramPoint) -> State | STATE_BOT:
+        logging.debug(f"Transfer {program_point}")
+
         lab, _ = program_point
         if self.analysis_list[program_point] == STATE_BOT:
             return STATE_BOT
@@ -361,7 +323,6 @@ class Analysis(Base):
         return self.do_transfer(program_point)
 
     def do_transfer(self, program_point: ProgramPoint) -> State:
-        logging.debug(f"Transfer {program_point}")
         label, context = program_point
         stmt: ast.stmt = self.get_stmt_by_label(label)
         stmt_name: str = stmt.__class__.__name__
@@ -413,17 +374,17 @@ class Analysis(Base):
         if isinstance(stmt, ast.Pass):
             return new
 
-        # is self.self_info[program_point] is not None, it means
-        # this is a class method call
-        if program_point in self.self_info:
-            # heap is heap, flag denotes if it's init method
-            heap, init_flag, cls_obj = self.self_info[program_point]
-            heap_value = _Value(heap_type=heap)
-            new.write_var_to_stack(SELF_FLAG, heap_value)
-            if init_flag:
-                new.write_var_to_stack(INIT_FLAG, INIT_FLAG_VALUE)
-                new.add_heap_and_cls(heap, cls_obj)
-        return new
+        # # is self.self_info[program_point] is not None, it means
+        # # this is a class method call
+        # if program_point in self.self_info:
+        #     # heap is heap, flag denotes if it's init method
+        #     heap, init_flag, cls_obj = self.self_info[program_point]
+        #     heap_value = _Value(heap_type=heap)
+        #     new.write_var_to_stack(SELF_FLAG, heap_value)
+        #     if init_flag:
+        #         new.write_var_to_stack(INIT_FLAG, INIT_FLAG_VALUE)
+        #         new.add_heap_and_cls(heap, cls_obj)
+        # return new
 
     def transfer_return(self, program_point: ProgramPoint):
         return_lab, return_ctx = program_point
@@ -515,7 +476,6 @@ class Analysis(Base):
         cls_name = stmt.name
         # class frame
         frame: Frame = return_state.top_frame_on_stack()
-        print(frame.f_globals)
         # abstract value for class
         value = AbstractValue()
         # inject namespace
@@ -540,7 +500,7 @@ class Analysis(Base):
         func_name: str = stmt.name
         entry_lab, exit_lab = func_cfg.start_block.bid, func_cfg.final_block.bid
 
-        value = _Value()
+        value = AbstractValue()
         func_type = FuncType(entry_lab, exit_lab)
         value.inject_func_type(lab, func_type)
 
@@ -566,6 +526,6 @@ class Analysis(Base):
 
         assert isinstance(stmt.value, ast.Name)
         name: str = stmt.value.id
-        value: _Value = new.read_var_from_stack(name)
+        value: AbstractValue = new.read_var_from_stack(name)
         new.write_var_to_stack(RETURN_FLAG, value)
         return new

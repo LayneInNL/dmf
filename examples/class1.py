@@ -14,5 +14,7 @@
 
 
 class Test:
-    # a = 1
+    a = 1
+    b = False
+    c = None
     pass
