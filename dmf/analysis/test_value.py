@@ -15,50 +15,50 @@
 from unittest import TestCase
 
 from dmf.analysis.prim import PRIM_NONE, PRIM_BOOL, PRIM_NUM, PRIM_BYTE, PRIM_STR
-from dmf.analysis.value import Value, FuncObj, ClsObj
+from dmf.analysis.value import _Value, FuncObj, ClsObj
 
 
 class TestValue(TestCase):
     def test_inject_heap_type(self):
-        value = Value()
+        value = _Value()
         value.inject_heap_type(1)
         heaps = value.extract_heap_types()
         s = {1}
         self.assertEqual(heaps, s)
 
     def test_inject_none(self):
-        value = Value()
+        value = _Value()
         value.inject_none()
         self.assertEqual(value.extract_prim_types(), {PRIM_NONE})
 
     def test_inject_bool(self):
-        value = Value()
+        value = _Value()
         value.inject_bool()
         self.assertEqual(value.extract_prim_types(), {PRIM_BOOL})
 
     def test_inject_num(self):
-        value = Value()
+        value = _Value()
         value.inject_num()
         self.assertEqual(value.extract_prim_types(), {PRIM_NUM})
 
     def test_inject_byte(self):
-        value = Value()
+        value = _Value()
         value.inject_byte()
         self.assertEqual(value.extract_prim_types(), {PRIM_BYTE})
 
     def test_inject_str(self):
-        value = Value()
+        value = _Value()
         value.inject_str()
         self.assertEqual(value.extract_prim_types(), {PRIM_STR})
 
     def test_inject_str2(self):
-        value = Value()
+        value = _Value()
         value.inject_str()
         value.inject_str()
         self.assertEqual(value.extract_prim_types(), {PRIM_STR})
 
     def test_inject_func_type(self):
-        value = Value()
+        value = _Value()
         value.inject_func_type(1, 2, 3, None)
         value.inject_func_type(1, 2, 3, None)
         res = value.extract_func_types()
@@ -66,7 +66,7 @@ class TestValue(TestCase):
         self.assertEqual(res, {func_obj})
 
     def test_inject_class_type(self):
-        value = Value()
+        value = _Value()
         value.inject_class_type(1, "test", [], {})
         value.inject_class_type(1, "test", [], {})
         res = value.extract_class_types()

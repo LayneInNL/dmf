@@ -55,11 +55,17 @@ def static_merge(mro_list):
 
 
 class FuncType:
-    def __init__(self, lab, module, entry_lab, exit_lab):
-        self._lab_ = lab
-        self._module_ = module
+    def __init__(self, entry_lab, exit_lab):
+        self._name_ = None
+        self._qualname_ = None
+        self._module_ = None
+        self._defaults_ = None
         self._code_ = (entry_lab, exit_lab)
+        self._globals_ = None
+        # to model real __dict__ in the function
         self._dict_ = AbstractValueDict()
+        self._closure_ = None
+        self._kwdefaults_ = None
 
     def __le__(self, other: FuncType):
         return self._dict_ <= other._dict_
@@ -73,44 +79,21 @@ class FuncType:
 
 
 class ClsObj:
-    def __init__(self, label: int, bases: List[ClsObj], attributes: Dict[str, Value]):
-        self.label = label
-        self.bases: List[ClsObj] = bases
-        self.attributes: Dict[str, Value] = attributes
-        if bases:
-            self.mro: List[ClsObj] = static_c3(self)
+    def __init__(self, namespace: AbstractValueDict):
+        self._name_ = None
+        self._module_ = None
+        self._bases_ = None
+        self._dict_: AbstractValueDict = namespace
 
     def __repr__(self):
-        return "label: {} x dict: {}".format(self.label, self.attributes.__repr__())
+        return self._dict_.__repr__()
 
     def __le__(self, other: ClsObj):
-        return issubset(self.attributes, other.attributes)
+        return self._dict_ <= other._dict_
 
     def __iadd__(self, other: ClsObj):
-        update(self.attributes, other.attributes)
+        self._dict_ += other._dict_
         return self
-
-    def __getitem__(self, attribute: str):
-        if attribute in self.attributes:
-            return self.attributes[attribute]
-
-        for base in self.mro:
-            if attribute in base.attributes:
-                return base.attributes[attribute]
-
-        raise AttributeError
-
-    def __eq__(self, other: ClsObj):
-        return self.label == other.label
-
-    def __hash__(self):
-        return self.label
-
-    def get_init(self):
-        return self["__init__"]
-
-
-builtin_object = ClsObj(0, [], {})
 
 
 # in order to denote TOP, we need a special value. Since python doesn't support algebraic data types,
@@ -119,13 +102,13 @@ builtin_object = ClsObj(0, [], {})
 
 class Module:
     def __init__(self, state):
+        self._name_ = None
+        self._file_ = None
+        self._dict_ = None
         self.state = state
 
     def read_var_from_module(self, var):
         return self.state.read_var_from_stack(var)
-
-    # def __repr__(self):
-    #     return self.state.__repr__()
 
     def __le__(self, other):
         return self.state <= other.state
@@ -135,72 +118,24 @@ class Module:
         return self
 
 
-class ListType:
+class _Value:
     def __init__(self):
-        self.types: AbstractValue = AbstractValue()
+        self.types: Dict[int, AbstractValue] = {}
 
-    def __le__(self, other: ListType):
-        return self.types <= other.types
-
-    def __iadd__(self, other: ListType):
-        self.types += other.types
-        return self
-
-    def __repr__(self):
-        return self.types.__repr__()
-
-    def append(self, other: AbstractValue):
-        self.types += other
-
-    def clear(self):
-        pass
-
-    def copy(self):
-        pass
-
-    def count(self):
-        pass
-
-    def extend(self):
-        pass
-
-    def index(self):
-        pass
-
-    def insert(self):
-        pass
-
-    def pop(self):
-        pass
-
-    def remove(self):
-        pass
-
-    def reverse(self):
-        pass
-
-    def sort(self):
-        pass
-
-
-class Value:
-    def __init__(self):
-        self.types: Dict[int, Any] = {}
-
-    def __le__(self, other: Value):
-        for v_idx in self.types:
-            if v_idx not in other.types:
+    def __le__(self, other: _Value):
+        for index in self.types:
+            if index not in other.types:
                 return False
-            if not self.types[v_idx] <= other.types[v_idx]:
+            if not self.types[index] <= other.types[index]:
                 return False
         return True
 
-    def __iadd__(self, other: Value):
-        for v_idx in other.types:
-            if v_idx not in self.types:
-                self.types[v_idx] = other.types[v_idx]
+    def __iadd__(self, other: _Value):
+        for index in other.types:
+            if index not in self.types:
+                self.types[index] = other.types[index]
             else:
-                self.types[v_idx] += other.types[v_idx]
+                self.types[index] += other.types[index]
         return self
 
     def __repr__(self):
@@ -209,13 +144,17 @@ class Value:
     def inject_func_type(self, lab, func_type):
         self.types[lab] = func_type
 
+    def inject_cls_type(self, lab, cls_type):
+        self.types[lab] = cls_type
 
+
+# Either VALUE_TOP or have some values
 class AbstractValue:
     def __init__(self, top=False):
         if top:
-            self.abstract_value: Value | VALUE_TOP = VALUE_TOP
+            self.abstract_value: _Value | VALUE_TOP = VALUE_TOP
         else:
-            self.abstract_value: Value | VALUE_TOP = Value()
+            self.abstract_value: _Value | VALUE_TOP = _Value()
 
     def __le__(self, other: AbstractValue):
         if other.abstract_value == VALUE_TOP:
@@ -235,7 +174,12 @@ class AbstractValue:
         return self.abstract_value.__repr__()
 
     def inject_func_type(self, lab, func_type):
+        assert self.abstract_value != VALUE_TOP
         self.abstract_value.inject_func_type(lab, func_type)
+
+    def inject_cls_type(self, lab, cls_type):
+        assert self.abstract_value != VALUE_TOP
+        self.abstract_value.inject_cls_type(lab, cls_type)
 
 
 # Dict[str, AbstractValue|VALUE_TOP]
@@ -265,10 +209,10 @@ class AbstractValueDict(defaultdict):
         return self
 
     def hybrid_copy(self):
-        return AbstractValueDict().copy()
+        return self.copy()
 
 
 SELF_FLAG = "self"
 INIT_FLAG = "19970303"
-INIT_FLAG_VALUE = Value()
+INIT_FLAG_VALUE = _Value()
 RETURN_FLAG = "19951107"

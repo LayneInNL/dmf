@@ -26,7 +26,36 @@
 from dmf.analysis.value import AbstractValue
 
 
-class list:
+class Int:
+    def __init__(self):
+        pass
+
+    def bit_length(self):
+        return PRIM_INT
+
+    def conjugate(self):
+        return PRIM_INT
+
+    def denominator(self):
+        return PRIM_INT
+
+    def from_bytes(self):
+        return PRIM_INT
+
+    def imag(self):
+        pass
+
+    def numerator(self):
+        pass
+
+    def real(self):
+        pass
+
+    def to_bytes(self):
+        pass
+
+
+class List:
     def __init__(self, iter_types: AbstractValue = None):
         self.abstract_value = AbstractValue()
         if iter_types:
@@ -34,3 +63,7 @@ class list:
 
     def append(self, elt_type):
         self.abstract_value += elt_type
+
+
+# builtin objects, we use singleton objects
+PRIM_INT = Int()

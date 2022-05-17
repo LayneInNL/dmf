@@ -16,6 +16,7 @@ from __future__ import annotations
 import ast
 from typing import Set
 
+from dmf.analysis.flow_util import ProgramPoint
 from dmf.analysis.heap import Heap
 from dmf.analysis.stack import Stack, Frame
 from dmf.analysis.value import ClsObj, AbstractValue
@@ -81,7 +82,7 @@ class State:
     def write_var_to_stack(self, var: str, value):
         self.stack.write_var(var, value)
 
-    def stack_go_into_new_frame(self):
+    def stack_exec_in_new_ns(self):
         self.stack.next_ns()
 
     def copy(self):
@@ -89,14 +90,14 @@ class State:
         return copied
 
 
-STATE_BOT = None
+STATE_BOT = "BOT"
 
 
 def issubset_state(state1: State | STATE_BOT, state2: State | STATE_BOT):
-    if state1 is None:
+    if state1 == STATE_BOT:
         return True
 
-    if state2 is None:
+    if state2 == STATE_BOT:
         return False
 
     return state1 <= state2
@@ -110,7 +111,7 @@ def update_state(state1: State, state2: State | STATE_BOT):
     return state1
 
 
-def compute_value_of_expr(program_point, expr: ast.expr, state: State):
+def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: State):
     lab, ctx = program_point
     if isinstance(expr, ast.Num):
         value = AbstractValue()
@@ -134,20 +135,7 @@ def compute_value_of_expr(program_point, expr: ast.expr, state: State):
     elif isinstance(expr, ast.Name):
         return state.read_var_from_stack(expr.id)
     elif isinstance(expr, ast.Attribute):
-        attr = expr.attr
-        assert isinstance(expr.value, ast.Name)
-        name = expr.value.id
-        value = state.read_var_from_stack(name)
-        heaps: Set[int] = value.extract_heap_types()
-        ret_value = AbstractValue()
-        for lab in heaps:
-            tmp_value = state.read_field_from_heap(lab, attr)
-            ret_value += tmp_value
-        mods = value.extract_module_types()
-        for mod_name in mods:
-            tmp_value = mods[mod_name].read_var_from_module(attr)
-            ret_value += tmp_value
-        return ret_value
+        pass
     elif isinstance(expr, ast.Call):
         if isinstance(expr.func, ast.Name):
             return compute_value_of_expr(program_point, expr.func, state)

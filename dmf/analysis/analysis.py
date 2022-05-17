@@ -38,8 +38,7 @@ from dmf.analysis.state import (
     compute_value_of_expr,
 )
 from dmf.analysis.value import (
-    Value,
-    builtin_object,
+    _Value,
     RETURN_FLAG,
     FuncType,
     ClsObj,
@@ -170,8 +169,7 @@ class Analysis(Base):
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: None = None
         self.analysis_effect_list = {}
-        ns = module_ns
-        self.extremal_value: State = State(ns=ns)
+        self.extremal_value: State = State(ns=module_ns)
 
     def compute_fixed_point(self):
         self.initialize()
@@ -378,14 +376,15 @@ class Analysis(Base):
         new: State = old.copy()
 
         rhs_value = compute_value_of_expr(program_point, stmt.value, new)
+        assert len(stmt.targets) == 1
         target: ast.expr = stmt.targets[0]
         if isinstance(target, ast.Name):
-            name: str = target.id
-            new.write_var_to_stack(name, rhs_value)
+            lhs_name: str = target.id
+            new.write_var_to_stack(lhs_name, rhs_value)
         elif isinstance(target, ast.Attribute):
             assert isinstance(target.value, ast.Name)
-            name: str = target.value.id
-            value: Value = new.read_var_from_stack(name)
+            lhs_name: str = target.value.id
+            value: AbstractValue = new.read_var_from_stack(lhs_name)
             field: str = target.attr
             heaps = value.extract_heap_types()
             for heap in heaps:
@@ -397,15 +396,10 @@ class Analysis(Base):
     def transfer_call(self, program_point: ProgramPoint):
         call_lab, call_ctx = program_point
         stmt: ast.stmt = self.get_stmt_by_label(call_lab)
-        if isinstance(stmt, ast.ClassDef):
+        if isinstance(stmt, (ast.ClassDef, ast.Call)):
             old: State = self.analysis_list[program_point]
             new: State = old.copy()
-            new.stack_go_into_new_frame()
-            return new
-        elif isinstance(stmt, ast.Call):
-            old: State = self.analysis_list[program_point]
-            new: State = old.copy()
-            new.stack_go_into_new_frame()
+            new.stack_exec_in_new_ns()
             return new
         else:
             assert False
@@ -424,7 +418,7 @@ class Analysis(Base):
         if program_point in self.self_info:
             # heap is heap, flag denotes if it's init method
             heap, init_flag, cls_obj = self.self_info[program_point]
-            heap_value = Value(heap_type=heap)
+            heap_value = _Value(heap_type=heap)
             new.write_var_to_stack(SELF_FLAG, heap_value)
             if init_flag:
                 new.write_var_to_stack(INIT_FLAG, INIT_FLAG_VALUE)
@@ -468,7 +462,7 @@ class Analysis(Base):
         module_name = stmt.names[0].name
         as_name = stmt.names[0].asname
         mod = builtins.import_module(module_name)
-        value = Value()
+        value = _Value()
         if as_name is None:
             # no asname
             value.inject_module_type(module_name, mod)
@@ -503,33 +497,35 @@ class Analysis(Base):
         return new
 
     def transfer_ClassDef_return(self, program_point: ProgramPoint):
-        return_state: State = self.analysis_list[program_point]
+        # return stuff
         return_lab, return_ctx = program_point
+        # stmt
         stmt: ast.ClassDef = self.get_stmt_by_label(return_lab)
+        # return state
+        return_state: State = self.analysis_list[program_point]
 
+        # call point
         call_point = self.get_call_point(program_point)
-        call_label = call_point[0]
 
+        # old and new state
         old: State = self.analysis_list[call_point]
         new: State = old.copy()
 
-        class_name = stmt.name
+        # class name
+        cls_name = stmt.name
+        # class frame
         frame: Frame = return_state.top_frame_on_stack()
-        value = Value()
-        bases = []
-        for base in stmt.bases:
-            assert isinstance(base, ast.Name)
-            base_value = new.read_var_from_stack(base.id)
-            class_types = base_value.extract_class_types()
-            assert len(class_types) == 1
-            for cls_obj in class_types:
-                bases.append(cls_obj)
-        value.inject_class_type(
-            call_label,
-            [builtin_object] if not bases else bases,
+        print(frame.f_globals)
+        # abstract value for class
+        value = AbstractValue()
+        # inject namespace
+        value.inject_cls_type(
+            call_point[0],
             frame.f_locals,
         )
-        new.write_var_to_stack(class_name, value)
+        # write to stack
+        new.write_var_to_stack(cls_name, value)
+        # return new state
         return new
 
     def transfer_FunctionDef(self, program_point: ProgramPoint):
@@ -544,8 +540,8 @@ class Analysis(Base):
         func_name: str = stmt.name
         entry_lab, exit_lab = func_cfg.start_block.bid, func_cfg.final_block.bid
 
-        value = Value()
-        func_type = FuncType(lab, "", entry_lab, exit_lab)
+        value = _Value()
+        func_type = FuncType(entry_lab, exit_lab)
         value.inject_func_type(lab, func_type)
 
         new.write_var_to_stack(func_name, value)
@@ -570,6 +566,6 @@ class Analysis(Base):
 
         assert isinstance(stmt.value, ast.Name)
         name: str = stmt.value.id
-        value: Value = new.read_var_from_stack(name)
+        value: _Value = new.read_var_from_stack(name)
         new.write_var_to_stack(RETURN_FLAG, value)
         return new

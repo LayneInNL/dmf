@@ -699,12 +699,17 @@ def _load_unlocked(spec):
                 raise ImportError("missing loader", name=spec.name)
             # A namespace package so do nothing.
         else:
+            # create a namespace for execute module
             module_namespace = AbstractValueDict()
+            # put dunner names into this ns
             module_namespace.update(module.__dict__)
             logging.debug("namespace {}".format(module_namespace))
+            # execute module
             analysis = Analysis(spec.origin, module_namespace)
             analysis.compute_fixed_point()
+            # update module ns
             custom_module = Module(analysis.analysis_effect_list[analysis.final_point])
+            # sync to global scope
             builtins.custom_analysis_modules[spec.name] = custom_module
             # spec.loader.exec_module(module)
 
