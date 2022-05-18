@@ -13,7 +13,7 @@
 #  limitations under the License.
 from __future__ import annotations
 
-import logging
+from dmf.log.logger import logger
 from collections import defaultdict
 from typing import Dict, Any
 
@@ -44,7 +44,11 @@ def static_merge(mro_list):
         raise TypeError("No legal mro")
 
 
-class Int:
+class Prim:
+    pass
+
+
+class Int(Prim):
     def __init__(self):
         pass
 
@@ -58,11 +62,15 @@ class Int:
         return "int"
 
     def setattr(self, key, value):
-        logging.debug("set attr to int, ignore")
-        pass
+        logger.warn("set attr to int, ignore")
+        assert False
+
+    def getattr(self, key):
+        logger.warn("get attr from int, ignore")
+        assert False
 
 
-class Bool:
+class Bool(Prim):
     def __init__(self):
         pass
 
@@ -76,11 +84,15 @@ class Bool:
         return "bool"
 
     def setattr(self, key, value):
-        logging.debug("set attr to bool, ignore")
-        pass
+        logger.warn("set attr to bool, ignore")
+        assert False
+
+    def getattr(self, key):
+        logger.warn("get attr from bool, ignore")
+        assert False
 
 
-class NoneType:
+class NoneType(Prim):
     def __init__(self):
         pass
 
@@ -94,14 +106,68 @@ class NoneType:
         return "None"
 
     def setattr(self, key, value):
-        logging.debug("set attr to none, ignore")
+        logger.warn("set attr to none, ignore")
+        assert False
+
+    def getattr(self, key):
+        logger.warn("set attr from none, ignore")
+        assert False
+
+
+class Str(Prim):
+    def __init__(self):
         pass
+
+    def __le__(self, other: Str):
+        return True
+
+    def __iadd__(self, other: Str):
+        return self
+
+    def __repr__(self):
+        return "None"
+
+    def setattr(self, key, value):
+        logger.warn("set attr to none, ignore")
+        assert False
+
+    def getattr(self, key):
+        logger.warn("set attr from none, ignore")
+        assert False
+
+
+class Bytes(Prim):
+    def __init__(self):
+        pass
+
+    def __le__(self, other: Bytes):
+        return True
+
+    def __iadd__(self, other: Bytes):
+        return self
+
+    def __repr__(self):
+        return "None"
+
+    def setattr(self, key, value):
+        logger.warn("set attr to none, ignore")
+        assert False
+
+    def getattr(self, key):
+        logger.warn("set attr from none, ignore")
+        assert False
 
 
 PRIM_INT = Int()
+PRIM_INT_ID = id(PRIM_INT)
 PRIM_BOOL = Bool()
+PRIM_BOOL_ID = id(PRIM_BOOL)
 PRIM_NONE = NoneType()
-print(id(PRIM_INT), id(PRIM_BOOL), id(PRIM_NONE))
+PRIM_NONE_ID = id(PRIM_NONE)
+PRIM_STR = Str()
+PRIM_STR_ID = id(PRIM_STR)
+PRIM_BYTES = Bytes()
+PRIM_BYTES_ID = id(PRIM_BYTES)
 
 
 class FuncType:
@@ -129,6 +195,9 @@ class FuncType:
 
     def setattr(self, key, value):
         self._dict_[key] = value
+
+    def getattr(self, key):
+        return self._dict_[key]
 
     # def __repr__(self):
     #     return self._dict_.__repr__()
@@ -161,6 +230,9 @@ class ClsType:
                 return self._dict_[name]
         raise AttributeError
 
+    def getattr(self, key):
+        return self._dict_[key]
+
 
 class InsType:
     def __init__(self, heap):
@@ -174,8 +246,14 @@ class InsType:
         self._dict_ += other._dict_
         return self
 
+    def get_heap(self):
+        return self._self_
+
     def setattr(self, key, value):
         self._dict_[key] = value
+
+    def getattr(self, key):
+        return self._dict_[key]
 
 
 # in order to denote TOP, we need a special value. Since python doesn't support algebraic data types,
@@ -203,7 +281,7 @@ class Module:
 # Either VALUE_TOP or have some values
 class Value:
     def __init__(self):
-        self.type_dict: Dict[int, FuncType | ClsType | Int | Bool | NoneType] = {}
+        self.type_dict: Dict[int, FuncType | ClsType | InsType | Prim] = {}
 
     def __le__(self, other: Value):
         for k in self.type_dict:
@@ -225,6 +303,9 @@ class Value:
     def __repr__(self):
         return self.type_dict.__repr__()
 
+    def __iter__(self):
+        return iter(self.type_dict.items())
+
     def inject_heap_type(self, lab, ins_type):
         self.type_dict[lab] = ins_type
 
@@ -243,11 +324,11 @@ class Value:
     def inject_none_type(self):
         self.type_dict[-3] = PRIM_NONE
 
-    def extract_types(self):
-        return self.type_dict
+    def inject_str_type(self):
+        self.type_dict[-4] = PRIM_STR
 
-    def items(self):
-        return self.type_dict.items()
+    def inject_bytes_type(self):
+        self.type_dict[-5] = PRIM_BYTES
 
 
 # Dict[str, AbstractValue|VALUE_TOP]

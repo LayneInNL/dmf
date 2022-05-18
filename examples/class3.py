@@ -20,4 +20,10 @@ class Test:
         self.value = 2
 
 
+def hello():
+    pass
+
+
 t = Test()
+t.ttt = Test
+jojo = t.ttt()

@@ -18,7 +18,8 @@ import ast
 from dmf.analysis.flow_util import ProgramPoint
 from dmf.analysis.heap import Heap
 from dmf.analysis.stack import Stack, Frame
-from dmf.analysis.value import ClsType, Value
+from dmf.analysis.value import ClsType, Value, InsType, FuncType
+from dmf.log.logger import logger
 
 
 class State:
@@ -129,7 +130,7 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
         return value
     elif isinstance(expr, (ast.Str, ast.JoinedStr)):
         value = Value()
-        value.inject_str()
+        value.inject_str_type()
         return value
     elif isinstance(expr, ast.Bytes):
         value = Value()
@@ -138,24 +139,48 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
     elif isinstance(expr, ast.Name):
         return state.read_var_from_stack(expr.id)
     elif isinstance(expr, ast.Attribute):
-        pass
+        receiver_value: Value = compute_value_of_expr(program_point, expr.value, state)
+        receiver_attr: str = expr.attr
+        value = Value()
+        for lab, typ in receiver_value:
+            if isinstance(typ, InsType):
+                v = state.read_field_from_heap(typ.get_heap(), receiver_attr)
+                value += v
+            elif isinstance(typ, FuncType):
+                v = typ.getattr(receiver_attr)
+                value += v
+            elif isinstance(typ, ClsType):
+                v = typ.getattr(receiver_attr)
+                value += v
+            else:
+                logger.warn(typ)
+        return value
+
     elif isinstance(expr, ast.Call):
         if isinstance(expr.func, ast.Name):
             return compute_value_of_expr(program_point, expr.func, state)
         elif isinstance(expr.func, ast.Attribute):
-            # instance_value = compute_value_of_expr(expr.func.value, state)
-            # heaps = instance_value.extract_heap_types()
-            # value = Value()
-            # for hcontext, cls in heaps:
-            #     attribute_value = state.read_field_from_heap(
-            #         hcontext, cls, expr.func.attr
-            #     )
-            #     value += attribute_value()
-            # return value
-            pass
+            attr = expr.func.attr
+            receiver_value = compute_value_of_expr(
+                program_point, expr.func.value, state
+            )
+            value = Value()
+            for lab, typ in receiver_value:
+                if isinstance(typ, InsType):
+                    v = state.read_field_from_heap(typ.get_heap(), attr)
+                    value += v
+                elif isinstance(typ, FuncType):
+                    v = typ.getattr(attr)
+                    value += v
+                elif isinstance(typ, ClsType):
+                    v = typ.getattr(attr)
+                    value += v
+                else:
+                    logger.warn(typ)
+            return value
     elif isinstance(expr, (ast.Compare, ast.BoolOp)):
         value = Value()
-        value.inject_bool(-1)
+        value.inject_bool_type()
         return value
     elif isinstance(expr, ast.BinOp):
         # left_value = compute_value_of_expr(expr.left, state)

@@ -165,7 +165,7 @@ class Analysis(Base):
     def __init__(self, file_path, module_ns):
         file = file_path
         super().__init__(file)
-        self.self_info: Dict[ProgramPoint, Tuple[int, str, ClsType]] = {}
+        self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsType | None]] = {}
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: None = None
         self.analysis_effect_list = {}
@@ -207,9 +207,9 @@ class Analysis(Base):
 
     def present(self):
         for program_point, state in self.analysis_list.items():
-            logger.debug("Context at program point {}: {}".format(program_point, state))
+            logger.info("Context at program point {}: {}".format(program_point, state))
             self.analysis_effect_list[program_point] = self.transfer(program_point)
-            logger.debug(
+            logger.info(
                 "Effect at program point {}: {}".format(
                     program_point, self.analysis_effect_list[program_point]
                 )
@@ -223,24 +223,38 @@ class Analysis(Base):
         if not self.is_call_label(call_lab):
             return
 
-        return_lab = self.get_return_label(call_lab)
         stmt = self.get_stmt_by_label(call_lab)
         # class
         if isinstance(stmt, ast.ClassDef):
             self.LAMBDA_ClassDef(program_point)
         # procedural call
         elif isinstance(stmt, ast.Call):
-            if isinstance(stmt.func, ast.Name):
-                self.LAMBDA_Name(program_point, stmt.func.id)
-            elif isinstance(stmt.func, ast.Attribute):
+            func = stmt.func
+            if isinstance(func, ast.Name):
+                self.LAMBDA_Name(program_point, func.id)
+            elif isinstance(func, ast.Attribute):
+                attr: str = func.attr
                 state = self.analysis_list[program_point]
                 # get abstract value of receiver object
-                receiver_value = compute_value_of_expr(
-                    program_point, stmt.func.value, state
-                )
+                receiver_value = compute_value_of_expr(program_point, func.value, state)
+                self.LAMBDA_Attribute(program_point, receiver_value, attr)
         else:
             assert False
 
+    def LAMBDA_Attribute(
+        self, program_point: ProgramPoint, receiver_value: Value, attr: str
+    ):
+        for lab, typ in receiver_value:
+            if isinstance(typ, ClsType):
+                self.lambda_class_init(program_point, typ)
+            elif isinstance(typ, FuncType):
+                self.lambda_func_call(program_point, typ)
+            elif isinstance(typ, InsType):
+                self.lambda_method_call(program_point, typ, attr)
+            else:
+                assert False
+
+    # deal with cases such as class xxx
     def LAMBDA_ClassDef(self, program_point: ProgramPoint):
         call_lab, call_ctx = program_point
         return_lab = self.get_return_label(call_lab)
@@ -255,31 +269,85 @@ class Analysis(Base):
             )
         )
 
+    # deal with cases such as name()
     def LAMBDA_Name(self, program_point: ProgramPoint, name: str):
         call_lab, call_ctx = program_point
-        return_lab = self.get_return_label(call_lab)
         state = self.analysis_list[program_point]
         # get abstract value of name
         value: Value = state.read_var_from_stack(name)
-        type_dict = value.extract_types()
-        for lab, typ in type_dict.items():
+        for lab, typ in value:
             if isinstance(typ, ClsType):
-                init_funcs = typ.get_attribute("__init__")
-                for _, init_func in init_funcs.items():
-                    if isinstance(init_func, FuncType):
-                        entry_lab, exit_lab = init_func.get_code()
-                        inter_flow = (
-                            (call_lab, call_ctx),
-                            (entry_lab, call_ctx),
-                            (exit_lab, call_ctx),
-                            (return_lab, call_ctx),
-                        )
-                        self.IF.add(inter_flow)
-                        heap = record(call_lab, call_ctx)
-                        self.self_info[(entry_lab, call_ctx)] = (heap, INIT_FLAG, typ)
+                self.lambda_class_init(program_point, typ)
             elif isinstance(typ, FuncType):
-                print("Func type")
+                self.lambda_func_call(program_point, typ)
+            else:
+                logger.warn(typ)
                 assert False
+
+    def lambda_class_init(self, program_point, typ: ClsType, attr: str = "__init__"):
+        call_lab, call_ctx = program_point
+        return_lab = self.get_return_label(call_lab)
+        init_funcs = typ.get_attribute(attr)
+        for _, init_func in init_funcs:
+            if isinstance(init_func, FuncType):
+                entry_lab, exit_lab = init_func.get_code()
+                inter_flow = (
+                    (call_lab, call_ctx),
+                    (entry_lab, call_ctx),
+                    (exit_lab, call_ctx),
+                    (return_lab, call_ctx),
+                )
+                self.IF.add(inter_flow)
+                heap = record(call_lab, call_ctx)
+                self.self_info[(entry_lab, call_ctx)] = (heap, INIT_FLAG, typ)
+            else:
+                logger.warn(init_func)
+                assert False
+
+    # instance.method(self)
+    def lambda_method_call(
+        self, program_point: ProgramPoint, ins_type: InsType, attr: str
+    ):
+        # call stuff
+        call_lab, call_ctx = program_point
+        # return label
+        return_lab = self.get_return_label(call_lab)
+        # call state to retrieve heap attributes
+        call_state: State = self.analysis_list[program_point]
+        # heap of instance
+        heap = ins_type.get_heap()
+        attr_value: Value = call_state.read_field_from_heap(heap, attr)
+        for _, typ in attr_value:
+            if isinstance(typ, FuncType):
+                new_ctx = merge(call_lab, heap, call_ctx)
+                entry_lab, exit_lab = typ.get_code()
+                inter_flow = (
+                    (call_lab, call_ctx),
+                    (entry_lab, new_ctx),
+                    (exit_lab, new_ctx),
+                    (return_lab, call_ctx),
+                )
+                self.IF.add(inter_flow)
+                heap = record(call_lab, call_ctx)
+                self.self_info[(entry_lab, call_ctx)] = (heap, "", None)
+            elif isinstance(typ, ClsType):
+                self.lambda_class_init(program_point, typ)
+            else:
+                logger.warn(typ)
+                assert False
+
+    def lambda_func_call(self, program_point: ProgramPoint, typ: FuncType):
+        call_lab, call_ctx = program_point
+        return_lab = self.get_return_label(call_lab)
+        entry_lab, exit_lab = typ.get_code()
+        new_ctx = merge(call_lab, None, call_ctx)
+        inter_flow = (
+            (call_lab, call_ctx),
+            (entry_lab, new_ctx),
+            (exit_lab, new_ctx),
+            (return_lab, call_ctx),
+        )
+        self.IF.add(inter_flow)
 
     def transfer(self, program_point: ProgramPoint) -> State | STATE_BOT:
         logging.debug(f"Transfer {program_point}")
@@ -321,16 +389,15 @@ class Analysis(Base):
             lhs_name: str = target.value.id
             value: Value = new.read_var_from_stack(lhs_name)
             field: str = target.attr
-            type_dict = value.extract_types()
-            for typ in type_dict.values():
+            for lab, typ in value:
                 if isinstance(typ, InsType):
-                    new.write_field_to_heap(typ._self_, field, rhs_value)
+                    new.write_field_to_heap(typ.get_heap(), field, rhs_value)
                 elif isinstance(typ, ClsType):
-                    typ.setattr(field, value)
+                    typ.setattr(field, rhs_value)
                 elif isinstance(typ, FuncType):
-                    typ.setattr(field, value)
+                    typ.setattr(field, rhs_value)
                 elif isinstance(typ, (Int, Bool, NoneType)):
-                    typ.setattr(field, value)
+                    typ.setattr(field, rhs_value)
                 else:
                     assert False
         else:
@@ -367,8 +434,10 @@ class Analysis(Base):
             value.inject_heap_type(heap, ins_type)
             new.write_var_to_stack(SELF_FLAG, value)
             if init_flag:
+                # write the init flag to stack
                 new.write_var_to_stack(INIT_FLAG, INIT_FLAG_VALUE)
-            new.add_heap_and_cls(heap, cls_obj)
+                # write cls_obj to heap so that we can retrieve class type
+                new.add_heap_and_cls(heap, cls_obj)
         return new
 
     def transfer_return(self, program_point: ProgramPoint):
