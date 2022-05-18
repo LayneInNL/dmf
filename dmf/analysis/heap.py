@@ -16,13 +16,13 @@ from __future__ import annotations
 from typing import Dict, Tuple
 
 from dmf.analysis.value_util import issubset_twodict, update_twodict, issubset, update
-from dmf.analysis.value import _Value, ClsObj
+from dmf.analysis.value import Value, ClsType
 
 
 class Singleton:
     def __init__(self, cls_obj):
-        self.internal: Dict[str, _Value] = {}
-        self.cls_obj: ClsObj = cls_obj
+        self.internal: Dict[str, Value] = {}
+        self.cls_obj: ClsType = cls_obj
 
     def __repr__(self):
         return "dict {} cls {}".format(self.internal, self.cls_obj)
@@ -50,7 +50,7 @@ class Singleton:
 
 class Summary:
     def __init__(self):
-        self.internal: Dict[ClsObj, Dict[str, _Value]] = {}
+        self.internal: Dict[ClsType, Dict[str, Value]] = {}
 
     def __le__(self, other: Summary):
         return issubset_twodict(self.internal, other.internal)
@@ -89,7 +89,7 @@ class Heap:
         singleton = Singleton(cls_obj)
         self.singletons[heap_ctx] = singleton
 
-    def write_to_field(self, heap_ctx: int, field: str, value: _Value):
+    def write_to_field(self, heap_ctx: int, field: str, value: Value):
         self.singletons[heap_ctx][field] = value
 
     def read_from_field(self, heap_ctx: int, field: str):

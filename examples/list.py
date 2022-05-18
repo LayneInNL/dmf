@@ -12,6 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-a = []
-b = False
-a.append(b)
+
+class list:
+    def __init__(self):
+        pass
+
+
+a = list()

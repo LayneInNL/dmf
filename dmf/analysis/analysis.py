@@ -28,7 +28,7 @@ from dmf.analysis.flow_util import (
     Lab,
     Basic_Flow,
 )
-from dmf.analysis.value import Module, AbstractValue
+from dmf.analysis.value import Module, Value
 from dmf.analysis.stack import Frame
 from dmf.analysis.state import (
     State,
@@ -38,10 +38,10 @@ from dmf.analysis.state import (
     compute_value_of_expr,
 )
 from dmf.analysis.value import (
-    _Value,
+    Value,
     RETURN_FLAG,
     FuncType,
-    ClsObj,
+    ClsType,
     INIT_FLAG,
     SELF_FLAG,
     INIT_FLAG_VALUE,
@@ -164,7 +164,7 @@ class Analysis(Base):
     def __init__(self, file_path, module_ns):
         file = file_path
         super().__init__(file)
-        self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsObj | None]] = {}
+        self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsType | None]] = {}
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: None = None
         self.analysis_effect_list = {}
@@ -259,7 +259,13 @@ class Analysis(Base):
     def LAMBDA_Name(self, program_point: ProgramPoint, name: str):
         state = self.analysis_list[program_point]
         # get abstract value of name
-        value: AbstractValue = state.read_var_from_stack(name)
+        value: Value = state.read_var_from_stack(name)
+        type_dict = value.extract_types()
+        for lab, typ in type_dict.items():
+            if isinstance(typ, ClsType):
+                print("Class type")
+            elif isinstance(typ, FuncType):
+                print("Func type")
         assert False
 
     def LAMBDA_Func_Types(self, program_point: ProgramPoint, func_types):
@@ -281,13 +287,13 @@ class Analysis(Base):
         self.IF.add(inter_flow)
 
     def LAMBDA_Class_Types(
-        self, program_point: ProgramPoint, class_types: Dict[int, ClsObj]
+        self, program_point: ProgramPoint, class_types: Dict[int, ClsType]
     ):
         for label, cls_type in class_types.items():
             self.build_inter_flow_for_class_type(program_point, cls_type)
 
     def build_inter_flow_for_class_type(
-        self, program_point: ProgramPoint, class_type: ClsObj
+        self, program_point: ProgramPoint, class_type: ClsType
     ):
         call_lab, call_ctx = program_point
         return_lab = self.get_return_label(call_lab)
@@ -345,7 +351,7 @@ class Analysis(Base):
         elif isinstance(target, ast.Attribute):
             assert isinstance(target.value, ast.Name)
             lhs_name: str = target.value.id
-            value: AbstractValue = new.read_var_from_stack(lhs_name)
+            value: Value = new.read_var_from_stack(lhs_name)
             field: str = target.attr
             heaps = value.extract_heap_types()
             for heap in heaps:
@@ -477,12 +483,10 @@ class Analysis(Base):
         # class frame
         frame: Frame = return_state.top_frame_on_stack()
         # abstract value for class
-        value = AbstractValue()
+        value = Value()
+        cls_type = ClsType(frame.f_locals)
         # inject namespace
-        value.inject_cls_type(
-            call_point[0],
-            frame.f_locals,
-        )
+        value.inject_cls_type(call_point[0], cls_type)
         # write to stack
         new.write_var_to_stack(cls_name, value)
         # return new state
@@ -500,7 +504,7 @@ class Analysis(Base):
         func_name: str = stmt.name
         entry_lab, exit_lab = func_cfg.start_block.bid, func_cfg.final_block.bid
 
-        value = AbstractValue()
+        value = Value()
         func_type = FuncType(entry_lab, exit_lab)
         value.inject_func_type(lab, func_type)
 
@@ -526,6 +530,6 @@ class Analysis(Base):
 
         assert isinstance(stmt.value, ast.Name)
         name: str = stmt.value.id
-        value: AbstractValue = new.read_var_from_stack(name)
+        value: Value = new.read_var_from_stack(name)
         new.write_var_to_stack(RETURN_FLAG, value)
         return new

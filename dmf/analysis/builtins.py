@@ -23,7 +23,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-from dmf.analysis.value import AbstractValue
+from dmf.analysis.value import Value
 
 
 class Int:
@@ -56,8 +56,8 @@ class Int:
 
 
 class List:
-    def __init__(self, iter_types: AbstractValue = None):
-        self.abstract_value = AbstractValue()
+    def __init__(self, iter_types: Value = None):
+        self.abstract_value = Value()
         if iter_types:
             self.abstract_value += iter_types
 

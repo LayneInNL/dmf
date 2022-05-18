@@ -53,6 +53,9 @@ class Int:
     def __iadd__(self, other: Int):
         return self
 
+    def __repr__(self):
+        return "int"
+
 
 class Bool:
     def __init__(self):
@@ -64,6 +67,9 @@ class Bool:
     def __iadd__(self, other: Bool):
         return self
 
+    def __repr__(self):
+        return "bool"
+
 
 class NoneType:
     def __init__(self):
@@ -74,6 +80,9 @@ class NoneType:
 
     def __iadd__(self, other):
         return self
+
+    def __repr__(self):
+        return "None"
 
 
 PRIM_INT = Int()
@@ -90,7 +99,7 @@ class FuncType:
         self._code_ = (entry_lab, exit_lab)
         self._globals_ = None
         # to model real __dict__ in the function
-        self._dict_ = AbstractValueDict()
+        self._dict_ = ValueDict()
         self._closure_ = None
         self._kwdefaults_ = None
 
@@ -101,24 +110,24 @@ class FuncType:
         self._dict_ += other._dict_
         return self
 
-    def __repr__(self):
-        return self._dict_.__repr__()
+    # def __repr__(self):
+    #     return self._dict_.__repr__()
 
 
-class ClsObj:
-    def __init__(self, namespace: AbstractValueDict):
+class ClsType:
+    def __init__(self, namespace: ValueDict):
         self._name_ = None
         self._module_ = None
         self._bases_ = None
-        self._dict_: AbstractValueDict = namespace
+        self._dict_: ValueDict = namespace
 
-    def __repr__(self):
-        return self._dict_.__repr__()
+    # def __repr__(self):
+    #     return self._dict_.__repr__()
 
-    def __le__(self, other: ClsObj):
+    def __le__(self, other: ClsType):
         return self._dict_ <= other._dict_
 
-    def __iadd__(self, other: ClsObj):
+    def __iadd__(self, other: ClsType):
         self._dict_ += other._dict_
         return self
 
@@ -145,122 +154,93 @@ class Module:
         return self
 
 
-class _Value:
+# Either VALUE_TOP or have some values
+class Value:
     def __init__(self):
-        self.types: Dict[int, Any] = {}
+        self.type_dict: Dict[int, Any] = {}
 
-    def __le__(self, other: _Value):
-        for index in self.types:
-            if index not in other.types:
+    def __le__(self, other: Value):
+        for k in self.type_dict:
+            if k not in other.type_dict:
                 return False
-            if not self.types[index] <= other.types[index]:
-                return False
+            else:
+                if not self.type_dict[k] <= other.type_dict[k]:
+                    return False
         return True
 
-    def __iadd__(self, other: _Value):
-        for index in other.types:
-            if index not in self.types:
-                self.types[index] = other.types[index]
+    def __iadd__(self, other: Value):
+        for k in other.type_dict:
+            if k not in self.type_dict:
+                self.type_dict[k] = other.type_dict[k]
             else:
-                self.types[index] += other.types[index]
+                self.type_dict[k] += other.type_dict[k]
         return self
 
     def __repr__(self):
-        return self.types.__repr__()
+        return self.type_dict.__repr__()
 
-    def inject_func_type(self, lab, func_type):
-        self.types[lab] = func_type
+    def inject_func_type(self, lab, func_type: FuncType):
+        self.type_dict[lab] = func_type
 
-    def inject_cls_type(self, lab, cls_type):
-        self.types[lab] = cls_type
-
-    def inject_int_type(self):
-        self.types[-1] = PRIM_INT
-
-    def inject_bool_type(self):
-        self.types[-2] = PRIM_BOOL
-
-    def inject_none_type(self):
-        self.types[-3] = PRIM_NONE
-
-
-# Either VALUE_TOP or have some values
-class AbstractValue:
-    def __init__(self, top=False):
-        if top:
-            self.abstract_value: _Value | VALUE_TOP = VALUE_TOP
-        else:
-            self.abstract_value: _Value | VALUE_TOP = _Value()
-
-    def __le__(self, other: AbstractValue):
-        if other.abstract_value == VALUE_TOP:
-            return True
-        if self.abstract_value == VALUE_TOP:
-            return False
-        return self.abstract_value <= other.abstract_value
-
-    def __iadd__(self, other: AbstractValue):
-        if self.abstract_value == VALUE_TOP or other.abstract_value == VALUE_TOP:
-            return VALUE_TOP
-        else:
-            self.abstract_value += other.abstract_value
-            return self.abstract_value
-
-    def __repr__(self):
-        return self.abstract_value.__repr__()
-
-    def inject_func_type(self, lab, func_type):
-        assert self.abstract_value != VALUE_TOP
-        self.abstract_value.inject_func_type(lab, func_type)
-
-    def inject_cls_type(self, lab, cls_type):
-        assert self.abstract_value != VALUE_TOP
-        self.abstract_value.inject_cls_type(lab, cls_type)
+    def inject_cls_type(self, lab, cls_type: ClsType):
+        self.type_dict[lab] = cls_type
 
     def inject_int_type(self):
-        assert self.abstract_value != VALUE_TOP
-        self.abstract_value.inject_int_type()
+        self.type_dict[-1] = PRIM_INT
 
     def inject_bool_type(self):
-        assert self.abstract_value != VALUE_TOP
-        self.abstract_value.inject_bool_type()
+        self.type_dict[-2] = PRIM_BOOL
 
     def inject_none_type(self):
-        assert self.abstract_value != VALUE_TOP
-        self.abstract_value.inject_none_type()
+        self.type_dict[-3] = PRIM_NONE
 
     def extract_types(self):
-
+        return self.type_dict
 
 
 # Dict[str, AbstractValue|VALUE_TOP]
-class AbstractValueDict(defaultdict):
+class ValueDict(defaultdict):
     def __repr__(self):
         return dict.__repr__(self)
 
     def __missing__(self, key):
-        self[key] = value = AbstractValue(top=True)
+        self[key] = value = VALUE_TOP
         return value
 
-    def __le__(self, other: AbstractValueDict):
-        for key in self:
-            if key.startswith("__") and key.endswith("__"):
+    def issubset(self, this: Value | VALUE_TOP, other: Value | VALUE_TOP):
+        if other == VALUE_TOP:
+            return True
+        if this == VALUE_TOP:
+            return False
+        return this <= other
+
+    def union(self, this: Value | VALUE_TOP, other: Value | VALUE_TOP):
+        if this == VALUE_TOP or other == VALUE_TOP:
+            return VALUE_TOP
+        this += other
+        return this
+
+    # we use defaultdict, the default value of an unknown variable is TOP
+    # So we have to collect all variables
+    def __le__(self, other: ValueDict):
+        variables = self.keys() | other.keys()
+        for var in variables:
+            if var.startswith("__") and var.endswith("__"):
                 continue
-            if key not in other:
-                return False
-            if not self[key] <= other[key]:
+            if not self.issubset(self[var], other[var]):
                 return False
         return True
 
-    def __iadd__(self, other: AbstractValueDict):
-        for key in other:
-            if key.startswith("__") and key.endswith("__"):
+    def __iadd__(self, other: ValueDict):
+        variables = self.keys() | other.keys()
+        for var in variables:
+            if var.startswith("__") and var.endswith("__"):
                 continue
-            self[key] += other[key]
+            self[var] = self.union(self[var], other[var])
         return self
 
 
 SELF_FLAG = "self"
 INIT_FLAG = "19970303"
-INIT_FLAG_VALUE = _Value()
+INIT_FLAG_VALUE = Value()
 RETURN_FLAG = "__return__"

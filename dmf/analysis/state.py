@@ -18,7 +18,7 @@ import ast
 from dmf.analysis.flow_util import ProgramPoint
 from dmf.analysis.heap import Heap
 from dmf.analysis.stack import Stack, Frame
-from dmf.analysis.value import ClsObj, AbstractValue
+from dmf.analysis.value import ClsType, Value
 
 
 class State:
@@ -51,13 +51,13 @@ class State:
         res += "\n"
         return res
 
-    def add_heap_and_cls(self, heap_ctx: int, cls_obj: ClsObj):
+    def add_heap_and_cls(self, heap_ctx: int, cls_obj: ClsType):
         self.heap.add_heap_and_cls(heap_ctx, cls_obj)
 
     def read_field_from_heap(self, heap_ctx: int, field: str):
         return self.heap.read_from_field(heap_ctx, field)
 
-    def write_field_to_heap(self, heap_ctx: int, field: str, value: AbstractValue):
+    def write_field_to_heap(self, heap_ctx: int, field: str, value: Value):
         self.heap.write_to_field(heap_ctx, field, value)
 
     def push_frame_to_stack(self, frame: Frame):
@@ -113,7 +113,7 @@ def update_state(state1: State, state2: State | STATE_BOT):
 def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: State):
     lab, ctx = program_point
     if isinstance(expr, ast.Num):
-        value = AbstractValue()
+        value = Value()
         n = expr.n
         if isinstance(n, int):
             value.inject_int_type()
@@ -121,18 +121,18 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
             assert False
         return value
     elif isinstance(expr, ast.NameConstant):
-        value = AbstractValue()
+        value = Value()
         if expr.value is None:
             value.inject_none_type()
         else:
             value.inject_bool_type()
         return value
     elif isinstance(expr, (ast.Str, ast.JoinedStr)):
-        value = AbstractValue()
+        value = Value()
         value.inject_str()
         return value
     elif isinstance(expr, ast.Bytes):
-        value = AbstractValue()
+        value = Value()
         value.inject_byte()
         return value
     elif isinstance(expr, ast.Name):
@@ -154,7 +154,7 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
             # return value
             pass
     elif isinstance(expr, (ast.Compare, ast.BoolOp)):
-        value = AbstractValue()
+        value = Value()
         value.inject_bool(-1)
         return value
     elif isinstance(expr, ast.BinOp):
@@ -165,7 +165,7 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
         # value = Value()
         pass
     elif isinstance(expr, ast.List):
-        value = AbstractValue()
+        value = Value()
         value.inject_list(lab)
         return value
     else:

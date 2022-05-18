@@ -30,7 +30,7 @@ import sys
 import builtins
 
 from dmf.analysis.analysis import Analysis
-from dmf.analysis.value import Module, AbstractValueDict
+from dmf.analysis.value import Module, ValueDict
 
 _bootstrap_external = None
 
@@ -700,7 +700,7 @@ def _load_unlocked(spec):
             # A namespace package so do nothing.
         else:
             # create a namespace for execute module
-            module_namespace = AbstractValueDict()
+            module_namespace = ValueDict()
             # put dunner names into this ns
             module_namespace.update(module.__dict__)
             logging.debug("namespace {}".format(module_namespace))

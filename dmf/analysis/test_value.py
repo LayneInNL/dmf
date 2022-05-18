@@ -15,7 +15,7 @@
 from unittest import TestCase
 
 from dmf.analysis.prim import PRIM_NONE, PRIM_BOOL, PRIM_NUM, PRIM_BYTE, PRIM_STR
-from dmf.analysis.value import _Value, FuncObj, ClsObj
+from dmf.analysis.value import _Value, FuncObj, ClsType
 
 
 class TestValue(TestCase):
@@ -70,5 +70,5 @@ class TestValue(TestCase):
         value.inject_class_type(1, "test", [], {})
         value.inject_class_type(1, "test", [], {})
         res = value.extract_class_types()
-        cls_obj = ClsObj(1, "test", [], {})
+        cls_obj = ClsType(1, "test", [], {})
         self.assertEqual(res, {cls_obj})

@@ -15,15 +15,17 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from dmf.analysis.value import AbstractValueDict, AbstractValue
+from dmf.analysis.value import ValueDict, Value
 
 
 class Frame:
     def __init__(self, f_locals=None, f_back=None, f_globals=None, f_builtins=None):
-        self.f_locals: AbstractValueDict[str, AbstractValue] = f_locals
-        self.f_back: Frame | None = None if f_back is None else AbstractValueDict()
-        self.f_globals: AbstractValueDict[str, AbstractValue] = f_globals
-        self.f_builtins: AbstractValueDict[str, AbstractValue] = f_builtins
+        self.f_locals: ValueDict[str, Value] = f_locals
+        self.f_back: Frame | None = None if f_back is None else ValueDict()
+        self.f_globals: ValueDict[str, Value] = f_globals
+        self.f_builtins: ValueDict[str, Value] = (
+            ValueDict() if f_builtins is None else f_builtins
+        )
         self.is_module = None
 
     def __contains__(self, var):
@@ -64,10 +66,10 @@ class Frame:
 
         raise AttributeError
 
-    def write_var(self, var: str, value: AbstractValue):
+    def write_var(self, var: str, value: Value):
         self.f_locals[var] = value
 
-    def write_var_to_global(self, var: str, value: AbstractValue):
+    def write_var_to_global(self, var: str, value: Value):
         self.f_globals[var] = value
 
 
@@ -119,8 +121,8 @@ class Stack:
 
     def __iadd__(self, other: Stack):
         frame_pairs = zip(reversed(self.frames), reversed(other.frames))
-        for frame_pair in frame_pairs:
-            frame_pair[0] += frame_pair[1]
+        for frame_pair1, frame_pair2 in frame_pairs:
+            frame_pair1 += frame_pair2
         return self
 
     def __repr__(self):
@@ -148,7 +150,7 @@ class Stack:
     def next_ns(self):
         curr_frame = self.top_frame()
         new_frame = Frame(
-            f_locals=AbstractValueDict(),
+            f_locals=ValueDict(),
             f_back=curr_frame,
             f_globals=curr_frame.f_globals,
             f_builtins=curr_frame.f_builtins,
