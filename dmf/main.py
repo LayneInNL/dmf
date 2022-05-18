@@ -14,12 +14,11 @@
 
 import argparse
 import builtins
-import logging
 import os.path
 import sys
 
+from dmf.log.logger import logger
 
-logging.basicConfig(level=logging.DEBUG)
 parser = argparse.ArgumentParser()
 parser.add_argument("entry_file_path", help="the entry file path")
 
@@ -43,7 +42,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     entry_file_path = args.entry_file_path
     abs_path = os.path.abspath(entry_file_path)
-    logging.debug("Absolute entry file path is: {}".format(abs_path))
+    logger.debug("Absolute entry file path is: {}".format(abs_path))
 
     add_builtins_attributes()
     # our custom root path, simulating sys.path
@@ -51,7 +50,7 @@ if __name__ == "__main__":
     dir_name = os.path.dirname(entry_file_path)
     # dir_name = "C:\\Users\\Layne Liu\\PycharmProjects\\cfg\\dmf\\examples\\"
     sys.path.insert(0, dir_name)
-    logging.debug("updated sys.path {}".format(sys.path))
+    logger.debug("updated sys.path {}".format(sys.path))
 
     mod_file = os.path.basename(entry_file_path)
     mod_name = mod_file.rpartition(".")[0]

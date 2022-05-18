@@ -13,6 +13,7 @@
 #  limitations under the License.
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from typing import Dict, Any
 
@@ -56,6 +57,10 @@ class Int:
     def __repr__(self):
         return "int"
 
+    def setattr(self, key, value):
+        logging.debug("set attr to int, ignore")
+        pass
+
 
 class Bool:
     def __init__(self):
@@ -69,6 +74,10 @@ class Bool:
 
     def __repr__(self):
         return "bool"
+
+    def setattr(self, key, value):
+        logging.debug("set attr to bool, ignore")
+        pass
 
 
 class NoneType:
@@ -84,22 +93,27 @@ class NoneType:
     def __repr__(self):
         return "None"
 
+    def setattr(self, key, value):
+        logging.debug("set attr to none, ignore")
+        pass
+
 
 PRIM_INT = Int()
 PRIM_BOOL = Bool()
 PRIM_NONE = NoneType()
+print(id(PRIM_INT), id(PRIM_BOOL), id(PRIM_NONE))
 
 
 class FuncType:
-    def __init__(self, entry_lab, exit_lab):
-        self._name_ = None
+    def __init__(self, name, entry_lab, exit_lab):
+        self._name_ = name
         self._qualname_ = None
         self._module_ = None
         self._defaults_ = None
         self._code_ = (entry_lab, exit_lab)
         self._globals_ = None
         # to model real __dict__ in the function
-        self._dict_ = ValueDict()
+        self._dict_: ValueDict[str, Value] = ValueDict()
         self._closure_ = None
         self._kwdefaults_ = None
 
@@ -110,16 +124,22 @@ class FuncType:
         self._dict_ += other._dict_
         return self
 
+    def get_code(self):
+        return self._code_
+
+    def setattr(self, key, value):
+        self._dict_[key] = value
+
     # def __repr__(self):
     #     return self._dict_.__repr__()
 
 
 class ClsType:
-    def __init__(self, namespace: ValueDict):
+    def __init__(self, namespace: ValueDict[str, Value]):
         self._name_ = None
         self._module_ = None
         self._bases_ = None
-        self._dict_: ValueDict = namespace
+        self._dict_: ValueDict[str, Value] = namespace
 
     # def __repr__(self):
     #     return self._dict_.__repr__()
@@ -130,6 +150,32 @@ class ClsType:
     def __iadd__(self, other: ClsType):
         self._dict_ += other._dict_
         return self
+
+    def setattr(self, key, value):
+        self._dict_[key] = value
+
+    # get attributes based on name
+    def get_attribute(self, name) -> Value:
+        for attr_name in self._dict_:
+            if attr_name == name:
+                return self._dict_[name]
+        raise AttributeError
+
+
+class InsType:
+    def __init__(self, heap):
+        self._self_ = heap
+        self._dict_: ValueDict[str, Value] = ValueDict()
+
+    def __le__(self, other: InsType):
+        return self._dict_ <= other._dict_
+
+    def __iadd__(self, other: InsType):
+        self._dict_ += other._dict_
+        return self
+
+    def setattr(self, key, value):
+        self._dict_[key] = value
 
 
 # in order to denote TOP, we need a special value. Since python doesn't support algebraic data types,
@@ -157,7 +203,7 @@ class Module:
 # Either VALUE_TOP or have some values
 class Value:
     def __init__(self):
-        self.type_dict: Dict[int, Any] = {}
+        self.type_dict: Dict[int, FuncType | ClsType | Int | Bool | NoneType] = {}
 
     def __le__(self, other: Value):
         for k in self.type_dict:
@@ -179,6 +225,9 @@ class Value:
     def __repr__(self):
         return self.type_dict.__repr__()
 
+    def inject_heap_type(self, lab, ins_type):
+        self.type_dict[lab] = ins_type
+
     def inject_func_type(self, lab, func_type: FuncType):
         self.type_dict[lab] = func_type
 
@@ -196,6 +245,9 @@ class Value:
 
     def extract_types(self):
         return self.type_dict
+
+    def items(self):
+        return self.type_dict.items()
 
 
 # Dict[str, AbstractValue|VALUE_TOP]

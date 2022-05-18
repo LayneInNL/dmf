@@ -459,7 +459,7 @@ def _classify_pyc(data, name, exc_details):
     *data* is the contents of the pyc file. (Only the first 16 bytes are
     required, though.)
 
-    *name* is the name of the module being imported. It is used for logging.
+    *name* is the name of the module being imported. It is used for log.
 
     *exc_details* is a dictionary passed to ImportError if it raised for
     improved debugging.
@@ -495,7 +495,7 @@ def _validate_timestamp_pyc(data, source_mtime, source_size, name, exc_details):
 
     *source_size* is None or the size of the source file in bytes.
 
-    *name* is the name of the module being imported. It is used for logging.
+    *name* is the name of the module being imported. It is used for log.
 
     *exc_details* is a dictionary passed to ImportError if it raised for
     improved debugging.
@@ -520,7 +520,7 @@ def _validate_hash_pyc(data, source_hash, name, exc_details):
 
     *source_hash* is the importlib.util.source_hash() of the source file.
 
-    *name* is the name of the module being imported. It is used for logging.
+    *name* is the name of the module being imported. It is used for log.
 
     *exc_details* is a dictionary passed to ImportError if it raised for
     improved debugging.
