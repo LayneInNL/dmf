@@ -260,9 +260,10 @@ class InsType:
 # we have to use functions outside class to do operations.
 
 
-class Module:
+class ModuleType:
     def __init__(self, state):
         self._name_ = None
+        self._package_ = None
         self._file_ = None
         self._dict_ = None
         self.state = state

@@ -25,12 +25,12 @@ work. One should use importlib as the public-facing version of this module.
 import _imp
 import _thread
 import _weakref
-import logging
 import sys
 import builtins
 
 from dmf.analysis.analysis import Analysis
-from dmf.analysis.value import Module, ValueDict
+from dmf.analysis.value import ModuleType, ValueDict
+from dmf.log.logger import logger
 
 _bootstrap_external = None
 
@@ -702,13 +702,20 @@ def _load_unlocked(spec):
             # create a namespace for execute module
             module_namespace = ValueDict()
             # put dunner names into this ns
-            module_namespace.update(module.__dict__)
-            logging.debug("namespace {}".format(module_namespace))
+            module_namespace["__name__"] = module.__dict__["__name__"]
+            module_namespace["__package__"] = module.__dict__["__package__"]
+            module_namespace["__file__"] = module.__dict__["__file__"]
+            if "__path__" in module.__dict__:
+                module_namespace["__path__"] = module.__dict__["__path__"]
+
+            logger.warning("namespace {}".format(module_namespace))
             # execute module
             analysis = Analysis(spec.origin, module_namespace)
             analysis.compute_fixed_point()
             # update module ns
-            custom_module = Module(analysis.analysis_effect_list[analysis.final_point])
+            custom_module = ModuleType(
+                analysis.analysis_effect_list[analysis.final_point]
+            )
             # sync to global scope
             builtins.custom_analysis_modules[spec.name] = custom_module
             # spec.loader.exec_module(module)

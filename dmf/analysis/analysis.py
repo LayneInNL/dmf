@@ -29,7 +29,7 @@ from dmf.analysis.flow_util import (
     Lab,
     Basic_Flow,
 )
-from dmf.analysis.value import Module, Value, InsType, NoneType, Bool, Int
+from dmf.analysis.value import ModuleType, Value, InsType, NoneType, Bool, Int
 from dmf.analysis.stack import Frame
 from dmf.analysis.state import (
     State,
