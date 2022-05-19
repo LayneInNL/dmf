@@ -189,9 +189,10 @@ class Analysis(Base):
     def iterate(self):
         while self.work_list:
             program_point1, program_point2 = self.work_list.popleft()
+            logger.info("Current program point {}".format(program_point1))
             transferred: State | STATE_BOT = self.transfer(program_point1)
             old: State | STATE_BOT = self.analysis_list[program_point2]
-            logging.debug(
+            logger.debug(
                 "Lattice at {} is {}".format(
                     program_point1, self.analysis_list[program_point1]
                 )
@@ -241,14 +242,17 @@ class Analysis(Base):
         else:
             assert False
 
+    # deal with x.y()
     def LAMBDA_Attribute(
         self, program_point: ProgramPoint, receiver_value: Value, attr: str
     ):
+        # x has type ?
         for lab, typ in receiver_value:
             if isinstance(typ, ClsType):
-                self.lambda_class_init(program_point, typ)
+                attr_value: Value = typ.getattr(attr)
+                assert False
             elif isinstance(typ, FuncType):
-                self.lambda_func_call(program_point, typ)
+                assert False
             elif isinstance(typ, InsType):
                 self.lambda_method_call(program_point, typ, attr)
             else:
@@ -271,7 +275,6 @@ class Analysis(Base):
 
     # deal with cases such as name()
     def LAMBDA_Name(self, program_point: ProgramPoint, name: str):
-        call_lab, call_ctx = program_point
         state = self.analysis_list[program_point]
         # get abstract value of name
         value: Value = state.read_var_from_stack(name)
@@ -284,6 +287,9 @@ class Analysis(Base):
                 logger.warn(typ)
                 assert False
 
+    # deal with class initialization
+    # find __init__ method
+    # then use it to create class instance
     def lambda_class_init(self, program_point, typ: ClsType, attr: str = "__init__"):
         call_lab, call_ctx = program_point
         return_lab = self.get_return_label(call_lab)
@@ -304,7 +310,11 @@ class Analysis(Base):
                 logger.warn(init_func)
                 assert False
 
-    # instance.method(self)
+    # instance.method()
+    # in Python, two situations.
+    # 1. instance function. such as instance.method(args...)
+    # 2. class method. such as instance.method(self, args...)
+    # We support 1. now.
     def lambda_method_call(
         self, program_point: ProgramPoint, ins_type: InsType, attr: str
     ):
@@ -328,14 +338,15 @@ class Analysis(Base):
                     (return_lab, call_ctx),
                 )
                 self.IF.add(inter_flow)
-                heap = record(call_lab, call_ctx)
-                self.self_info[(entry_lab, call_ctx)] = (heap, "", None)
+                self.self_info[(entry_lab, new_ctx)] = (ins_type.get_heap(), "", None)
             elif isinstance(typ, ClsType):
                 self.lambda_class_init(program_point, typ)
             else:
                 logger.warn(typ)
                 assert False
 
+    # unbound func call
+    # func()
     def lambda_func_call(self, program_point: ProgramPoint, typ: FuncType):
         call_lab, call_ctx = program_point
         return_lab = self.get_return_label(call_lab)
@@ -459,7 +470,7 @@ class Analysis(Base):
             return_value = return_state.read_var_from_stack(RETURN_FLAG)
             # write value to name
             new_call_state.write_var_to_stack(stmt.id, return_value)
-            new_call_state.heap = new_return_state.heap
+            new_call_state.address = new_return_state.address
             return new_call_state
         else:
             assert False

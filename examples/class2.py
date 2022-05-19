@@ -13,10 +13,5 @@
 #  limitations under the License.
 
 
-class Test:
+class Test(object):
     a = 2
-
-
-class Test:
-    b = 2
-    a = 1 if True else False

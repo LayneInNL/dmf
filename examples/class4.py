@@ -15,7 +15,7 @@
 
 class Base:
     def __init__(self):
-        pass
+        self.a = 1
 
 
 b = Base()

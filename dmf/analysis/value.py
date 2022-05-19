@@ -308,25 +308,32 @@ class Value:
         return iter(self.type_dict.items())
 
     def inject_heap_type(self, lab, ins_type):
+        lab = id(ins_type)
         self.type_dict[lab] = ins_type
 
     def inject_func_type(self, lab, func_type: FuncType):
+        lab = id(func_type)
         self.type_dict[lab] = func_type
 
     def inject_cls_type(self, lab, cls_type: ClsType):
+        lab = id(cls_type)
         self.type_dict[lab] = cls_type
 
     def inject_int_type(self):
-        self.type_dict[-1] = PRIM_INT
+        lab = id(PRIM_INT)
+        self.type_dict[lab] = PRIM_INT
 
     def inject_bool_type(self):
-        self.type_dict[-2] = PRIM_BOOL
+        lab = id(PRIM_BOOL)
+        self.type_dict[lab] = PRIM_BOOL
 
     def inject_none_type(self):
-        self.type_dict[-3] = PRIM_NONE
+        lab = id(PRIM_NONE)
+        self.type_dict[lab] = PRIM_NONE
 
     def inject_str_type(self):
-        self.type_dict[-4] = PRIM_STR
+        lab = id(PRIM_STR)
+        self.type_dict[lab] = PRIM_STR
 
     def inject_bytes_type(self):
         self.type_dict[-5] = PRIM_BYTES

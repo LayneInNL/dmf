@@ -15,7 +15,12 @@
 
 class list:
     def __init__(self):
-        pass
+        self.value = AbstractValue()
+
+    def append(self, type):
+        self.value += type
 
 
 a = list()
+a.append()
+x = a.value

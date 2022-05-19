@@ -64,7 +64,7 @@ class Frame:
         if var in self.f_builtins:
             return self.f_builtins[var]
 
-        raise AttributeError
+        raise AttributeError(var)
 
     def write_var(self, var: str, value: Value):
         self.f_locals[var] = value

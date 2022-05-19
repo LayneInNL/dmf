@@ -45,7 +45,7 @@ class Singleton:
         if field in self.internal:
             return self.internal[field]
         else:
-            return self.cls_obj[field]
+            return self.cls_obj.getattr(field)
 
 
 class Summary:

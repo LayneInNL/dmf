@@ -56,14 +56,14 @@ class Int:
 
 
 class List:
-    def __init__(self, iter_types: Value = None):
+    def __init__(self):
         self.abstract_value = Value()
-        if iter_types:
-            self.abstract_value += iter_types
 
     def append(self, elt_type):
         self.abstract_value += elt_type
 
+
+l = list()
 
 # builtin objects, we use singleton objects
 PRIM_INT = Int()
