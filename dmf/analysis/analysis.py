@@ -16,11 +16,10 @@ from __future__ import annotations
 import ast
 import builtins
 import logging
-import os.path
 from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, Set
-from dmf.log.logger import logger
 
+import dmf.share
 from dmf.analysis.ctx_util import merge, record
 from dmf.analysis.flow_util import (
     ProgramPoint,
@@ -29,7 +28,6 @@ from dmf.analysis.flow_util import (
     Lab,
     Basic_Flow,
 )
-from dmf.analysis.value import ModuleType, Value, InsType, NoneType, Bool, Int
 from dmf.analysis.stack import Frame
 from dmf.analysis.state import (
     State,
@@ -37,6 +35,13 @@ from dmf.analysis.state import (
     update_state,
     STATE_BOT,
     compute_value_of_expr,
+)
+from dmf.analysis.value import (
+    InsType,
+    NoneType,
+    Bool,
+    Int,
+    ValueDict,
 )
 from dmf.analysis.value import (
     Value,
@@ -47,36 +52,19 @@ from dmf.analysis.value import (
     SELF_FLAG,
     INIT_FLAG_VALUE,
 )
-from dmf.flows import CFG, construct_CFG
+from dmf.flows import CFG
+from dmf.log.logger import logger
 
 
 class Base:
-    def __init__(self, entry_file_path: str):
+    def __init__(self, start_lab: int):
 
-        cfg: CFG = construct_CFG(entry_file_path)
-        # call them to builtins
-        builtins.flows.update(cfg.flows)
-        builtins.call_return_flows.update(cfg.call_return_flows)
-        builtins.blocks.update(cfg.blocks)
-        builtins.sub_cfgs.update(cfg.sub_cfgs)
-
-        self.flows: Set[Basic_Flow] = builtins.flows
-        self.call_return_flows: Set[Basic_Flow] = builtins.call_return_flows
-        self.blocks = builtins.blocks
-        self.sub_cfgs: Dict[Lab, CFG] = builtins.sub_cfgs
+        self.flows: Set[Basic_Flow] = dmf.share.flows
+        self.call_return_flows: Set[Basic_Flow] = dmf.share.call_return_flows
+        self.blocks = dmf.share.blocks
+        self.sub_cfgs: Dict[Lab, CFG] = dmf.share.sub_cfgs
         self.IF: Set[Inter_Flow] = set()
-        self.extremal_point: ProgramPoint = (cfg.start_block.bid, ())
-        self.final_point: ProgramPoint = (cfg.final_block.bid, ())
-
-        # working directory for the analyzed project
-        # mimic current working directory
-        self.work_dir = os.path.dirname(entry_file_path)
-        self.main_file = entry_file_path
-        # mimic sys.modules
-        self.proj_work_modules = {}
-        # mimic sys.path
-        self.proj_work_path = []
-        self.proj_work_path.append(self.work_dir)
+        self.extremal_point: ProgramPoint = (start_lab, ())
 
     def get_stmt_by_label(self, label: Lab):
         return self.blocks[label].stmt[0]
@@ -162,14 +150,13 @@ class Base:
 
 
 class Analysis(Base):
-    def __init__(self, file_path, module_ns):
-        file = file_path
-        super().__init__(file)
+    def __init__(self, start_lab):
+        super().__init__(start_lab)
         self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsType | None]] = {}
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: None = None
         self.analysis_effect_list = {}
-        self.extremal_value: State = State(ns=module_ns)
+        self.extremal_value: State = State(ns=ValueDict())
 
     def compute_fixed_point(self):
         self.initialize()

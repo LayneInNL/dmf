@@ -13,49 +13,53 @@
 #  limitations under the License.
 
 import argparse
-import builtins
 import os.path
 import sys
 
+from dmf.analysis.analysis import Analysis
+from dmf.analysis.state import State
+from dmf.analysis.value import ModuleType
 from dmf.log.logger import logger
+from dmf.share import (
+    modules,
+    analysis_modules,
+    create_and_update_cfg,
+)
 
 parser = argparse.ArgumentParser()
-parser.add_argument("entry_file_path", help="the entry file path")
+parser.add_argument("main", help="the main file path")
 
 
-def add_builtins_attributes():
+def add_builtins_attributes(path):
+    main_module = type(sys)("__main__")
+    main_module.__file__ = path
+    custom_main_module = ModuleType(State())
     # our custom modules, simulating sys.modules
-    builtins.analysis_modules = {}
+    modules["__main__"] = main_module
     # used in analysis
-    builtins.custom_analysis_modules = {}
-    # all flows used in analysis
-    builtins.flows = set()
-    # all call_return_flows
-    builtins.call_return_flows = set()
-    # all blocks
-    builtins.blocks = {}
-    # all sub_cfgs
-    builtins.sub_cfgs = {}
+    analysis_modules["__main__"] = custom_main_module
+
+
+def add_sys_path(path):
+    # our custom root path, simulating sys.path
+    # insert being analyzed dir into sys.path
+    # for example, dir_name = "C:\\Users\\Layne Liu\\PycharmProjects\\cfg\\dmf\\examples\\"
+    dir_name = os.path.dirname(path)
+    # insert to the beginning of sys.path
+    sys.path.insert(0, dir_name)
+    logger.debug("updated sys.path {}".format(sys.path))
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    entry_file_path = args.entry_file_path
-    abs_path = os.path.abspath(entry_file_path)
+    main_file_path = args.main
+    abs_path = os.path.abspath(main_file_path)
     logger.debug("Absolute entry file path is: {}".format(abs_path))
 
-    add_builtins_attributes()
-    # our custom root path, simulating sys.path
-    # insert being analyzed dir into sys.path
-    dir_name = os.path.dirname(entry_file_path)
-    # dir_name = "C:\\Users\\Layne Liu\\PycharmProjects\\cfg\\dmf\\examples\\"
-    sys.path.insert(0, dir_name)
-    logger.debug("updated sys.path {}".format(sys.path))
+    module_name = os.path.basename(abs_path).rpartition(".")[0]
+    # add_builtins_attributes(abs_path)
+    # add_sys_path(abs_path)
 
-    mod_file = os.path.basename(entry_file_path)
-    mod_name = mod_file.rpartition(".")[0]
-    # from analysis import Analysis
-    import dmf.static_importlib
-
-    main_module = dmf.static_importlib.import_module(mod_name)
-    print(main_module)
+    start_lab, _ = create_and_update_cfg(abs_path)
+    analysis = Analysis(start_lab)
+    analysis.compute_fixed_point()

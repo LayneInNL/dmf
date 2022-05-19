@@ -62,11 +62,11 @@ class Int(Prim):
         return "int"
 
     def setattr(self, key, value):
-        logger.warn("set attr to int, ignore")
+        logger.warning("set attr to int, ignore")
         assert False
 
     def getattr(self, key):
-        logger.warn("get attr from int, ignore")
+        logger.warning("get attr from int, ignore")
         assert False
 
 
@@ -84,11 +84,11 @@ class Bool(Prim):
         return "bool"
 
     def setattr(self, key, value):
-        logger.warn("set attr to bool, ignore")
+        logger.warning("set attr to bool, ignore")
         assert False
 
     def getattr(self, key):
-        logger.warn("get attr from bool, ignore")
+        logger.warning("get attr from bool, ignore")
         assert False
 
 
@@ -106,11 +106,11 @@ class NoneType(Prim):
         return "None"
 
     def setattr(self, key, value):
-        logger.warn("set attr to none, ignore")
+        logger.warning("set attr to none, ignore")
         assert False
 
     def getattr(self, key):
-        logger.warn("set attr from none, ignore")
+        logger.warning("set attr from none, ignore")
         assert False
 
 
@@ -128,11 +128,11 @@ class Str(Prim):
         return "None"
 
     def setattr(self, key, value):
-        logger.warn("set attr to none, ignore")
+        logger.warning("set attr to none, ignore")
         assert False
 
     def getattr(self, key):
-        logger.warn("set attr from none, ignore")
+        logger.warning("set attr from none, ignore")
         assert False
 
 
@@ -150,11 +150,11 @@ class Bytes(Prim):
         return "None"
 
     def setattr(self, key, value):
-        logger.warn("set attr to none, ignore")
+        logger.warning("set attr to none, ignore")
         assert False
 
     def getattr(self, key):
-        logger.warn("set attr from none, ignore")
+        logger.warning("set attr from none, ignore")
         assert False
 
 

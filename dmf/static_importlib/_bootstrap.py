@@ -24,13 +24,13 @@ work. One should use importlib as the public-facing version of this module.
 
 import _imp
 import _thread
+import _warnings
 import _weakref
 import sys
-import builtins
 
 from dmf.analysis.analysis import Analysis
-from dmf.analysis.value import ModuleType, ValueDict
-from dmf.log.logger import logger
+from dmf.analysis.value import ModuleType
+import dmf.share
 
 _bootstrap_external = None
 
@@ -699,31 +699,21 @@ def _load_unlocked(spec):
                 raise ImportError("missing loader", name=spec.name)
             # A namespace package so do nothing.
         else:
-            # create a namespace for execute module
-            module_namespace = ValueDict()
-            # put dunner names into this ns
-            module_namespace["__name__"] = module.__dict__["__name__"]
-            module_namespace["__package__"] = module.__dict__["__package__"]
-            module_namespace["__file__"] = module.__dict__["__file__"]
-            if "__path__" in module.__dict__:
-                module_namespace["__path__"] = module.__dict__["__path__"]
-
-            logger.warning("namespace {}".format(module_namespace))
             # execute module
-            analysis = Analysis(spec.origin, module_namespace)
+            start_lab, end_lab = dmf.share.create_and_update_cfg(module.__file__)
+            # call them to builtins
+            analysis = Analysis(start_lab)
             analysis.compute_fixed_point()
             # update module ns
-            custom_module = ModuleType(
-                analysis.analysis_effect_list[analysis.final_point]
-            )
+            custom_module = ModuleType(analysis.analysis_effect_list[(end_lab, ())])
             # sync to global scope
-            builtins.custom_analysis_modules[spec.name] = custom_module
+            dmf.share.analysis_modules[spec.name] = custom_module
             # spec.loader.exec_module(module)
 
     # We don't ensure that the import-related module attributes get
     # set in the builtins.analysis_modules replacement case.  Such modules are on
     # their own.
-    return builtins.analysis_modules[spec.name]
+    return dmf.share.modules[spec.name]
 
 
 # A method used during testing of _load_unlocked() and by
@@ -997,14 +987,14 @@ def _find_and_load_unlocked(name, import_):
     path = None
     parent = name.rpartition(".")[0]
     if parent:
-        if parent not in builtins.analysis_modules:
+        if parent not in dmf.share.modules:
             _call_with_frames_removed(import_, parent)
         # Crazy side-effects!
-        if name in builtins.analysis_modules:
+        if name in dmf.share.modules:
             # we need custom one
-            return builtins.custom_analysis_modules[name]
+            return dmf.share.analysis_modules[name]
             # return builtins.analysis_modules[name]
-        parent_module = builtins.analysis_modules[parent]
+        parent_module = dmf.share.modules[parent]
         try:
             path = parent_module.__path__
         except AttributeError:
@@ -1015,15 +1005,14 @@ def _find_and_load_unlocked(name, import_):
         raise ModuleNotFoundError(_ERR_MSG.format(name), name=name)
     else:
         module = _load_unlocked(spec)
-        custom_module = builtins.custom_analysis_modules[spec.name]
+        analysis_module = dmf.share.analysis_modules[spec.name]
     if parent:
         # Set the module as an attribute on its parent.
-        parent_module = builtins.analysis_modules[parent]
-        custom_parent_module = builtins.custom_analysis_modules[parent]
+        parent_module = dmf.share.modules[parent]
+        analysis_parent_module = dmf.share.analysis_modules[parent]
         setattr(parent_module, name.rpartition(".")[2], module)
-        custom_parent_module[name.rpartition(".")[2]] = custom_module
-        # setattr(custom_parent_module.namespace, name.rpartition(".")[2], custom_module)
-    return custom_module
+        analysis_parent_module[name.rpartition(".")[2]] = analysis_module
+    return analysis_module
 
 
 _NEEDS_LOADING = object()
@@ -1032,8 +1021,7 @@ _NEEDS_LOADING = object()
 def _find_and_load(name, import_):
     """Find and load the module."""
     with _ModuleLockManager(name):
-        module = builtins.analysis_modules.get(name, _NEEDS_LOADING)
-        custom_module = builtins.custom_analysis_modules.get(name, _NEEDS_LOADING)
+        module = dmf.share.modules.get(name, _NEEDS_LOADING)
         if module is _NEEDS_LOADING:
             return _find_and_load_unlocked(name, import_)
 
@@ -1044,7 +1032,7 @@ def _find_and_load(name, import_):
         raise ModuleNotFoundError(message, name=name)
 
     _lock_unlock_module(name)
-    return custom_module
+    return dmf.share.analysis_modules[name]
 
 
 def _gcd_import(name, package=None, level=0):

@@ -1,5 +1,5 @@
 """A pure Python implementation of import."""
-__all__ = ["__import__", "import_module", "invalidate_caches", "reload"]
+__all__ = ["import_module"]
 
 # Bootstrap help #####################################################
 
@@ -10,7 +10,7 @@ __all__ = ["__import__", "import_module", "invalidate_caches", "reload"]
 # of a fully initialised version (either the frozen one or the one
 # initialised below if the frozen one is not available).
 import _imp  # Just the builtin component, NOT the full Python module
-import builtins
+import dmf.share
 import sys
 
 from . import _bootstrap
@@ -77,49 +77,6 @@ import warnings
 # from ._bootstrap import __import__
 
 
-def invalidate_caches():
-    """Call the invalidate_caches() method on all meta path finders stored in
-    sys.meta_path (where implemented)."""
-    for finder in sys.meta_path:
-        if hasattr(finder, "invalidate_caches"):
-            finder.invalidate_caches()
-
-
-# def find_loader(name, path=None):
-#     """Return the loader for the specified module.
-#
-#     This is a backward-compatible wrapper around find_spec().
-#
-#     This function is deprecated in favor of importlib.util.find_spec().
-#
-#     """
-#     warnings.warn(
-#         "Deprecated since Python 3.4. " "Use importlib.util.find_spec() instead.",
-#         DeprecationWarning,
-#         stacklevel=2,
-#     )
-#     try:
-#         loader = sys.modules[name].__loader__
-#         if loader is None:
-#             raise ValueError("{}.__loader__ is None".format(name))
-#         else:
-#             return loader
-#     except KeyError:
-#         pass
-#     except AttributeError:
-#         raise ValueError("{}.__loader__ is not set".format(name)) from None
-#
-#     spec = _bootstrap._find_spec(name, path)
-#     # We won't worry about malformed specs (missing attributes).
-#     if spec is None:
-#         return None
-#     if spec.loader is None:
-#         if spec.submodule_search_locations is None:
-#             raise ImportError("spec for {} missing loader".format(name), name=name)
-#         raise ImportError("namespace packages do not have loaders", name=name)
-#     return spec.loader
-
-
 def import_module(name, package=None):
     """Import a module.
 
@@ -143,53 +100,6 @@ def import_module(name, package=None):
     return _bootstrap._gcd_import(name[level:], package, level)
 
 
-builtins.import_module = import_module
+dmf.share.static_import_module = import_module
 
 _RELOADING = {}
-
-
-def reload(module):
-    """Reload the module and return it.
-
-    The module must have been successfully imported before.
-
-    """
-    if not module or not isinstance(module, types.ModuleType):
-        raise TypeError("reload() argument must be a module")
-    try:
-        name = module.__spec__.name
-    except AttributeError:
-        name = module.__name__
-
-    if builtin.analysis_modules.get(name) is not module:
-        msg = "module {} not in builtin.analysis_modules"
-        raise ImportError(msg.format(name), name=name)
-    if name in _RELOADING:
-        return _RELOADING[name]
-    _RELOADING[name] = module
-    try:
-        parent_name = name.rpartition(".")[0]
-        if parent_name:
-            try:
-                parent = builtin.analysis_modules[parent_name]
-            except KeyError:
-                msg = "parent {!r} not in builtin.analysis_modules"
-                raise ImportError(msg.format(parent_name), name=parent_name) from None
-            else:
-                pkgpath = parent.__path__
-        else:
-            pkgpath = None
-        target = module
-        spec = module.__spec__ = _bootstrap._find_spec(name, pkgpath, target)
-        if spec is None:
-            raise ModuleNotFoundError(
-                f"spec not found for the module {name!r}", name=name
-            )
-        _bootstrap._exec(spec, module)
-        # The module may have replaced itself in builtin.analysis_modules!
-        return builtin.analysis_modules[name]
-    finally:
-        try:
-            del _RELOADING[name]
-        except KeyError:
-            pass
