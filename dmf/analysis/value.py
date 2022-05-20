@@ -13,6 +13,18 @@
 #  limitations under the License.
 from __future__ import annotations
 
+from dmf.analysis.prim import (
+    PRIM_BOOL_ID,
+    PRIM_INT_ID,
+    PRIM_INT,
+    PRIM_BOOL,
+    PRIM_NONE_ID,
+    PRIM_NONE,
+    PRIM_STR_ID,
+    PRIM_STR,
+    PRIM_BYTES_ID,
+    PRIM_BYTES,
+)
 from dmf.log.logger import logger
 from collections import defaultdict
 from typing import Dict, Any
@@ -42,132 +54,6 @@ def static_merge(mro_list):
             )
     else:
         raise TypeError("No legal mro")
-
-
-class Prim:
-    pass
-
-
-class Int(Prim):
-    def __init__(self):
-        pass
-
-    def __le__(self, other: Int):
-        return True
-
-    def __iadd__(self, other: Int):
-        return self
-
-    def __repr__(self):
-        return "int"
-
-    def setattr(self, key, value):
-        logger.warning("set attr to int, ignore")
-        assert False
-
-    def getattr(self, key):
-        logger.warning("get attr from int, ignore")
-        assert False
-
-
-class Bool(Prim):
-    def __init__(self):
-        pass
-
-    def __le__(self, other: Bool):
-        return True
-
-    def __iadd__(self, other: Bool):
-        return self
-
-    def __repr__(self):
-        return "bool"
-
-    def setattr(self, key, value):
-        logger.warning("set attr to bool, ignore")
-        assert False
-
-    def getattr(self, key):
-        logger.warning("get attr from bool, ignore")
-        assert False
-
-
-class NoneType(Prim):
-    def __init__(self):
-        pass
-
-    def __le__(self, other: NoneType):
-        return True
-
-    def __iadd__(self, other):
-        return self
-
-    def __repr__(self):
-        return "None"
-
-    def setattr(self, key, value):
-        logger.warning("set attr to none, ignore")
-        assert False
-
-    def getattr(self, key):
-        logger.warning("set attr from none, ignore")
-        assert False
-
-
-class Str(Prim):
-    def __init__(self):
-        pass
-
-    def __le__(self, other: Str):
-        return True
-
-    def __iadd__(self, other: Str):
-        return self
-
-    def __repr__(self):
-        return "None"
-
-    def setattr(self, key, value):
-        logger.warning("set attr to none, ignore")
-        assert False
-
-    def getattr(self, key):
-        logger.warning("set attr from none, ignore")
-        assert False
-
-
-class Bytes(Prim):
-    def __init__(self):
-        pass
-
-    def __le__(self, other: Bytes):
-        return True
-
-    def __iadd__(self, other: Bytes):
-        return self
-
-    def __repr__(self):
-        return "None"
-
-    def setattr(self, key, value):
-        logger.warning("set attr to none, ignore")
-        assert False
-
-    def getattr(self, key):
-        logger.warning("set attr from none, ignore")
-        assert False
-
-
-PRIM_INT = Int()
-PRIM_INT_ID = id(PRIM_INT)
-PRIM_BOOL = Bool()
-PRIM_BOOL_ID = id(PRIM_BOOL)
-PRIM_NONE = NoneType()
-PRIM_NONE_ID = id(PRIM_NONE)
-PRIM_STR = Str()
-PRIM_STR_ID = id(PRIM_STR)
-PRIM_BYTES = Bytes()
-PRIM_BYTES_ID = id(PRIM_BYTES)
 
 
 class FuncType:
@@ -328,23 +214,27 @@ class Value:
         return res
 
     def inject_int_type(self):
-        lab = id(PRIM_INT)
+        lab = PRIM_INT_ID
         self.type_dict[lab] = PRIM_INT
 
+    def inject_float_type(self):
+        pass
+
     def inject_bool_type(self):
-        lab = id(PRIM_BOOL)
+        lab = PRIM_BOOL_ID
         self.type_dict[lab] = PRIM_BOOL
 
     def inject_none_type(self):
-        lab = id(PRIM_NONE)
+        lab = PRIM_NONE_ID
         self.type_dict[lab] = PRIM_NONE
 
     def inject_str_type(self):
-        lab = id(PRIM_STR)
+        lab = PRIM_STR_ID
         self.type_dict[lab] = PRIM_STR
 
     def inject_bytes_type(self):
-        self.type_dict[-5] = PRIM_BYTES
+        lab = PRIM_BYTES_ID
+        self.type_dict[lab] = PRIM_BYTES
 
 
 # Dict[str, AbstractValue|VALUE_TOP]

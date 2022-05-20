@@ -12,10 +12,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+a = b"ss"
+b = 0
+c = True
+d = c
+c = False
+d = None
+d = c
+d = a
+e = "hello"
+f = ""
+g = f"cat"
+h = g
+k = None
+l = k
+d = l
+a = 1
 a = True
-b = False
-
-c1 = a and b
-c2 = b and a
-c3 = a or b
-c4 = b or a
+e = a > b

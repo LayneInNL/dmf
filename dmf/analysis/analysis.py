@@ -27,6 +27,7 @@ from dmf.analysis.flow_util import (
     Lab,
     Basic_Flow,
 )
+from dmf.analysis.prim import Int, Bool, NoneType
 from dmf.analysis.stack import Frame
 from dmf.analysis.state import (
     State,
@@ -37,10 +38,6 @@ from dmf.analysis.state import (
 )
 from dmf.analysis.value import (
     InsType,
-    NoneType,
-    Bool,
-    Int,
-    ValueDict,
 )
 from dmf.analysis.value import (
     Value,
@@ -52,7 +49,10 @@ from dmf.analysis.value import (
     INIT_FLAG_VALUE,
 )
 from dmf.flows import CFG
+from dmf.flows.flows import BasicBlock
 from dmf.log.logger import logger
+
+empty_context = ()
 
 
 class Base:
@@ -60,10 +60,10 @@ class Base:
 
         self.flows: Set[Basic_Flow] = dmf.share.flows
         self.call_return_flows: Set[Basic_Flow] = dmf.share.call_return_flows
-        self.blocks = dmf.share.blocks
+        self.blocks: Dict[Lab, BasicBlock] = dmf.share.blocks
         self.sub_cfgs: Dict[Lab, CFG] = dmf.share.sub_cfgs
-        self.IF: Set[Inter_Flow] = set()
-        self.extremal_point: ProgramPoint = (start_lab, ())
+        self.inter_flows: Set[Inter_Flow] = set()
+        self.extremal_point: ProgramPoint = (start_lab, empty_context)
 
     def get_stmt_by_label(self, label: Lab):
         return self.blocks[label].stmt[0]
@@ -75,7 +75,7 @@ class Base:
         return False
 
     def is_entry_point(self, program_point: ProgramPoint):
-        for _, entry_point, _, _ in self.IF:
+        for _, entry_point, _, _ in self.inter_flows:
             if program_point == entry_point:
                 return True
         return False
@@ -92,7 +92,7 @@ class Base:
                 return call_label
 
     def get_call_point(self, program_point):
-        for call_point, _, _, return_point in self.IF:
+        for call_point, _, _, return_point in self.inter_flows:
             if program_point == return_point:
                 return call_point
 
@@ -129,7 +129,7 @@ class Base:
             entry_point,
             exit_point,
             return_point,
-        ) in self.IF:
+        ) in self.inter_flows:
             if program_point == call_point:
                 added.append((call_point, entry_point))
                 added.append((exit_point, return_point))
@@ -142,7 +142,7 @@ class Base:
             _,
             exit_point,
             return_point,
-        ) in self.IF:
+        ) in self.inter_flows:
             if program_point == exit_point:
                 added.append((exit_point, return_point))
         return added
@@ -154,8 +154,8 @@ class Analysis(Base):
         self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsType | None]] = {}
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: None = None
-        self.analysis_effect_list = {}
-        self.extremal_value: State = State(ns=ValueDict())
+        self.analysis_effect_list: None = None
+        self.extremal_value: State = State()
 
     def compute_fixed_point(self):
         self.initialize()
@@ -169,28 +169,32 @@ class Analysis(Base):
         self.analysis_list: defaultdict[ProgramPoint, State | STATE_BOT] = defaultdict(
             lambda: STATE_BOT
         )
+        self.analysis_effect_list = {}
         # update extremal label
         self.analysis_list[self.extremal_point] = self.extremal_value
 
     def iterate(self):
         while self.work_list:
             program_point1, program_point2 = self.work_list.popleft()
-            logger.info("Current program point {}".format(program_point1))
-            transferred: State | STATE_BOT = self.transfer(program_point1)
-            old: State | STATE_BOT = self.analysis_list[program_point2]
             logger.debug(
-                "Lattice at {} is {}".format(
+                "Current program point {} and lattice {}".format(
                     program_point1, self.analysis_list[program_point1]
                 )
             )
+            transferred: State | STATE_BOT = self.transfer(program_point1)
+            old: State | STATE_BOT = self.analysis_list[program_point2]
             if not issubset_state(transferred, old):
                 self.analysis_list[program_point2]: State = update_state(
                     transferred, old
                 )
-
                 self.LAMBDA(program_point2)
                 added_program_points = self.DELTA(program_point2)
                 self.work_list.extendleft(added_program_points)
+            logger.debug(
+                "Current program point {} and lattice {}".format(
+                    program_point2, self.analysis_list[program_point2]
+                )
+            )
 
     def present(self):
         for program_point, state in self.analysis_list.items():
@@ -250,7 +254,7 @@ class Analysis(Base):
         return_lab = self.get_return_label(call_lab)
         cfg = self.sub_cfgs[call_lab]
         self.add_sub_cfg(cfg)
-        self.IF.add(
+        self.inter_flows.add(
             (
                 (call_lab, call_ctx),
                 (cfg.start_block.bid, call_ctx),
@@ -289,7 +293,7 @@ class Analysis(Base):
                     (exit_lab, call_ctx),
                     (return_lab, call_ctx),
                 )
-                self.IF.add(inter_flow)
+                self.inter_flows.add(inter_flow)
                 heap = record(call_lab, call_ctx)
                 self.self_info[(entry_lab, call_ctx)] = (heap, INIT_FLAG, typ)
             else:
@@ -323,7 +327,7 @@ class Analysis(Base):
                     (exit_lab, new_ctx),
                     (return_lab, call_ctx),
                 )
-                self.IF.add(inter_flow)
+                self.inter_flows.add(inter_flow)
                 self.self_info[(entry_lab, new_ctx)] = (ins_type.get_heap(), "", None)
             elif isinstance(typ, ClsType):
                 self.lambda_class_init(program_point, typ)
@@ -344,11 +348,9 @@ class Analysis(Base):
             (exit_lab, new_ctx),
             (return_lab, call_ctx),
         )
-        self.IF.add(inter_flow)
+        self.inter_flows.add(inter_flow)
 
     def transfer(self, program_point: ProgramPoint) -> State | STATE_BOT:
-        logging.debug(f"Transfer {program_point}")
-
         lab, _ = program_point
         if self.analysis_list[program_point] == STATE_BOT:
             return STATE_BOT
@@ -362,7 +364,7 @@ class Analysis(Base):
         return self.do_transfer(program_point)
 
     def do_transfer(self, program_point: ProgramPoint) -> State:
-        label, context = program_point
+        label, _ = program_point
         stmt: ast.stmt = self.get_stmt_by_label(label)
         stmt_name: str = stmt.__class__.__name__
         handler = getattr(self, "transfer_" + stmt_name)
@@ -376,7 +378,6 @@ class Analysis(Base):
         new: State = old.copy()
 
         rhs_value = compute_value_of_expr(program_point, stmt.value, new)
-        assert len(stmt.targets) == 1
         target: ast.expr = stmt.targets[0]
         if isinstance(target, ast.Name):
             lhs_name: str = target.id

@@ -39,7 +39,6 @@ class Frame:
     def __iadd__(self, other: Frame):
         self.f_locals += other.f_locals
         self.f_globals += other.f_globals
-        self.f_builtins += other.f_builtins
         return self
 
     def __repr__(self):
@@ -59,11 +58,6 @@ class Frame:
 
         if var in self.f_globals:
             return self.f_globals[var]
-
-        try:
-            return self.f_builtins.read_var_from_module(var)
-        except AttributeError:
-            pass
 
         raise AttributeError(var)
 

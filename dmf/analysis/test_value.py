@@ -14,7 +14,13 @@
 
 from unittest import TestCase
 
-from dmf.analysis.prim import PRIM_NONE, PRIM_BOOL, PRIM_NUM, PRIM_BYTE, PRIM_STR
+from dmf.analysis.obsolete.prim import (
+    PRIM_NONE,
+    PRIM_BOOL,
+    PRIM_NUM,
+    PRIM_BYTE,
+    PRIM_STR,
+)
 from dmf.analysis.value import _Value, FuncObj, ClsType
 
 

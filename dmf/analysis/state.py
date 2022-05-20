@@ -18,23 +18,21 @@ import ast
 from dmf.analysis.flow_util import ProgramPoint
 from dmf.analysis.heap import Heap
 from dmf.analysis.stack import Stack, Frame
-from dmf.analysis.value import ClsType, Value, InsType, FuncType
+from dmf.analysis.value import ClsType, Value, InsType, FuncType, ValueDict
 from dmf.log.logger import logger
 
 
 class State:
-    def __init__(self, state: State = None, ns=None):
+    def __init__(self, state: State = None):
         if state is not None:
             self.stack: Stack = state.stack.copy()
             self.heap: Heap = state.heap.copy()
-        elif ns is not None:
-            # if state is None, it's the initial state
+        else:
             self.stack: Stack = Stack()
             self.heap: Heap = Heap()
-            frame: Frame = Frame(ns, None, ns, None)
+            initial_namespace = ValueDict()
+            frame: Frame = Frame(initial_namespace, None, initial_namespace, None)
             self.push_frame_to_stack(frame)
-        else:
-            assert False
 
     def __le__(self, other: State):
         return self.stack <= other.stack and self.heap <= other.heap
@@ -112,7 +110,6 @@ def update_state(state1: State, state2: State | STATE_BOT):
 
 
 def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: State):
-    lab, ctx = program_point
     if isinstance(expr, ast.Num):
         value = Value()
         n = expr.n
@@ -134,7 +131,11 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
         return value
     elif isinstance(expr, ast.Bytes):
         value = Value()
-        value.inject_byte()
+        value.inject_bytes_type()
+        return value
+    elif isinstance(expr, ast.Compare):
+        value = Value()
+        value.inject_bool_type()
         return value
     elif isinstance(expr, ast.Name):
         return state.read_var_from_stack(expr.id)
@@ -155,7 +156,6 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
             else:
                 logger.warn(typ)
         return value
-
     elif isinstance(expr, ast.Call):
         if isinstance(expr.func, ast.Name):
             return compute_value_of_expr(program_point, expr.func, state)
@@ -178,10 +178,6 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
                 else:
                     logger.warn(typ)
             return value
-    elif isinstance(expr, (ast.Compare, ast.BoolOp)):
-        value = Value()
-        value.inject_bool_type()
-        return value
     elif isinstance(expr, ast.BinOp):
         # left_value = compute_value_of_expr(expr.left, state)
         # right_value = compute_value_of_expr(expr.right, state)
@@ -189,9 +185,5 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
         # right_prims = right_value.extract_prim_types()
         # value = Value()
         pass
-    elif isinstance(expr, ast.List):
-        value = Value()
-        value.inject_list(lab)
-        return value
     else:
         assert False
