@@ -31,3 +31,7 @@ def create_and_update_cfg(file_path):
     blocks.update(cfg.blocks)
     sub_cfgs.update(cfg.sub_cfgs)
     return cfg.start_block.bid, cfg.final_block.bid
+
+
+# static_builtins simulate builtins
+static_builtins = None

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+import dmf.share
 from dmf.analysis.value import ValueDict, Value
 
 
@@ -23,9 +24,7 @@ class Frame:
         self.f_locals: ValueDict[str, Value] = f_locals
         self.f_back: Frame | None = None if f_back is None else ValueDict()
         self.f_globals: ValueDict[str, Value] = f_globals
-        self.f_builtins: ValueDict[str, Value] = (
-            ValueDict() if f_builtins is None else f_builtins
-        )
+        self.f_builtins = dmf.share.static_builtins
         self.is_module = None
 
     def __contains__(self, var):
@@ -61,8 +60,10 @@ class Frame:
         if var in self.f_globals:
             return self.f_globals[var]
 
-        if var in self.f_builtins:
-            return self.f_builtins[var]
+        try:
+            return self.f_builtins.read_var_from_module(var)
+        except AttributeError:
+            pass
 
         raise AttributeError(var)
 

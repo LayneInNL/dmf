@@ -269,16 +269,16 @@ def _requires_frozen(fxn):
 
 # Typically used by loader classes as a method replacement.
 def _load_module_shim(self, fullname):
-    """Load the specified module into builtins.analysis_modules and return it.
+    """Load the specified module into dmf.share.modules and return it.
 
     This method is deprecated.  Use loader.exec_module instead.
 
     """
     spec = spec_from_loader(fullname, self)
-    if fullname in builtins.analysis_modules:
-        module = builtins.analysis_modules[fullname]
+    if fullname in dmf.share.modules:
+        module = dmf.share.modules[fullname]
         _exec(spec, module)
-        return builtins.analysis_modules[fullname]
+        return dmf.share.modules[fullname]
     else:
         return _load(spec)
 
@@ -328,18 +328,18 @@ class _installed_safely:
         self._spec = module.__spec__
 
     def __enter__(self):
-        # This must be done before putting the module in builtins.analysis_modules
+        # This must be done before putting the module in dmf.share.modules
         # (otherwise an optimization shortcut in import.c becomes
         # wrong)
         self._spec._initializing = True
-        builtins.analysis_modules[self._spec.name] = self._module
+        dmf.share.modules[self._spec.name] = self._module
 
     def __exit__(self, *args):
         try:
             spec = self._spec
             if any(arg is not None for arg in args):
                 try:
-                    del builtins.analysis_modules[spec.name]
+                    del dmf.share.modules[spec.name]
                 except KeyError:
                     pass
             else:
@@ -635,8 +635,8 @@ def _exec(spec, module):
     """Execute the spec's specified module in an existing module's namespace."""
     name = spec.name
     with _ModuleLockManager(name):
-        if builtins.analysis_modules.get(name) is not module:
-            msg = "module {!r} not in builtins.analysis_modules".format(name)
+        if dmf.share.modules.get(name) is not module:
+            msg = "module {!r} not in dmf.share.modules".format(name)
             raise ImportError(msg, name=name)
         if spec.loader is None:
             if spec.submodule_search_locations is None:
@@ -652,7 +652,7 @@ def _exec(spec, module):
             spec.loader.load_module(name)
         else:
             spec.loader.exec_module(module)
-    return builtins.analysis_modules[name]
+    return dmf.share.modules[name]
 
 
 def _load_backward_compatible(spec):
@@ -660,8 +660,8 @@ def _load_backward_compatible(spec):
     # have exec_module() implemented, we can add a deprecation
     # warning here.
     spec.loader.load_module(spec.name)
-    # The module must be in builtins.analysis_modules at this point!
-    module = builtins.analysis_modules[spec.name]
+    # The module must be in dmf.share.modules at this point!
+    module = dmf.share.modules[spec.name]
     if getattr(module, "__loader__", None) is None:
         try:
             module.__loader__ = spec.loader
@@ -711,7 +711,7 @@ def _load_unlocked(spec):
             # spec.loader.exec_module(module)
 
     # We don't ensure that the import-related module attributes get
-    # set in the builtins.analysis_modules replacement case.  Such modules are on
+    # set in the dmf.share.modules replacement case.  Such modules are on
     # their own.
     return dmf.share.modules[spec.name]
 
@@ -723,7 +723,7 @@ def _load(spec):
 
     The module is not added to its parent.
 
-    If a module is already in builtins.analysis_modules, that existing module gets
+    If a module is already in dmf.share.modules, that existing module gets
     clobbered.
 
     """
@@ -926,10 +926,10 @@ def _find_spec(name, path, target=None):
     if not meta_path:
         _warnings.warn("sys.meta_path is empty", ImportWarning)
 
-    # We check builtins.analysis_modules here for the reload case.  While a passed-in
+    # We check dmf.share.modules here for the reload case.  While a passed-in
     # target will usually indicate a reload there is no guarantee, whereas
-    # builtins.analysis_modules provides one.
-    is_reload = name in builtins.analysis_modules
+    # dmf.share.modules provides one.
+    is_reload = name in dmf.share.modules
     for finder in meta_path:
         with _ImportLockContext():
             try:
@@ -942,8 +942,8 @@ def _find_spec(name, path, target=None):
                 spec = find_spec(name, path, target)
         if spec is not None:
             # The parent import may have already imported this module.
-            if not is_reload and name in builtins.analysis_modules:
-                module = builtins.analysis_modules[name]
+            if not is_reload and name in dmf.share.modules:
+                module = dmf.share.modules[name]
                 try:
                     __spec__ = module.__spec__
                 except AttributeError:
@@ -993,7 +993,7 @@ def _find_and_load_unlocked(name, import_):
         if name in dmf.share.modules:
             # we need custom one
             return dmf.share.analysis_modules[name]
-            # return builtins.analysis_modules[name]
+            # return dmf.share.modules[name]
         parent_module = dmf.share.modules[parent]
         try:
             path = parent_module.__path__
@@ -1026,9 +1026,7 @@ def _find_and_load(name, import_):
             return _find_and_load_unlocked(name, import_)
 
     if module is None:
-        message = "import of {} halted; " "None in builtins.analysis_modules".format(
-            name
-        )
+        message = "import of {} halted; " "None in dmf.share.modules".format(name)
         raise ModuleNotFoundError(message, name=name)
 
     _lock_unlock_module(name)
@@ -1083,8 +1081,7 @@ def _handle_fromlist(module, fromlist, import_, *, recursive=False):
                     # exist.
                     if (
                         exc.name == from_name
-                        and builtins.analysis_modules.get(from_name, _NEEDS_LOADING)
-                        is not None
+                        and dmf.share.modules.get(from_name, _NEEDS_LOADING) is not None
                     ):
                         continue
                     raise
@@ -1153,9 +1150,7 @@ def __import__(name, globals=None, locals=None, fromlist=(), level=0):
             cut_off = len(name) - len(name.partition(".")[0])
             # Slice end needs to be positive to alleviate need to special-case
             # when ``'.' not in name``.
-            return builtins.analysis_modules[
-                module.__name__[: len(module.__name__) - cut_off]
-            ]
+            return dmf.share.modules[module.__name__[: len(module.__name__) - cut_off]]
     else:
         return _handle_fromlist(module, fromlist, _gcd_import)
 
@@ -1206,7 +1201,7 @@ def _setup(sys_module, _imp_module):
 #     """Setup importlib by importing needed built-in modules and injecting them
 #     into the global namespace.
 #
-#     As sys is needed for builtins.analysis_modules access and _imp is needed to load built-in
+#     As sys is needed for dmf.share.modules access and _imp is needed to load built-in
 #     modules, those two modules must be explicitly passed in.
 #
 #     """
@@ -1216,7 +1211,7 @@ def _setup(sys_module, _imp_module):
 #
 #     # Set up the spec for existing builtin/frozen modules.
 #     module_type = type(sys)
-#     for name, module in builtins.analysis_modules.items():
+#     for name, module in dmf.share.modules.items():
 #         if isinstance(module, module_type):
 #             if name in sys.builtin_module_names:
 #                 loader = BuiltinImporter
@@ -1228,12 +1223,12 @@ def _setup(sys_module, _imp_module):
 #             _init_module_attrs(spec, module)
 #
 #     # Directly load built-in modules needed during bootstrap.
-#     self_module = builtins.analysis_modules[__name__]
+#     self_module = dmf.share.modules[__name__]
 #     for builtin_name in ("_thread", "_warnings", "_weakref"):
-#         if builtin_name not in builtins.analysis_modules:
+#         if builtin_name not in dmf.share.modules:
 #             builtin_module = _builtin_from_name(builtin_name)
 #         else:
-#             builtin_module = builtins.analysis_modules[builtin_name]
+#             builtin_module = dmf.share.modules[builtin_name]
 #         setattr(self_module, builtin_name, builtin_module)
 #
 
@@ -1252,4 +1247,4 @@ def _install_external_importers():
     import _frozen_importlib_external
 
     _bootstrap_external = _frozen_importlib_external
-    _frozen_importlib_external._install(builtins.analysis_modules[__name__])
+    _frozen_importlib_external._install(dmf.share.modules[__name__])

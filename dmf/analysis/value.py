@@ -208,6 +208,7 @@ class ClsType:
         self._name_ = None
         self._module_ = None
         self._bases_ = None
+        self._mro_ = None
         self._dict_: ValueDict[str, Value] = namespace
 
     # def __repr__(self):
@@ -318,6 +319,13 @@ class Value:
     def inject_cls_type(self, lab, cls_type: ClsType):
         lab = id(cls_type)
         self.type_dict[lab] = cls_type
+
+    def extract_cls_type(self):
+        res = []
+        for lab, typ in self.type_dict:
+            if isinstance(typ, ClsType):
+                res.append(typ)
+        return res
 
     def inject_int_type(self):
         lab = id(PRIM_INT)

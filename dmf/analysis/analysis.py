@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import ast
-import builtins
 import logging
 from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, Set
@@ -447,8 +446,6 @@ class Analysis(Base):
         elif isinstance(stmt, ast.Name):
             return_state = self.analysis_list[program_point]
             # get a copy of heap
-            new_return_state = return_state.copy()
-
             call_label = self.get_call_label(return_lab)
             call_state: State = self.analysis_list[(call_label, return_ctx)]
             # get a copy of stack
@@ -457,7 +454,6 @@ class Analysis(Base):
             return_value = return_state.read_var_from_stack(RETURN_FLAG)
             # write value to name
             new_call_state.write_var_to_stack(stmt.id, return_value)
-            new_call_state.address = new_return_state.address
             return new_call_state
         else:
             assert False
@@ -469,7 +465,7 @@ class Analysis(Base):
         stmt: ast.Import = self.get_stmt_by_label(lab)
         module_name = stmt.names[0].name
         as_name = stmt.names[0].asname
-        mod = builtins.import_module(module_name)
+        mod = dmf.share.static_import_module(module_name)
         value = Value()
         if as_name is None:
             # no asname
@@ -489,7 +485,7 @@ class Analysis(Base):
         module_name = "" if stmt.module is None else stmt.module
         dot_number = "." * stmt.level
         package = new.read_var_from_stack("__package__")
-        mod = builtins.import_module(
+        mod = dmf.share.static_import_module(
             name=dot_number + module_name,
             package=package,
         )

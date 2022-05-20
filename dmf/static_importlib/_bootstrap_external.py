@@ -20,6 +20,7 @@ work. One should use importlib as the public-facing version of this module.
 # anything specified at the class level.
 
 # Bootstrap-related code ######################################################
+import _warnings
 import builtins
 
 _CASE_INSENSITIVE_PLATFORMS_STR_KEY = ("win",)
