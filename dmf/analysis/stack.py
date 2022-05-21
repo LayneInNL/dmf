@@ -13,18 +13,16 @@
 #  limitations under the License.
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import List
 
-import dmf.share
 from dmf.analysis.value import ValueDict, Value
 
 
 class Frame:
-    def __init__(self, f_locals=None, f_back=None, f_globals=None, f_builtins=None):
+    def __init__(self, f_locals=None, f_back=None, f_globals=None):
         self.f_locals: ValueDict[str, Value] = f_locals
-        self.f_back: Frame | None = None if f_back is None else ValueDict()
+        self.f_back: Frame | None = f_back
         self.f_globals: ValueDict[str, Value] = f_globals
-        self.f_builtins = dmf.share.static_builtins
         self.is_module = None
 
     def __contains__(self, var):

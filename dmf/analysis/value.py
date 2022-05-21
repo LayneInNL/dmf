@@ -57,12 +57,12 @@ def static_merge(mro_list):
 
 
 class FuncType:
-    def __init__(self, name, entry_lab, exit_lab):
+    def __init__(self, name, code):
         self._name_ = name
         self._qualname_ = None
         self._module_ = None
         self._defaults_ = None
-        self._code_ = (entry_lab, exit_lab)
+        self._code_ = code
         self._globals_ = None
         # to model real __dict__ in the function
         self._dict_: ValueDict[str, Value] = ValueDict()
@@ -110,20 +110,13 @@ class ClsType:
     def setattr(self, key, value):
         self._dict_[key] = value
 
-    # get attributes based on name
-    def get_attribute(self, name) -> Value:
-        for attr_name in self._dict_:
-            if attr_name == name:
-                return self._dict_[name]
-        raise AttributeError
-
     def getattr(self, key):
         return self._dict_[key]
 
 
 class InsType:
-    def __init__(self, heap):
-        self._self_ = heap
+    def __init__(self, addr):
+        self._self_ = addr
         self._dict_: ValueDict[str, Value] = ValueDict()
 
     def __le__(self, other: InsType):
@@ -169,15 +162,14 @@ class ModuleType:
 # Either VALUE_TOP or have some values
 class Value:
     def __init__(self):
-        self.type_dict: Dict[int, FuncType | ClsType | InsType | Prim] = {}
+        self.type_dict = {}
 
     def __le__(self, other: Value):
         for k in self.type_dict:
             if k not in other.type_dict:
                 return False
-            else:
-                if not self.type_dict[k] <= other.type_dict[k]:
-                    return False
+            elif not self.type_dict[k] <= other.type_dict[k]:
+                return False
         return True
 
     def __iadd__(self, other: Value):

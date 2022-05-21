@@ -31,7 +31,7 @@ class State:
             self.stack: Stack = Stack()
             self.heap: Heap = Heap()
             initial_namespace = ValueDict()
-            frame: Frame = Frame(initial_namespace, None, initial_namespace, None)
+            frame: Frame = Frame(initial_namespace, None, initial_namespace)
             self.push_frame_to_stack(frame)
 
     def __le__(self, other: State):

@@ -26,6 +26,7 @@ from dmf.analysis.flow_util import (
     Inter_Flow,
     Lab,
     Basic_Flow,
+    Ctx,
 )
 from dmf.analysis.prim import Int, Bool, NoneType
 from dmf.analysis.stack import Frame
@@ -265,10 +266,11 @@ class Analysis(Base):
 
     # deal with cases such as name()
     def LAMBDA_Name(self, program_point: ProgramPoint, name: str):
-        state = self.analysis_list[program_point]
+        state: State = self.analysis_list[program_point]
         # get abstract value of name
         value: Value = state.read_var_from_stack(name)
-        for lab, typ in value:
+        # iterate all types to find which is callable
+        for _, typ in value:
             if isinstance(typ, ClsType):
                 self.lambda_class_init(program_point, typ)
             elif isinstance(typ, FuncType):
@@ -283,7 +285,7 @@ class Analysis(Base):
     def lambda_class_init(self, program_point, typ: ClsType, attr: str = "__init__"):
         call_lab, call_ctx = program_point
         return_lab = self.get_return_label(call_lab)
-        init_funcs = typ.get_attribute(attr)
+        init_funcs = typ.getattr(attr)
         for _, init_func in init_funcs:
             if isinstance(init_func, FuncType):
                 entry_lab, exit_lab = init_func.get_code()
@@ -339,9 +341,9 @@ class Analysis(Base):
     # func()
     def lambda_func_call(self, program_point: ProgramPoint, typ: FuncType):
         call_lab, call_ctx = program_point
-        return_lab = self.get_return_label(call_lab)
         entry_lab, exit_lab = typ.get_code()
-        new_ctx = merge(call_lab, None, call_ctx)
+        return_lab = self.get_return_label(call_lab)
+        new_ctx: Ctx = merge(call_lab, None, call_ctx)
         inter_flow = (
             (call_lab, call_ctx),
             (entry_lab, new_ctx),
@@ -447,12 +449,12 @@ class Analysis(Base):
         elif isinstance(stmt, ast.Name):
             return_state = self.analysis_list[program_point]
             # get a copy of heap
-            call_label = self.get_call_label(return_lab)
-            call_state: State = self.analysis_list[(call_label, return_ctx)]
+            call_point = self.get_call_point(program_point)
+            call_state: State = self.analysis_list[call_point]
             # get a copy of stack
-            new_call_state = call_state.copy()
+            new_call_state: State = call_state.copy()
 
-            return_value = return_state.read_var_from_stack(RETURN_FLAG)
+            return_value: Value = return_state.read_var_from_stack(RETURN_FLAG)
             # write value to name
             new_call_state.write_var_to_stack(stmt.id, return_value)
             return new_call_state
@@ -543,7 +545,7 @@ class Analysis(Base):
         entry_lab, exit_lab = func_cfg.start_block.bid, func_cfg.final_block.bid
 
         value = Value()
-        func_type = FuncType(func_name, entry_lab, exit_lab)
+        func_type = FuncType(func_name, (entry_lab, exit_lab))
         value.inject_func_type(lab, func_type)
 
         new.write_var_to_stack(func_name, value)
