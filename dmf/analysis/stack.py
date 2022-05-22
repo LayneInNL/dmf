@@ -146,6 +146,5 @@ class Stack:
             f_locals=ValueDict(),
             f_back=curr_frame,
             f_globals=curr_frame.f_globals,
-            f_builtins=curr_frame.f_builtins,
         )
         self.push_frame(new_frame)

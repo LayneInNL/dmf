@@ -150,13 +150,13 @@ class Base:
 
 
 class Analysis(Base):
-    def __init__(self, start_lab):
+    def __init__(self, start_lab, module_name):
         super().__init__(start_lab)
         self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsType | None]] = {}
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: None = None
         self.analysis_effect_list: None = None
-        self.extremal_value: State = State()
+        self.extremal_value: State = dmf.share.analysis_modules[module_name].get_state()
 
     def compute_fixed_point(self):
         self.initialize()
@@ -178,7 +178,7 @@ class Analysis(Base):
         while self.work_list:
             program_point1, program_point2 = self.work_list.popleft()
             logger.debug(
-                "Current program point {} and lattice {}".format(
+                "Current program point1 {} and lattice1 {}".format(
                     program_point1, self.analysis_list[program_point1]
                 )
             )
@@ -190,9 +190,10 @@ class Analysis(Base):
                 )
                 self.LAMBDA(program_point2)
                 added_program_points = self.DELTA(program_point2)
+                logger.debug("added flows {}".format(added_program_points))
                 self.work_list.extendleft(added_program_points)
             logger.debug(
-                "Current program point {} and lattice {}".format(
+                "Current program point2 {} and lattice2 {}".format(
                     program_point2, self.analysis_list[program_point2]
                 )
             )

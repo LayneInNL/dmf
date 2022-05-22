@@ -18,6 +18,8 @@ import sys
 
 import dmf.static_importlib
 from dmf.analysis.analysis import Analysis
+from dmf.analysis.state import State
+from dmf.analysis.value import ModuleType
 from dmf.log.logger import logger
 from dmf.share import (
     create_and_update_cfg,
@@ -27,10 +29,15 @@ parser = argparse.ArgumentParser()
 parser.add_argument("main", help="the main file path")
 
 
-# def add_builtins_module():
-#     static_builtins = dmf.static_importlib.import_module("static_builtins")
-#     logger.debug("abstract builtins module {}".format(static_builtins))
-#     dmf.share.static_builtins = static_builtins
+def add_builtins_module():
+    main_module = type(sys)("__main__")
+    dmf.share.modules["__main__"] = main_module
+    main_module.package = ""
+    main_state = State()
+    main_state.write_var_to_stack("__name__", "__main__")
+    main_state.write_var_to_stack("__package__", "")
+    analysis_main_module = ModuleType(main_state)
+    dmf.share.analysis_modules["__main__"] = analysis_main_module
 
 
 def add_sys_path(path):
@@ -51,9 +58,10 @@ if __name__ == "__main__":
 
     # module name
     main_module_name = os.path.basename(main_abs_path).rpartition(".")[0]
+    add_builtins_module()
     add_sys_path(main_abs_path)
 
     # load cfg of main module
     start_lab, end_lab = create_and_update_cfg(main_abs_path)
-    analysis = Analysis(start_lab)
+    analysis = Analysis(start_lab, "__main__")
     analysis.compute_fixed_point()

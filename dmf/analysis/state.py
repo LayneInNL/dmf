@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import ast
 
+import dmf.share
 from dmf.analysis.flow_util import ProgramPoint
-from dmf.analysis.heap import Heap
 from dmf.analysis.stack import Stack, Frame
 from dmf.analysis.value import ClsType, Value, InsType, FuncType, ValueDict
 from dmf.log.logger import logger
@@ -26,38 +26,23 @@ class State:
     def __init__(self, state: State = None):
         if state is not None:
             self.stack: Stack = state.stack.copy()
-            self.heap: Heap = state.heap.copy()
         else:
             self.stack: Stack = Stack()
-            self.heap: Heap = Heap()
             initial_namespace = ValueDict()
             frame: Frame = Frame(initial_namespace, None, initial_namespace)
             self.push_frame_to_stack(frame)
 
     def __le__(self, other: State):
-        return self.stack <= other.stack and self.heap <= other.heap
+        return self.stack <= other.stack
 
     def __iadd__(self, other: State):
         self.stack += other.stack
-        self.heap += other.heap
         return self
 
     def __repr__(self):
         res = "Stack: "
         res += self.stack.__repr__()
-        res += "\nHeap:"
-        res += self.heap.__repr__()
-        res += "\n"
         return res
-
-    def add_heap_and_cls(self, heap_ctx: int, cls_obj: ClsType):
-        self.heap.add_heap_and_cls(heap_ctx, cls_obj)
-
-    def read_field_from_heap(self, heap_ctx: int, field: str):
-        return self.heap.read_from_field(heap_ctx, field)
-
-    def write_field_to_heap(self, heap_ctx: int, field: str, value: Value):
-        self.heap.write_to_field(heap_ctx, field, value)
 
     def push_frame_to_stack(self, frame: Frame):
         self.stack.push_frame(frame)
@@ -70,9 +55,6 @@ class State:
 
     def stack_contains(self, name):
         return name in self.top_frame_on_stack()
-
-    def heap_contains(self, heap_context, field):
-        return (heap_context, field) in self.heap
 
     def read_var_from_stack(self, var: str):
         return self.stack.read_var(var)

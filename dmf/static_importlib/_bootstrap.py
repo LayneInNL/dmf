@@ -702,7 +702,7 @@ def _load_unlocked(spec):
             # execute module
             start_lab, end_lab = dmf.share.create_and_update_cfg(module.__file__)
             # call them to builtins
-            analysis = Analysis(start_lab)
+            analysis = Analysis(start_lab, module.__name__)
             analysis.compute_fixed_point()
             # update module ns
             custom_module = ModuleType(analysis.analysis_effect_list[(end_lab, ())])

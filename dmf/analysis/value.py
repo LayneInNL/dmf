@@ -151,6 +151,9 @@ class ModuleType:
     def read_var_from_module(self, var):
         return self.state.read_var_from_stack(var)
 
+    def get_state(self):
+        return self.state
+
     def __le__(self, other):
         return self.state <= other.state
 
