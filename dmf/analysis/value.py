@@ -33,29 +33,6 @@ from typing import Dict, Any
 VALUE_TOP = "VALUE_TOP"
 
 
-def static_c3(class_object):
-    if class_object is builtin_object:
-        return [class_object]
-    return [class_object] + static_merge(
-        [static_c3(base) for base in class_object.bases]
-    )
-
-
-def static_merge(mro_list):
-    if not any(mro_list):
-        return []
-    for candidate, *_ in mro_list:
-        if all(candidate not in tail for _, *tail in mro_list):
-            return [candidate] + static_merge(
-                [
-                    tail if head is candidate else [head, *tail]
-                    for head, *tail in mro_list
-                ]
-            )
-    else:
-        raise TypeError("No legal mro")
-
-
 class FuncType:
     def __init__(self, name, code):
         self._name_ = name
@@ -87,6 +64,19 @@ class FuncType:
 
     # def __repr__(self):
     #     return self._dict_.__repr__()
+
+
+class InsMethod:
+    def __init__(self, ins, func_type):
+        self._self_ = ins
+        self._func_ = func_type
+
+    def __le__(self, other: InsMethod):
+        return self._func_ <= other._func_
+
+    def __iadd__(self, other: InsMethod):
+        self._func_ += other._func_
+        return self
 
 
 class ClsType:
@@ -276,3 +266,28 @@ SELF_FLAG = "self"
 INIT_FLAG = "19970303"
 INIT_FLAG_VALUE = Value()
 RETURN_FLAG = "__return__"
+
+builtin_object = ClsType(ValueDict())
+
+
+def static_c3(class_object):
+    if class_object is builtin_object:
+        return [class_object]
+    return [class_object] + static_merge(
+        [static_c3(base) for base in class_object.bases]
+    )
+
+
+def static_merge(mro_list):
+    if not any(mro_list):
+        return []
+    for candidate, *_ in mro_list:
+        if all(candidate not in tail for _, *tail in mro_list):
+            return [candidate] + static_merge(
+                [
+                    tail if head is candidate else [head, *tail]
+                    for head, *tail in mro_list
+                ]
+            )
+    else:
+        raise TypeError("No legal mro")

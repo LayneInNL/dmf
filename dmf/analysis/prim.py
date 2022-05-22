@@ -16,11 +16,7 @@ from __future__ import annotations
 from dmf.log.logger import logger
 
 
-class Prim:
-    pass
-
-
-class Int(Prim):
+class Int:
     def __init__(self):
         pass
 
@@ -42,7 +38,7 @@ class Int(Prim):
         assert False
 
 
-class Bool(Prim):
+class Bool:
     def __init__(self):
         pass
 
@@ -64,7 +60,7 @@ class Bool(Prim):
         assert False
 
 
-class NoneType(Prim):
+class NoneType:
     def __init__(self):
         pass
 
@@ -86,7 +82,7 @@ class NoneType(Prim):
         assert False
 
 
-class Str(Prim):
+class Str:
     def __init__(self):
         pass
 
@@ -108,7 +104,7 @@ class Str(Prim):
         assert False
 
 
-class Bytes(Prim):
+class Bytes:
     def __init__(self):
         pass
 

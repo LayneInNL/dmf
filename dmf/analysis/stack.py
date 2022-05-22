@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from copy import deepcopy
 from typing import List
 
 import dmf.share
@@ -26,7 +25,6 @@ class Frame:
         self.f_locals: ValueDict[str, Value] = f_locals
         self.f_back: Frame | None = f_back
         self.f_globals: ValueDict[str, Value] = f_globals
-        self.is_module = None
 
     def __contains__(self, var):
         return var in self.f_locals
@@ -93,16 +91,13 @@ class Stack:
         for idx, f in enumerate(stack.frames):
             if f.f_locals is not None:
                 ns_mark[id(f.f_locals)].append((idx, "f_locals"))
-            # if f.f_back is not None:
-            #     ns_mark[id(f.f_back)].append((idx, "f_back"))
             if f.f_globals is not None:
                 ns_mark[id(f.f_globals)].append((idx, "f_globals"))
-        print(ns_mark)
 
         return ns_mark
 
     def fill_frames(self, stack: Stack, ns_mark: defaultdict):
-        for key, nss in ns_mark.items():
+        for _, nss in ns_mark.items():
             first_ns_loc = nss[0]
             old_frame = stack.frames[first_ns_loc[0]]
             attr = first_ns_loc[1]
