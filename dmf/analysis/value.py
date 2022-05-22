@@ -292,13 +292,22 @@ class ValueDict(defaultdict):
                 return True
         return False
 
-    def read_value_from_var(self, var: str):
+    def read_value_from_var(self, var: str) -> Value:
         for v, v_value in self.items():
             if isinstance(v, str):
                 continue
             v_name: str = v.get_name()
             if var == v_name:
                 return v_value
+
+    def read_var_scope(self, var: str):
+        for v, v_value in self.items():
+            if isinstance(v, str):
+                continue
+            v_name: str = v.get_name()
+            if var == v_name:
+                return v.get_scope()
+        return None
 
     def get_module_name(self):
         return self["__name__"]

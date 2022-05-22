@@ -51,22 +51,68 @@ class Frame:
 
         # Implement LEGB rule
         if var_name in self.f_locals:
-            return self.f_locals.read_value_from_var(var_name)
+            var_scope = self.f_locals.read_var_scope(var_name)
+            if var_scope == "local":
+                return self.f_locals.read_value_from_var(var_name)
+            elif var_scope == "nonlocal":
+                return self.read_nonlocal(var_name)
+            elif var_scope == "global":
+                return self.read_global(var_name)
 
-        parent_frame: Frame = self.f_back
-        while parent_frame is not None and parent_frame.f_globals is self.f_globals:
-            if var_name in parent_frame.f_locals:
-                return parent_frame.f_locals.read_value_from_var(var_name)
-            else:
-                parent_frame = parent_frame.f_back
+        try:
+            return self.read_nonlocal(var_name)
+        except AttributeError:
+            pass
 
-        if var_name in self.f_globals:
-            return self.f_globals.read_value_from_var(var_name)
+        try:
+            return self.read_global(var_name)
+        except AttributeError:
+            pass
 
         raise AttributeError(var_name)
 
+    # find one with (var_name, local)
+    def read_nonlocal(self, var_name: str):
+        parent_frame: Frame = self.f_back
+        while parent_frame is not None and parent_frame.f_globals is self.f_globals:
+            if var_name in parent_frame.f_locals:
+                var_scope = parent_frame.f_locals.read_var_scope(var_name)
+                if var_scope != "local":
+                    parent_frame = parent_frame.f_back
+                else:
+                    return parent_frame.f_locals.read_value_from_var(var_name)
+            else:
+                parent_frame = parent_frame.f_back
+        raise AttributeError(var_name)
+
+    def read_global(self, var_name: str):
+        if var_name in self.f_globals:
+            var_scope = self.f_globals.read_var_scope(var_name)
+            if var_scope != "local":
+                raise AttributeError(var_name)
+            else:
+                return self.f_globals.read_value_from_var(var_name)
+        raise AttributeError(var_name)
+
     def write_var(self, var: Var, value: Value):
-        self.f_locals[var] = value
+        var_name, var_scope = var.get_name(), var.get_scope()
+        if var_scope == "local":
+            self.f_locals[var] = value
+        elif var_scope == "nonlocal":
+            new_var = Var(var_name, "local")
+            parent_frame: Frame = self.f_back
+            while parent_frame is not None and parent_frame.f_globals is self.f_globals:
+                if var_name in parent_frame.f_locals:
+                    var_scope = parent_frame.f_locals.read_var_scope(var_name)
+                    if var_scope != "local":
+                        parent_frame = parent_frame.f_back
+                    else:
+                        parent_frame.f_locals[new_var] = value
+                else:
+                    parent_frame = parent_frame.f_back
+        elif var_scope == "global":
+            new_var: Var = Var(var_name, "local")
+            self.f_globals[new_var] = value
 
 
 class Stack:
