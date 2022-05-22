@@ -19,7 +19,7 @@ import sys
 import dmf.static_importlib
 from dmf.analysis.analysis import Analysis
 from dmf.analysis.state import State
-from dmf.analysis.value import ModuleType
+from dmf.analysis.value import ModuleType, Namespace
 from dmf.log.logger import logger
 from dmf.share import (
     create_and_update_cfg,
@@ -29,14 +29,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument("main", help="the main file path")
 
 
-def add_builtins_module():
+def add_main_module():
     main_module = type(sys)("__main__")
     dmf.share.modules["__main__"] = main_module
     main_module.package = ""
-    main_state = State()
-    main_state.write_var_to_stack("__name__", "__main__")
-    main_state.write_var_to_stack("__package__", "")
-    analysis_main_module = ModuleType(main_state)
+    main_module_ns = Namespace()
+    main_module_ns["__name__"] = "__main__"
+    main_module_ns["__package__"] = ""
+    analysis_main_module = ModuleType(main_module_ns)
     dmf.share.analysis_modules["__main__"] = analysis_main_module
 
 
@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
     # module name
     main_module_name = os.path.basename(main_abs_path).rpartition(".")[0]
-    add_builtins_module()
+    add_main_module()
     add_sys_path(main_abs_path)
 
     # load cfg of main module

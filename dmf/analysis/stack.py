@@ -13,8 +13,11 @@
 #  limitations under the License.
 from __future__ import annotations
 
+from collections import defaultdict
+from copy import deepcopy
 from typing import List
 
+import dmf.share
 from dmf.analysis.value import ValueDict, Value
 
 
@@ -40,7 +43,10 @@ class Frame:
         return self
 
     def __repr__(self):
-        return self.f_locals.__repr__()
+        res = "local: {}, back: {}, global: {}".format(
+            self.f_locals, self.f_back, self.f_globals
+        )
+        return res
 
     def read_var(self, var):
         # Implement LEGB rule
@@ -70,8 +76,8 @@ class Stack:
     def __init__(self, stack: Stack = None):
         self.frames: List[Frame] = []
         if stack is not None:
-            self.duplicate_frames(stack)
-            self.fill_frames(stack)
+            ns_mark = self.duplicate_frames(stack)
+            self.fill_frames(stack, ns_mark)
 
     def duplicate_frames(self, stack: Stack):
         frames = self.frames
@@ -83,27 +89,30 @@ class Stack:
             f_back = frame
             frames.append(frame)
 
-    def fill_frames(self, stack: Stack):
-        start_loc = 0
-        end_loc = 0
-        while end_loc < len(stack.frames):
-            while (
-                end_loc < len(stack.frames)
-                # check globals
-                and stack.frames[start_loc].f_globals is stack.frames[end_loc].f_globals
-            ):
-                end_loc += 1
-            # update global ns
-            f_globals_copy = stack.frames[start_loc].f_globals.copy()
-            for index in range(start_loc, end_loc):
-                curr_frame = self.frames[index]
-                curr_frame.f_globals = f_globals_copy
-                # update module
-                if stack.frames[index].is_module:
-                    curr_frame.f_locals = f_globals_copy
-                else:
-                    curr_frame.f_locals = stack.frames[index].f_locals.copy()
-            start_loc = end_loc
+        ns_mark = defaultdict(list)
+        for idx, f in enumerate(stack.frames):
+            if f.f_locals is not None:
+                ns_mark[id(f.f_locals)].append((idx, "f_locals"))
+            # if f.f_back is not None:
+            #     ns_mark[id(f.f_back)].append((idx, "f_back"))
+            if f.f_globals is not None:
+                ns_mark[id(f.f_globals)].append((idx, "f_globals"))
+        print(ns_mark)
+
+        return ns_mark
+
+    def fill_frames(self, stack: Stack, ns_mark: defaultdict):
+        for key, nss in ns_mark.items():
+            first_ns_loc = nss[0]
+            old_frame = stack.frames[first_ns_loc[0]]
+            attr = first_ns_loc[1]
+            old_ns = getattr(old_frame, attr)
+            new_ns = old_ns.copy()
+            for ns in nss:
+                setattr(self.frames[ns[0]], ns[1], new_ns)
+        for frame in self.frames:
+            glo = frame.f_globals
+            dmf.share.analysis_modules[glo["__name__"]].namespace = glo
 
     def __le__(self, other: Stack):
         frame_pairs = zip(reversed(self.frames), reversed(other.frames))

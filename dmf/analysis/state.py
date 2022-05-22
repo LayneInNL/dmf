@@ -23,14 +23,15 @@ from dmf.log.logger import logger
 
 
 class State:
-    def __init__(self, state: State = None):
+    def __init__(self, state: State = None, ns=None):
         if state is not None:
             self.stack: Stack = state.stack.copy()
-        else:
+        elif ns is not None:
             self.stack: Stack = Stack()
-            initial_namespace = ValueDict()
-            frame: Frame = Frame(initial_namespace, None, initial_namespace)
+            frame: Frame = Frame(ns, None, ns)
             self.push_frame_to_stack(frame)
+        else:
+            assert False
 
     def __le__(self, other: State):
         return self.stack <= other.stack

@@ -141,24 +141,21 @@ class InsType:
 
 
 class ModuleType:
-    def __init__(self, state):
+    def __init__(self, namespace):
         self._name_ = None
         self._package_ = None
         self._file_ = None
         self._dict_ = None
-        self.state = state
+        self.namespace: Namespace = namespace
 
-    def read_var_from_module(self, var):
-        return self.state.read_var_from_stack(var)
+    def get_namespace(self):
+        return self.namespace
 
-    def get_state(self):
-        return self.state
+    def __le__(self, other: ModuleType):
+        return self.namespace <= other.namespace
 
-    def __le__(self, other):
-        return self.state <= other.state
-
-    def __iadd__(self, other):
-        self.state += other.state
+    def __iadd__(self, other: ModuleType):
+        self.namespace += other.namespace
         return self
 
 
@@ -274,6 +271,7 @@ class ValueDict(defaultdict):
         return self
 
 
+Namespace = ValueDict
 SELF_FLAG = "self"
 INIT_FLAG = "19970303"
 INIT_FLAG_VALUE = Value()

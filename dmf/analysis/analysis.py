@@ -156,7 +156,8 @@ class Analysis(Base):
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: None = None
         self.analysis_effect_list: None = None
-        self.extremal_value: State = dmf.share.analysis_modules[module_name].get_state()
+        global_ns = dmf.share.analysis_modules[module_name].get_namespace()
+        self.extremal_value: State = State(ns=global_ns)
 
     def compute_fixed_point(self):
         self.initialize()
