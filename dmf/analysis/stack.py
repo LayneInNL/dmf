@@ -17,14 +17,14 @@ from collections import defaultdict
 from typing import List
 
 import dmf.share
-from dmf.analysis.value import ValueDict, Value
+from dmf.analysis.value import ValueDict, Value, Namespace, Var
 
 
 class Frame:
     def __init__(self, f_locals=None, f_back=None, f_globals=None):
-        self.f_locals: ValueDict[str, Value] = f_locals
+        self.f_locals: Namespace[Var, Value] = f_locals
         self.f_back: Frame | None = f_back
-        self.f_globals: ValueDict[str, Value] = f_globals
+        self.f_globals: Namespace[Var, Value] = f_globals
 
     def __contains__(self, var):
         return var in self.f_locals
@@ -41,33 +41,32 @@ class Frame:
         return self
 
     def __repr__(self):
-        res = "local: {}, back: {}, global: {}".format(
-            self.f_locals, self.f_back, self.f_globals
-        )
+        # res = "local: {}, back: {}, global: {}".format(
+        #     self.f_locals, self.f_back, self.f_globals
+        # )
+        res = "local: {}".format(self.f_locals)
         return res
 
-    def read_var(self, var):
+    def read_var(self, var_name: str):
+
         # Implement LEGB rule
-        if var in self.f_locals:
-            return self.f_locals[var]
+        if var_name in self.f_locals:
+            return self.f_locals.read_value_from_var(var_name)
 
         parent_frame: Frame = self.f_back
         while parent_frame is not None and parent_frame.f_globals is self.f_globals:
-            if var in parent_frame.f_locals:
-                return parent_frame.f_locals[var]
+            if var_name in parent_frame.f_locals:
+                return parent_frame.f_locals.read_value_from_var(var_name)
             else:
                 parent_frame = parent_frame.f_back
 
-        if var in self.f_globals:
-            return self.f_globals[var]
+        if var_name in self.f_globals:
+            return self.f_globals.read_value_from_var(var_name)
 
-        raise AttributeError(var)
+        raise AttributeError(var_name)
 
-    def write_var(self, var: str, value: Value):
+    def write_var(self, var: Var, value: Value):
         self.f_locals[var] = value
-
-    def write_var_to_global(self, var: str, value: Value):
-        self.f_globals[var] = value
 
 
 class Stack:
@@ -107,7 +106,8 @@ class Stack:
                 setattr(self.frames[ns[0]], ns[1], new_ns)
         for frame in self.frames:
             glo = frame.f_globals
-            dmf.share.analysis_modules[glo["__name__"]].namespace = glo
+            module_name = glo.get_module_name()
+            dmf.share.analysis_modules[module_name].namespace = glo
 
     def __le__(self, other: Stack):
         frame_pairs = zip(reversed(self.frames), reversed(other.frames))
@@ -134,11 +134,11 @@ class Stack:
     def top_frame(self) -> Frame:
         return self.frames[-1]
 
-    def read_var(self, var):
+    def read_var(self, var: str):
         return self.top_frame().read_var(var)
 
-    def write_var(self, var, value):
-        return self.top_frame().write_var(var, value)
+    def write_var(self, var: Var, value: Value):
+        self.top_frame().write_var(var, value)
 
     def copy(self):
         copied = Stack(self)

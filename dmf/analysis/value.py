@@ -219,6 +219,28 @@ class Value:
         self.type_dict[lab] = PRIM_BYTES
 
 
+class Var:
+    def __init__(self, name, scope="local"):
+        self.name = name
+        # scope could be local, nonlocal, global
+        self.scope = scope
+
+    def __repr__(self):
+        return "*name: {}*".format(self.name, self.scope)
+
+    def get_name(self):
+        return self.name
+
+    def get_scope(self):
+        return self.scope
+
+    def __hash__(self):
+        return hash(self.name)
+
+    def __eq__(self, other: Var):
+        return self.name == other.name
+
+
 # Dict[str, AbstractValue|VALUE_TOP]
 class ValueDict(defaultdict):
     def __repr__(self):
@@ -259,6 +281,27 @@ class ValueDict(defaultdict):
                 continue
             self[var] = self.union(self[var], other[var])
         return self
+
+    def __contains__(self, item: str):
+        # __xxx__ and Var
+        for v in self:
+            if isinstance(v, str):
+                continue
+            v_name = v.get_name()
+            if item == v_name:
+                return True
+        return False
+
+    def read_value_from_var(self, var: str):
+        for v, v_value in self.items():
+            if isinstance(v, str):
+                continue
+            v_name: str = v.get_name()
+            if var == v_name:
+                return v_value
+
+    def get_module_name(self):
+        return self["__name__"]
 
 
 Namespace = ValueDict

@@ -60,7 +60,7 @@ class State:
     def read_var_from_stack(self, var: str):
         return self.stack.read_var(var)
 
-    def write_var_to_stack(self, var: str, value: Value):
+    def write_var_to_stack(self, var: Var, value: Value):
         self.stack.write_var(var, value)
 
     def stack_exec_in_new_ns(self):

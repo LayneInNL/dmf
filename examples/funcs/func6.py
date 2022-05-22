@@ -17,6 +17,7 @@ a = 3
 
 
 def test():
+    a = 3
     global a
     a = False
     return a

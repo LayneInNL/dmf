@@ -29,7 +29,7 @@ from dmf.analysis.flow_util import (
     Ctx,
 )
 from dmf.analysis.prim import Int, Bool, NoneType
-from dmf.analysis.stack import Frame
+from dmf.analysis.stack import Frame, Var
 from dmf.analysis.state import (
     State,
     issubset_state,
@@ -385,7 +385,8 @@ class Analysis(Base):
         target: ast.expr = stmt.targets[0]
         if isinstance(target, ast.Name):
             lhs_name: str = target.id
-            new.write_var_to_stack(lhs_name, rhs_value)
+            var = Var(name=lhs_name, scope="local")
+            new.write_var_to_stack(var, rhs_value)
         elif isinstance(target, ast.Attribute):
             assert isinstance(target.value, ast.Name)
             lhs_name: str = target.value.id
