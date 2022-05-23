@@ -16,14 +16,13 @@ import argparse
 import os.path
 import sys
 
-import dmf.static_importlib
 from dmf.analysis.analysis import Analysis
-from dmf.analysis.state import State
 from dmf.analysis.value import ModuleType, Namespace
 from dmf.log.logger import logger
 from dmf.share import (
     create_and_update_cfg,
 )
+import dmf.share
 
 parser = argparse.ArgumentParser()
 parser.add_argument("main", help="the main file path")

@@ -29,7 +29,7 @@ from dmf.analysis.flow_util import (
     Ctx,
 )
 from dmf.analysis.prim import Int, Bool, NoneType
-from dmf.analysis.stack import Frame, Var
+from dmf.analysis.stack import Frame
 from dmf.analysis.state import (
     State,
     issubset_state,
@@ -48,6 +48,7 @@ from dmf.analysis.value import (
     INIT_FLAG,
     SELF_FLAG,
     INIT_FLAG_VALUE,
+    builtin_object,
 )
 from dmf.flows import CFG
 from dmf.flows.flows import BasicBlock
@@ -450,10 +451,6 @@ class Analysis(Base):
             return self.transfer_ClassDef_return(program_point)
         elif isinstance(stmt, ast.Name):
             return_state = self.analysis_list[program_point]
-            # get a copy of heap
-            call_point = self.get_call_point(program_point)
-            call_state: State = self.analysis_list[call_point]
-            # get a copy of stack
             # new_call_state: State = call_state.copy()
             new_return_state: State = return_state.copy()
             new_return_state.pop_frame_from_stack()
@@ -517,22 +514,20 @@ class Analysis(Base):
         # return state
         return_state: State = self.analysis_list[program_point]
 
-        # call point
-        call_point = self.get_call_point(program_point)
-
-        # old and new state
-        old: State = self.analysis_list[call_point]
-        new: State = old.copy()
+        new: State = return_state.copy()
+        new.pop_frame_from_stack()
 
         # class name
-        cls_name = stmt.name
+        cls_name: str = stmt.name
+        module: str = new.get_current_module()
         # class frame
         frame: Frame = return_state.top_frame_on_stack()
         # abstract value for class
-        value = Value()
-        cls_type = ClsType(frame.f_locals)
+        value: Value = Value()
+        bases = stmt.bases if stmt.bases else [builtin_object]
+        cls_type: ClsType = ClsType(cls_name, module, bases, frame.f_locals)
         # inject namespace
-        value.inject_cls_type(call_point[0], cls_type)
+        value.inject_cls_type(cls_type)
         # write to stack
         new.write_var_to_stack(cls_name, value)
         # return new state

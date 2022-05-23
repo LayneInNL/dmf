@@ -25,4 +25,9 @@
 #  limitations under the License.
 
 
-o = object()
+a = 1
+
+
+class Test:
+    global a
+    a = False

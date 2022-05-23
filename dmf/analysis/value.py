@@ -13,6 +13,9 @@
 #  limitations under the License.
 from __future__ import annotations
 
+from collections import defaultdict
+from typing import Tuple, List
+
 from dmf.analysis.prim import (
     PRIM_BOOL_ID,
     PRIM_INT_ID,
@@ -25,9 +28,6 @@ from dmf.analysis.prim import (
     PRIM_BYTES_ID,
     PRIM_BYTES,
 )
-from dmf.log.logger import logger
-from collections import defaultdict
-from typing import Dict, Any
 
 # None to denote TOP type. it can save memory consumption.
 VALUE_TOP = "VALUE_TOP"
@@ -80,15 +80,19 @@ class InsMethod:
 
 
 class ClsType:
-    def __init__(self, namespace: ValueDict[str, Value]):
-        self._name_ = None
-        self._module_ = None
-        self._bases_ = None
-        self._mro_ = None
-        self._dict_: ValueDict[str, Value] = namespace
+    def __init__(
+        self, name: str, module: str, bases: List, namespace: ValueDict[Var, Value]
+    ):
+        self._name_ = name
+        self._module_ = module
+        self._bases_ = bases
+        self._mro_ = static_c3(self)
+        # the last builtin_object is just a flag, remove it
+        self._mro_ = self._mro_[:-1]
+        self._dict_: ValueDict[Var, Value] = namespace
 
-    # def __repr__(self):
-    #     return self._dict_.__repr__()
+    def __repr__(self):
+        return self._name_
 
     def __le__(self, other: ClsType):
         return self._dict_ <= other._dict_
@@ -184,7 +188,7 @@ class Value:
         lab = id(func_type)
         self.type_dict[lab] = func_type
 
-    def inject_cls_type(self, lab, cls_type: ClsType):
+    def inject_cls_type(self, cls_type: ClsType):
         lab = id(cls_type)
         self.type_dict[lab] = cls_type
 
@@ -319,14 +323,15 @@ INIT_FLAG = "19970303"
 INIT_FLAG_VALUE = Value()
 RETURN_FLAG = "__return__"
 
-builtin_object = ClsType(ValueDict())
+# builtin_object = ClsType((), Namespace())
+builtin_object = object()
 
 
 def static_c3(class_object):
     if class_object is builtin_object:
         return [class_object]
     return [class_object] + static_merge(
-        [static_c3(base) for base in class_object.bases]
+        [static_c3(base) for base in class_object._bases_]
     )
 
 

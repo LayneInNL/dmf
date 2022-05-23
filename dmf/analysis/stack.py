@@ -109,7 +109,7 @@ class Frame:
         var: Var = Var(var_name, "local")
         return self.f_globals[var]
 
-    def write_var(self, var_name: str, value: Value, scope: str = "local"):
+    def write_var(self, var_name: str, value: Value, scope: str):
         if var_name in self.f_locals:
             var_scope = self.f_locals.read_var_scope(var_name)
             var: Var = Var(var_name, var_scope)
@@ -206,7 +206,7 @@ class Stack:
     def read_var(self, var: str, scope):
         return self.top_frame().read_var(var, scope)
 
-    def write_var(self, var: str, value: Value, scope: str = "local"):
+    def write_var(self, var: str, value: Value, scope: str):
         self.top_frame().write_var(var, value, scope)
 
     def copy(self):

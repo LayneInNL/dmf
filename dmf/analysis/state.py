@@ -66,6 +66,10 @@ class State:
     def stack_exec_in_new_ns(self):
         self.stack.next_ns()
 
+    def get_current_module(self):
+        frame: Frame = self.stack.top_frame()
+        return frame.f_globals["__name__"]
+
     def copy(self):
         copied = State(self)
         return copied
