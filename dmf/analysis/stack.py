@@ -74,7 +74,14 @@ class Frame:
     # find one with (var_name, local)
     def read_nonlocal(self, var_name: str):
         parent_frame: Frame = self.f_back
-        while parent_frame is not None and parent_frame.f_globals is self.f_globals:
+        while (
+            # not the last frame
+            parent_frame is not None
+            # share the same global namespace
+            and parent_frame.f_globals is self.f_globals
+            # parent_frame.f_locals itself should not be module namespace
+            and parent_frame.f_locals is not self.f_globals
+        ):
             if var_name in parent_frame.f_locals:
                 var_scope = parent_frame.f_locals.read_var_scope(var_name)
                 if var_scope != "local":

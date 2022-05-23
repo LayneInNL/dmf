@@ -20,7 +20,7 @@ def test():
     a = 1
 
     def test2():
-        nonlocal a
+        global a
         b = a
 
     test2()
