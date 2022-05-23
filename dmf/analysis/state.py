@@ -132,7 +132,7 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
         value = Value()
         for lab, typ in receiver_value:
             if isinstance(typ, InsType):
-                v = state.read_field_from_heap(typ.get_heap(), receiver_attr)
+                v = state.read_field_from_heap(typ.get_addr(), receiver_attr)
                 value += v
             elif isinstance(typ, FuncType):
                 v = typ.getattr(receiver_attr)
@@ -154,7 +154,7 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
             value = Value()
             for lab, typ in receiver_value:
                 if isinstance(typ, InsType):
-                    v = state.read_field_from_heap(typ.get_heap(), attr)
+                    v = state.read_field_from_heap(typ.get_addr(), attr)
                     value += v
                 elif isinstance(typ, FuncType):
                     v = typ.getattr(attr)

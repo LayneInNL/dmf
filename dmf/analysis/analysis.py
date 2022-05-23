@@ -28,6 +28,7 @@ from dmf.analysis.flow_util import (
     Basic_Flow,
     Ctx,
 )
+from dmf.analysis.heap import analysis_heap
 from dmf.analysis.prim import Int, Bool, NoneType
 from dmf.analysis.stack import Frame
 from dmf.analysis.state import (
@@ -152,7 +153,7 @@ class Base:
 class Analysis(Base):
     def __init__(self, start_lab, module_name):
         super().__init__(start_lab)
-        self.self_info: Dict[ProgramPoint, Tuple[int, str | None, ClsType | None]] = {}
+        self.self_info: Dict[ProgramPoint, Tuple[InsType, str | None]] = {}
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: None = None
         self.analysis_effect_list: None = None
@@ -288,9 +289,12 @@ class Analysis(Base):
     def lambda_class_init(self, program_point, typ: ClsType, attr: str = "__init__"):
         call_lab, call_ctx = program_point
         return_lab = self.get_return_label(call_lab)
-        init_funcs = typ.getattr(attr)
+        init_funcs: Value = typ.getattr(attr)
         for _, init_func in init_funcs:
             if isinstance(init_func, FuncType):
+                addr = record(call_lab, call_ctx)
+                ins_type = InsType(addr, typ)
+                analysis_heap.write_ins_to_heap(ins_type)
                 entry_lab, exit_lab = init_func.get_code()
                 inter_flow = (
                     (call_lab, call_ctx),
@@ -299,8 +303,7 @@ class Analysis(Base):
                     (return_lab, call_ctx),
                 )
                 self.inter_flows.add(inter_flow)
-                heap = record(call_lab, call_ctx)
-                self.self_info[(entry_lab, call_ctx)] = (heap, INIT_FLAG, typ)
+                self.self_info[(entry_lab, call_ctx)] = (ins_type, INIT_FLAG)
             else:
                 logger.warn(init_func)
                 assert False
@@ -320,7 +323,7 @@ class Analysis(Base):
         # call state to retrieve heap attributes
         call_state: State = self.analysis_list[program_point]
         # heap of instance
-        heap = ins_type.get_heap()
+        heap = ins_type.get_addr()
         attr_value: Value = call_state.read_field_from_heap(heap, attr)
         for _, typ in attr_value:
             if isinstance(typ, FuncType):
@@ -333,7 +336,7 @@ class Analysis(Base):
                     (return_lab, call_ctx),
                 )
                 self.inter_flows.add(inter_flow)
-                self.self_info[(entry_lab, new_ctx)] = (ins_type.get_heap(), "", None)
+                self.self_info[(entry_lab, new_ctx)] = (ins_type.get_addr(), "", None)
             elif isinstance(typ, ClsType):
                 self.lambda_class_init(program_point, typ)
             else:
@@ -394,7 +397,7 @@ class Analysis(Base):
             field: str = target.attr
             for lab, typ in value:
                 if isinstance(typ, InsType):
-                    new.write_field_to_heap(typ.get_heap(), field, rhs_value)
+                    analysis_heap.write_field_to_heap(typ, field, rhs_value)
                 elif isinstance(typ, ClsType):
                     typ.setattr(field, rhs_value)
                 elif isinstance(typ, FuncType):
@@ -431,16 +434,13 @@ class Analysis(Base):
         # this is a class method call
         if program_point in self.self_info:
             # heap is heap, flag denotes if it's init method
-            heap, init_flag, cls_obj = self.self_info[program_point]
+            instance, init_flag = self.self_info[program_point]
             value = Value()
-            ins_type = InsType(heap)
-            value.inject_heap_type(heap, ins_type)
+            value.inject_ins_type(instance)
             new.write_var_to_stack(SELF_FLAG, value)
             if init_flag:
                 # write the init flag to stack
                 new.write_var_to_stack(INIT_FLAG, INIT_FLAG_VALUE)
-                # write cls_obj to heap so that we can retrieve class type
-                new.add_heap_and_cls(heap, cls_obj)
         return new
 
     def transfer_return(self, program_point: ProgramPoint):
@@ -457,8 +457,6 @@ class Analysis(Base):
 
             return_value: Value = return_state.read_var_from_stack(RETURN_FLAG)
             # write value to name
-            # new_call_state.write_var_to_stack(stmt.id, return_value)
-            # return new_call_state
             new_return_state.write_var_to_stack(stmt.id, return_value)
             return new_return_state
         else:

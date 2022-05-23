@@ -13,87 +13,102 @@
 #  limitations under the License.
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from collections import defaultdict
+from typing import Dict, Tuple, DefaultDict
 
+from dmf.analysis.value import InsType, Value, Namespace, Var
 from dmf.analysis.value_util import issubset_twodict, update_twodict, issubset, update
 
 
-class Singleton:
-    def __init__(self, cls_obj):
-        self.internal: Dict = {}
-        self.cls_obj = cls_obj
+# class Singleton:
+#     def __init__(self, cls_obj):
+#         self.internal: Dict = {}
+#         self.cls_obj = cls_obj
+#
+#     def __repr__(self):
+#         return "dict {} cls {}".format(self.internal, self.cls_obj)
+#
+#     def __le__(self, other: Singleton):
+#         return issubset(self.internal, other.internal)
+#
+#     def __iadd__(self, other: Singleton):
+#         update(self.internal, other.internal)
+#         return self
+#
+#     def __contains__(self, field):
+#         return field in self.internal
+#
+#     def __setitem__(self, field, value):
+#         self.internal[field] = value
+#
+#     def __getitem__(self, field):
+#         # At first retrieve dict of instance itself.
+#         if field in self.internal:
+#             return self.internal[field]
+#         else:
+#             return self.cls_obj.getattr(field)
 
-    def __repr__(self):
-        return "dict {} cls {}".format(self.internal, self.cls_obj)
 
-    def __le__(self, other: Singleton):
-        return issubset(self.internal, other.internal)
-
-    def __iadd__(self, other: Singleton):
-        update(self.internal, other.internal)
-        return self
-
-    def __contains__(self, field):
-        return field in self.internal
-
-    def __setitem__(self, field, value):
-        self.internal[field] = value
-
-    def __getitem__(self, field):
-        # At first retrieve dict of instance itself.
-        if field in self.internal:
-            return self.internal[field]
-        else:
-            return self.cls_obj.getattr(field)
-
-
-class Summary:
-    def __init__(self):
-        self.internal: Dict = {}
-
-    def __le__(self, other: Summary):
-        return issubset_twodict(self.internal, other.internal)
-
-    def __iadd__(self, other: Summary):
-        update_twodict(self.internal, other.internal)
-        return self
+# class Summary:
+#     def __init__(self):
+#         self.internal: Dict = {}
+#
+#     def __le__(self, other: Summary):
+#         return issubset_twodict(self.internal, other.internal)
+#
+#     def __iadd__(self, other: Summary):
+#         update_twodict(self.internal, other.internal)
+#         return self
 
 
 class Heap:
     def __init__(self, heap: Heap = None):
-        self.singletons: Dict[int, Singleton] = {}
-        self.summaries: Dict[int, Summary] = {}
+        self.singletons: DefaultDict[InsType, Namespace[Var, Value]] = defaultdict(
+            Namespace
+        )
         if heap is not None:
-            self.singletons.update(heap.singletons)
-            self.summaries.update(heap.summaries)
-
-    def __contains__(self, item: Tuple[int, str]):
-        heap_ctx, field = item
-        return field in self.singletons[heap_ctx]
+            self.singletons.copy()
 
     def __le__(self, other: Heap):
-        return issubset(self.singletons, other.singletons) and issubset(
-            self.summaries, other.summaries
-        )
+        for ins in self.singletons:
+            if ins not in other.singletons:
+                return False
+            else:
+                self_dict = self.singletons[ins]
+                other_dict = other.singletons[ins]
+                for field in self_dict:
+                    if field not in other_dict:
+                        return False
+                    elif not self_dict[field] <= other_dict[field]:
+                        return False
+        return True
 
     def __iadd__(self, other: Heap):
-        self.singletons.update(other.singletons)
-        self.summaries.update(other.summaries)
+        for ins in other.singletons:
+            if ins not in self.singletons:
+                self.singletons[ins] = other.singletons[ins]
+            else:
+                self_dict = self.singletons[ins]
+                other_dict = other.singletons[ins]
+                for field in other_dict:
+                    if field not in self.singletons:
+                        self_dict[field] = other_dict[field]
+                    else:
+                        self_dict[field] += other_dict[field]
         return self
 
     def __repr__(self):
-        return "Singleton: {}, Summary {}".format(self.singletons, self.summaries)
+        return "singleton: {}".format(self.singletons)
 
-    def add_heap_and_cls(self, heap_ctx, cls_obj):
-        singleton = Singleton(cls_obj)
-        self.singletons[heap_ctx] = singleton
+    def write_ins_to_heap(self, ins: InsType):
+        self.singletons[ins] = Namespace()
 
-    def write_to_field(self, heap_ctx: int, field: str, value):
-        self.singletons[heap_ctx][field] = value
-
-    def read_from_field(self, heap_ctx: int, field: str):
-        return self.singletons[heap_ctx][field]
+    def write_field_to_heap(self, ins: InsType, field: str, value: Value):
+        self.singletons[ins][Var(field, "local")] = value
 
     def copy(self):
         copied = Heap(self)
         return copied
+
+
+analysis_heap = Heap()

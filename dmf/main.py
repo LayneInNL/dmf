@@ -16,6 +16,7 @@ import argparse
 import os.path
 import sys
 
+from dmf.analysis.heap import analysis_heap
 from dmf.analysis.value import ModuleType, Namespace
 from dmf.log.logger import logger
 from dmf.share import (
@@ -84,3 +85,4 @@ if __name__ == "__main__":
     start_lab, end_lab = create_and_update_cfg(main_abs_path)
     analysis = Analysis(start_lab, "__main__")
     analysis.compute_fixed_point()
+    print(analysis_heap)

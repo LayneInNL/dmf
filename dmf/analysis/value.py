@@ -108,13 +108,14 @@ class ClsType:
     def setattr(self, key, value):
         self._dict_[key] = value
 
-    def getattr(self, key):
-        return self._dict_[key]
+    def getattr(self, name):
+        return self._dict_.read_value_from_var(name)
 
 
 class InsType:
-    def __init__(self, addr):
+    def __init__(self, addr, cls_type: ClsType):
         self._self_ = addr
+        self._class_ = cls_type
         self._dict_: ValueDict[str, Value] = ValueDict()
 
     def __le__(self, other: InsType):
@@ -124,7 +125,15 @@ class InsType:
         self._dict_ += other._dict_
         return self
 
-    def get_heap(self):
+    def __hash__(self):
+        return hash(str(self._self_) + self._class_._name_)
+
+    def __eq__(self, other: InsType):
+        return (
+            self._self_ == other._self_ and self._class_._name_ == other._class_._name_
+        )
+
+    def get_addr(self):
         return self._self_
 
     def setattr(self, key, value):
@@ -195,6 +204,10 @@ class Value:
     def inject_cls_type(self, cls_type: ClsType):
         lab = id(cls_type)
         self.type_dict[lab] = cls_type
+
+    def inject_ins_type(self, ins_type: InsType):
+        lab = id(ins_type)
+        self.type_dict[lab] = ins_type
 
     def extract_cls_type(self):
         res = []
