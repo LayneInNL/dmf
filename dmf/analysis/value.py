@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Tuple, List
 
+import dmf.share
 from dmf.analysis.prim import (
     PRIM_BOOL_ID,
     PRIM_INT_ID,
@@ -30,6 +31,8 @@ from dmf.analysis.prim import (
 )
 
 # None to denote TOP type. it can save memory consumption.
+from dmf.log.logger import logger
+
 VALUE_TOP = "VALUE_TOP"
 
 
@@ -89,6 +92,7 @@ class ClsType:
         self._mro_ = static_c3(self)
         # the last builtin_object is just a flag, remove it
         self._mro_ = self._mro_[:-1]
+        logger.debug("mro for class {}".format(self._mro_, self._name_))
         self._dict_: ValueDict[Var, Value] = namespace
 
     def __repr__(self):
@@ -194,7 +198,7 @@ class Value:
 
     def extract_cls_type(self):
         res = []
-        for lab, typ in self.type_dict:
+        for _, typ in self.type_dict.items():
             if isinstance(typ, ClsType):
                 res.append(typ)
         return res
@@ -324,10 +328,13 @@ INIT_FLAG_VALUE = Value()
 RETURN_FLAG = "__return__"
 
 # builtin_object = ClsType((), Namespace())
-builtin_object = object()
+# builtin_object = dmf.share.analysis_modules["static_builtins"].namespace["__object__"]
 
 
 def static_c3(class_object):
+    builtin_object = dmf.share.analysis_modules["static_builtins"].namespace[
+        "__object__"
+    ]
     if class_object is builtin_object:
         return [class_object]
     return [class_object] + static_merge(

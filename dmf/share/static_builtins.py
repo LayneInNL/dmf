@@ -25,10 +25,53 @@
 #  limitations under the License.
 
 
-# a = 1
-
-
-class Test:
-    # global a
-    # a = False
+class static_object:
+    # def __init__(self):
+    #     pass
     pass
+
+
+# from dmf.analysis.value import Value
+
+
+# class Int:
+#     def __init__(self):
+#         pass
+#
+#     def bit_length(self):
+#         return PRIM_INT
+#
+#     def conjugate(self):
+#         return PRIM_INT
+#
+#     def denominator(self):
+#         return PRIM_INT
+#
+#     def from_bytes(self):
+#         return PRIM_INT
+#
+#     def imag(self):
+#         pass
+#
+#     def numerator(self):
+#         pass
+#
+#     def real(self):
+#         pass
+#
+#     def to_bytes(self):
+#         pass
+#
+#
+# class List:
+#     def __init__(self):
+#         self.abstract_value = Value()
+#
+#     def append(self, elt_type):
+#         self.abstract_value += elt_type
+#
+#
+# l = list()
+#
+# # builtin objects, we use singleton objects
+# PRIM_INT = Int()

@@ -16,7 +16,6 @@ import argparse
 import os.path
 import sys
 
-from dmf.analysis.analysis import Analysis
 from dmf.analysis.value import ModuleType, Namespace
 from dmf.log.logger import logger
 from dmf.share import (
@@ -26,6 +25,15 @@ import dmf.share
 
 parser = argparse.ArgumentParser()
 parser.add_argument("main", help="the main file path")
+
+
+def add_builtin_module():
+    static_builtin_module_ns = Namespace()
+    static_builtin_module_ns["__name__"] = "static_builtins"
+    static_builtin_module_ns["__package__"] = ""
+    static_builtin_module_ns["__object__"] = object()
+    static_builtin_module = ModuleType(static_builtin_module_ns)
+    dmf.share.analysis_modules["static_builtins"] = static_builtin_module
 
 
 def add_main_module():
@@ -54,6 +62,18 @@ if __name__ == "__main__":
     main_file_path = args.main
     # get main module absolute path
     main_abs_path = os.path.abspath(main_file_path)
+
+    # add builtin objects
+    builtin_file_path = "./share/static_builtins.py"
+    builtin_abs_path = os.path.abspath(builtin_file_path)
+    add_builtin_module()
+
+    from dmf.analysis.analysis import Analysis
+
+    # load cfg of static builtin module
+    start_lab, end_lab = create_and_update_cfg(builtin_abs_path)
+    analysis = Analysis(start_lab, "static_builtins")
+    analysis.compute_fixed_point()
 
     # module name
     main_module_name = os.path.basename(main_abs_path).rpartition(".")[0]

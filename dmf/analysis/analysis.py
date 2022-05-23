@@ -48,7 +48,6 @@ from dmf.analysis.value import (
     INIT_FLAG,
     SELF_FLAG,
     INIT_FLAG_VALUE,
-    builtin_object,
 )
 from dmf.flows import CFG
 from dmf.flows.flows import BasicBlock
@@ -209,6 +208,7 @@ class Analysis(Base):
                     program_point, self.analysis_effect_list[program_point]
                 )
             )
+            logger.warning(dmf.share.analysis_modules["static_builtins"].namespace)
 
     # based on current program point, update self.IF
     def LAMBDA(self, program_point: ProgramPoint) -> None:
@@ -524,7 +524,20 @@ class Analysis(Base):
         frame: Frame = return_state.top_frame_on_stack()
         # abstract value for class
         value: Value = Value()
-        bases = stmt.bases if stmt.bases else [builtin_object]
+
+        builtin_module = dmf.share.analysis_modules["static_builtins"]
+        builtin_namespace = builtin_module.get_namespace()
+        default_base = builtin_namespace["__object__"]
+        if "static_object" in builtin_namespace:
+            static_object: Value = builtin_namespace.read_value_from_var(
+                "static_object"
+            )
+            static_object_types = static_object.extract_cls_type()
+            for typ in static_object_types:
+                default_base = typ
+
+        # bases = stmt.bases if stmt.bases else [builtin_object]
+        bases = stmt.bases if stmt.bases else [default_base]
         cls_type: ClsType = ClsType(cls_name, module, bases, frame.f_locals)
         # inject namespace
         value.inject_cls_type(cls_type)
@@ -553,13 +566,19 @@ class Analysis(Base):
         return new
 
     def transfer_Pass(self, program_point: ProgramPoint) -> State:
-        return self.analysis_list[program_point]
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
+        return new
 
     def transfer_If(self, program_point: ProgramPoint) -> State:
-        return self.analysis_list[program_point]
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
+        return new
 
     def transfer_While(self, program_point: ProgramPoint) -> State:
-        return self.analysis_list[program_point]
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
+        return new
 
     def transfer_Return(self, program_point: ProgramPoint) -> State:
         lab, _ = program_point
