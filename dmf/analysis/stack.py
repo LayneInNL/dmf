@@ -94,25 +94,33 @@ class Frame:
                 return self.f_globals.read_value_from_var(var_name)
         raise AttributeError(var_name)
 
-    def write_var(self, var: Var, value: Value):
-        var_name, var_scope = var.get_name(), var.get_scope()
-        if var_scope == "local":
-            self.f_locals[var] = value
-        elif var_scope == "nonlocal":
-            new_var = Var(var_name, "local")
-            parent_frame: Frame = self.f_back
-            while parent_frame is not None and parent_frame.f_globals is self.f_globals:
-                if var_name in parent_frame.f_locals:
-                    var_scope = parent_frame.f_locals.read_var_scope(var_name)
-                    if var_scope != "local":
-                        parent_frame = parent_frame.f_back
+    def write_var(self, var_name: str, value: Value, scope: str = "local"):
+        if var_name in self.f_locals:
+            var_scope = self.f_locals.read_var_scope(var_name)
+            var: Var = Var(var_name, var_scope)
+            if var_scope == "local":
+                self.f_locals[var] = value
+            elif var_scope == "nonlocal":
+                new_var = Var(var_name, "local")
+                parent_frame: Frame = self.f_back
+                while (
+                    parent_frame is not None
+                    and parent_frame.f_globals is self.f_globals
+                ):
+                    if var_name in parent_frame.f_locals:
+                        var_scope = parent_frame.f_locals.read_var_scope(var_name)
+                        if var_scope != "local":
+                            parent_frame = parent_frame.f_back
+                        else:
+                            parent_frame.f_locals[new_var] = value
                     else:
-                        parent_frame.f_locals[new_var] = value
-                else:
-                    parent_frame = parent_frame.f_back
-        elif var_scope == "global":
-            new_var: Var = Var(var_name, "local")
-            self.f_globals[new_var] = value
+                        parent_frame = parent_frame.f_back
+            elif var_scope == "global":
+                new_var: Var = Var(var_name, "local")
+                self.f_globals[new_var] = value
+        else:
+            var: Var = Var(var_name, scope)
+            self.f_locals[var] = value
 
 
 class Stack:
@@ -183,8 +191,8 @@ class Stack:
     def read_var(self, var: str):
         return self.top_frame().read_var(var)
 
-    def write_var(self, var: Var, value: Value):
-        self.top_frame().write_var(var, value)
+    def write_var(self, var: str, value: Value, scope: str = "local"):
+        self.top_frame().write_var(var, value, scope)
 
     def copy(self):
         copied = Stack(self)

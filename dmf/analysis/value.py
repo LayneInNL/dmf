@@ -226,7 +226,7 @@ class Var:
         self.scope = scope
 
     def __repr__(self):
-        return "*name: {}*".format(self.name, self.scope)
+        return "name: {} scope: {}".format(self.name, self.scope)
 
     def get_name(self):
         return self.name

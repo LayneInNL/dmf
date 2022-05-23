@@ -385,8 +385,7 @@ class Analysis(Base):
         target: ast.expr = stmt.targets[0]
         if isinstance(target, ast.Name):
             lhs_name: str = target.id
-            var = Var(name=lhs_name, scope="local")
-            new.write_var_to_stack(var, rhs_value)
+            new.write_var_to_stack(lhs_name, rhs_value)
         elif isinstance(target, ast.Attribute):
             assert isinstance(target.value, ast.Name)
             lhs_name: str = target.value.id
@@ -455,12 +454,16 @@ class Analysis(Base):
             call_point = self.get_call_point(program_point)
             call_state: State = self.analysis_list[call_point]
             # get a copy of stack
-            new_call_state: State = call_state.copy()
+            # new_call_state: State = call_state.copy()
+            new_return_state: State = return_state.copy()
+            new_return_state.pop_frame_from_stack()
 
             return_value: Value = return_state.read_var_from_stack(RETURN_FLAG)
             # write value to name
-            new_call_state.write_var_to_stack(stmt.id, return_value)
-            return new_call_state
+            # new_call_state.write_var_to_stack(stmt.id, return_value)
+            # return new_call_state
+            new_return_state.write_var_to_stack(stmt.id, return_value)
+            return new_return_state
         else:
             assert False
 
@@ -552,7 +555,6 @@ class Analysis(Base):
         value.inject_func_type(lab, func_type)
 
         new.write_var_to_stack(func_name, value)
-
         return new
 
     def transfer_Pass(self, program_point: ProgramPoint) -> State:
@@ -579,4 +581,30 @@ class Analysis(Base):
         if new.stack_contains(INIT_FLAG):
             value = new.read_var_from_stack(SELF_FLAG)
         new.write_var_to_stack(RETURN_FLAG, value)
+        return new
+
+    def transfer_Global(self, program_point: ProgramPoint) -> State:
+        lab, _ = program_point
+        stmt: ast.Global = self.get_stmt_by_label(lab)
+
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
+
+        name = stmt.names[0]
+        value = new.read_var_from_stack(name)
+        new.write_var_to_stack(name, value, "global")
+
+        return new
+
+    def transfer_Nonlocal(self, program_point: ProgramPoint) -> State:
+        lab, _ = program_point
+        stmt: ast.Nonlocal = self.get_stmt_by_label(lab)
+
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
+
+        name = stmt.names[0]
+        value = new.read_var_from_stack(name)
+        new.write_var_to_stack(name, value, "nonlocal")
+
         return new

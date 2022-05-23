@@ -13,13 +13,17 @@
 #  limitations under the License.
 
 
-a = 3
+a = None
 
 
 def test():
-    global a
-    a = False
-    return a
+    a = 1
+
+    def test2():
+        nonlocal a
+        b = a
+
+    test2()
 
 
 b = test()
