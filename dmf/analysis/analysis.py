@@ -591,7 +591,7 @@ class Analysis(Base):
         new: State = old.copy()
 
         name = stmt.names[0]
-        value = new.read_var_from_stack(name)
+        value = new.read_var_from_stack(name, scope="global")
         new.write_var_to_stack(name, value, "global")
 
         return new

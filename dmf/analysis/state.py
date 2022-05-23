@@ -57,8 +57,8 @@ class State:
     def stack_contains(self, name):
         return name in self.top_frame_on_stack()
 
-    def read_var_from_stack(self, var: str):
-        return self.stack.read_var(var)
+    def read_var_from_stack(self, var: str, scope="local"):
+        return self.stack.read_var(var, scope)
 
     def write_var_to_stack(self, var: str, value: Value, scope: str = "local"):
         self.stack.write_var(var, value, scope)

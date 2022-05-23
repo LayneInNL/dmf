@@ -47,7 +47,7 @@ class Frame:
         res = "local: {}".format(self.f_locals)
         return res
 
-    def read_var(self, var_name: str):
+    def read_var(self, var_name: str, scope: str):
 
         # Implement LEGB rule
         if var_name in self.f_locals:
@@ -58,6 +58,10 @@ class Frame:
                 return self.read_nonlocal(var_name)
             elif var_scope == "global":
                 return self.read_global(var_name)
+
+        # use global keyword, then assign a value to the nonexist var
+        if scope == "global":
+            return self.read_global_with_default(var_name)
 
         try:
             return self.read_nonlocal(var_name)
@@ -100,6 +104,10 @@ class Frame:
             else:
                 return self.f_globals.read_value_from_var(var_name)
         raise AttributeError(var_name)
+
+    def read_global_with_default(self, var_name: str):
+        var: Var = Var(var_name, "local")
+        return self.f_globals[var]
 
     def write_var(self, var_name: str, value: Value, scope: str = "local"):
         if var_name in self.f_locals:
@@ -195,8 +203,8 @@ class Stack:
     def top_frame(self) -> Frame:
         return self.frames[-1]
 
-    def read_var(self, var: str):
-        return self.top_frame().read_var(var)
+    def read_var(self, var: str, scope):
+        return self.top_frame().read_var(var, scope)
 
     def write_var(self, var: str, value: Value, scope: str = "local"):
         self.top_frame().write_var(var, value, scope)

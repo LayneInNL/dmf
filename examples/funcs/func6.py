@@ -13,7 +13,7 @@
 #  limitations under the License.
 
 
-a = 3
+# a = 3
 
 
 def test():
