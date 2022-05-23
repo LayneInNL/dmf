@@ -14,6 +14,7 @@
 
 
 a = None
+b = 2
 
 
 def test():
@@ -21,7 +22,8 @@ def test():
 
     def test2():
         global a
-        b = a
+        global b
+        c = b
 
     test2()
 

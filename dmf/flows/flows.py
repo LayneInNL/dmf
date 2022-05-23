@@ -702,12 +702,16 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = self.add_edge(call_node.bid, self.new_block().bid)
 
     def visit_Global(self, node: ast.Global) -> None:
-        add_stmt(self.curr_block, node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        for name in node.names:
+            single_global = ast.Global(names=[name])
+            add_stmt(self.curr_block, single_global)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
-        add_stmt(self.curr_block, node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        for name in node.names:
+            single_nonlocal = ast.Nonlocal(names=[name])
+            add_stmt(self.curr_block, single_nonlocal)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Expr(self, node: ast.Expr) -> None:
 
