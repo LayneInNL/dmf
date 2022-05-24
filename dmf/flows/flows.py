@@ -1095,6 +1095,10 @@ class CFGVisitor(ast.NodeVisitor):
 
         seq = []
         names = []
+        if not isinstance(node.func, ast.Name):
+            seq1, name1 = self.decompose_expr(node.func)
+            seq.extend(seq1)
+            node.func = name1
         for expr in node.args:
             seq1, name1 = self.decompose_expr(expr)
             seq.extend(seq1)

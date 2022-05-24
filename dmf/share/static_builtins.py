@@ -30,7 +30,14 @@ class static_object:
         pass
 
 
-# from dmf.analysis.value import Value
+class list:
+    def __init__(self):
+        pass
+        # self.value = value
+
+    def append(self, value):
+        pass
+        # self.value += value
 
 
 # class Int:

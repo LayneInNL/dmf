@@ -12,12 +12,4 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-
-class object:
-    def __init__(self):
-        pass
-
-
-# class Test(object):
-#     def __init__(self):
-#         pass
+a = list()

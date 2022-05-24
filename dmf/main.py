@@ -15,7 +15,7 @@
 import argparse
 import os.path
 import sys
-
+import time
 from dmf.analysis.heap import analysis_heap
 from dmf.analysis.value import ModuleType, Namespace
 from dmf.log.logger import logger
@@ -75,6 +75,10 @@ if __name__ == "__main__":
     start_lab, end_lab = create_and_update_cfg(builtin_abs_path)
     analysis = Analysis(start_lab, "static_builtins")
     analysis.compute_fixed_point()
+    # calculate builtin module
+    dmf.share.static_builtins = True
+    # sleep 2 seconds
+    time.sleep(1)
 
     # module name
     main_module_name = os.path.basename(main_abs_path).rpartition(".")[0]

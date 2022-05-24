@@ -14,8 +14,11 @@
 
 from dmf.flows import construct_CFG
 
+# simulate modules
 modules = {}
+# simulate modules for static analysis
 analysis_modules = {}
+# CFG flows
 flows = set()
 call_return_flows = set()
 blocks = {}
@@ -34,4 +37,4 @@ def create_and_update_cfg(file_path):
 
 
 # static_builtins simulate builtins
-static_builtins = None
+static_builtins = False

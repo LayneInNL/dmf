@@ -21,10 +21,11 @@ from dmf.analysis.value import ValueDict, Value, Namespace, Var
 
 
 class Frame:
-    def __init__(self, f_locals=None, f_back=None, f_globals=None):
+    def __init__(self, f_locals=None, f_back=None, f_globals=None, f_builtins=None):
         self.f_locals: Namespace[Var, Value] = f_locals
         self.f_back: Frame | None = f_back
         self.f_globals: Namespace[Var, Value] = f_globals
+        self.f_builtins: Namespace[Var, Value] = f_builtins
 
     def __contains__(self, var):
         return var in self.f_locals
@@ -41,9 +42,6 @@ class Frame:
         return self
 
     def __repr__(self):
-        # res = "local: {}, back: {}, global: {}".format(
-        #     self.f_locals, self.f_back, self.f_globals
-        # )
         res = "local: {}".format(self.f_locals)
         return res
 
@@ -55,28 +53,33 @@ class Frame:
             if var_scope == "local":
                 return self.f_locals.read_value_from_var(var_name)
             elif var_scope == "nonlocal":
-                return self.read_nonlocal(var_name)
+                return self.read_nonlocal_frame(var_name)
             elif var_scope == "global":
-                return self.read_global(var_name)
+                return self.read_global_frame(var_name)
 
         # use global keyword, then assign a value to the nonexist var
         if scope == "global":
             return self.read_global_with_default(var_name)
 
         try:
-            return self.read_nonlocal(var_name)
+            return self.read_nonlocal_frame(var_name)
         except AttributeError:
             pass
 
         try:
-            return self.read_global(var_name)
+            return self.read_global_frame(var_name)
+        except AttributeError:
+            pass
+
+        try:
+            return self.read_builtin_frame(var_name)
         except AttributeError:
             pass
 
         raise AttributeError(var_name)
 
     # find one with (var_name, local)
-    def read_nonlocal(self, var_name: str):
+    def read_nonlocal_frame(self, var_name: str):
         parent_frame: Frame = self.f_back
         while (
             # not the last frame
@@ -96,13 +99,22 @@ class Frame:
                 parent_frame = parent_frame.f_back
         raise AttributeError(var_name)
 
-    def read_global(self, var_name: str):
+    def read_global_frame(self, var_name: str):
         if var_name in self.f_globals:
             var_scope = self.f_globals.read_var_scope(var_name)
             if var_scope != "local":
                 raise AttributeError(var_name)
             else:
                 return self.f_globals.read_value_from_var(var_name)
+        raise AttributeError(var_name)
+
+    def read_builtin_frame(self, var_name: str):
+        if var_name in self.f_builtins:
+            var_scope = self.f_builtins.read_var_scope(var_name)
+            if var_scope != "local":
+                raise AttributeError(var_name)
+            else:
+                return self.f_builtins.read_value_from_var(var_name)
         raise AttributeError(var_name)
 
     def read_global_with_default(self, var_name: str):
@@ -177,6 +189,13 @@ class Stack:
             glo = frame.f_globals
             module_name = glo.get_module_name()
             dmf.share.analysis_modules[module_name].namespace = glo
+            if dmf.share.static_builtins:
+                builtins_ns = dmf.share.analysis_modules[
+                    "static_builtins"
+                ].get_namespace()
+            else:
+                builtins_ns = Namespace()
+            frame.f_builtins = builtins_ns
 
     def __le__(self, other: Stack):
         frame_pairs = zip(reversed(self.frames), reversed(other.frames))
@@ -219,5 +238,6 @@ class Stack:
             f_locals=ValueDict(),
             f_back=curr_frame,
             f_globals=curr_frame.f_globals,
+            f_builtins=curr_frame.f_builtins,
         )
         self.push_frame(new_frame)

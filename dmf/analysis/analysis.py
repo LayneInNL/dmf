@@ -41,6 +41,7 @@ from dmf.analysis.state import (
 from dmf.analysis.value import (
     InsType,
     MethodType,
+    Namespace,
 )
 from dmf.analysis.value import (
     Value,
@@ -158,8 +159,17 @@ class Analysis(Base):
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: None = None
         self.analysis_effect_list: None = None
+        self.extremal_value: State = State()
+
+        # init first frame
         global_ns = dmf.share.analysis_modules[module_name].get_namespace()
-        self.extremal_value: State = State(ns=global_ns)
+        if dmf.share.static_builtins:
+            builtins_ns = dmf.share.analysis_modules["static_builtins"].get_namespace()
+        else:
+            builtins_ns = Namespace()
+        self.extremal_value.init_first_frame(
+            f_locals=global_ns, f_back=None, f_globals=global_ns, f_builtins=builtins_ns
+        )
 
     def compute_fixed_point(self):
         self.initialize()

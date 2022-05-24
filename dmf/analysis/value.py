@@ -169,6 +169,11 @@ class ModuleType:
         return self
 
 
+class ListType:
+    def __init__(self, value: Value):
+        self.value = value
+
+
 # Either VALUE_TOP or have some values
 class Value:
     def __init__(self):
