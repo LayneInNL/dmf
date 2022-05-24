@@ -40,6 +40,7 @@ from dmf.analysis.state import (
 )
 from dmf.analysis.value import (
     InsType,
+    MethodType,
 )
 from dmf.analysis.value import (
     Value,
@@ -289,13 +290,13 @@ class Analysis(Base):
     def lambda_class_init(self, program_point, typ: ClsType, attr: str = "__init__"):
         call_lab, call_ctx = program_point
         return_lab = self.get_return_label(call_lab)
-        init_funcs: Value = typ.getattr(attr)
-        for _, init_func in init_funcs:
-            if isinstance(init_func, FuncType):
-                addr = record(call_lab, call_ctx)
-                ins_type = InsType(addr, typ)
+        addr = record(call_lab, call_ctx)
+        ins_type = InsType(addr, typ)
+        init_methods: Value = analysis_heap.read_field_from_heap(ins_type, attr)
+        for _, init_method in init_methods:
+            if isinstance(init_method, MethodType):
                 analysis_heap.write_ins_to_heap(ins_type)
-                entry_lab, exit_lab = init_func.get_code()
+                entry_lab, exit_lab = init_method.get_code()
                 inter_flow = (
                     (call_lab, call_ctx),
                     (entry_lab, call_ctx),
@@ -305,7 +306,7 @@ class Analysis(Base):
                 self.inter_flows.add(inter_flow)
                 self.self_info[(entry_lab, call_ctx)] = (ins_type, INIT_FLAG)
             else:
-                logger.warn(init_func)
+                logger.warn(init_method)
                 assert False
 
     # instance.method()

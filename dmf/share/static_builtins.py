@@ -26,9 +26,8 @@
 
 
 class static_object:
-    # def __init__(self):
-    #     pass
-    pass
+    def __init__(self):
+        pass
 
 
 # from dmf.analysis.value import Value

@@ -63,23 +63,26 @@ class FuncType:
         self._dict_[key] = value
 
     def getattr(self, key):
-        return self._dict_[key]
+        return self._dict_.read_value_from_var(key)
 
     # def __repr__(self):
     #     return self._dict_.__repr__()
 
 
-class InsMethod:
+class MethodType:
     def __init__(self, ins, func_type):
         self._self_ = ins
-        self._func_ = func_type
+        self._func_: FuncType = func_type
 
-    def __le__(self, other: InsMethod):
+    def __le__(self, other: MethodType):
         return self._func_ <= other._func_
 
-    def __iadd__(self, other: InsMethod):
+    def __iadd__(self, other: MethodType):
         self._func_ += other._func_
         return self
+
+    def get_code(self):
+        return self._func_.get_code()
 
 
 class ClsType:
@@ -209,6 +212,10 @@ class Value:
         lab = id(ins_type)
         self.type_dict[lab] = ins_type
 
+    def inject_method_type(self, method_type: MethodType):
+        lab = id(method_type)
+        self.type_dict[lab] = method_type
+
     def extract_cls_type(self):
         res = []
         for _, typ in self.type_dict.items():
@@ -320,6 +327,7 @@ class ValueDict(defaultdict):
             v_name: str = v.get_name()
             if var == v_name:
                 return v_value
+        raise AttributeError(var)
 
     def read_var_scope(self, var: str):
         for v, v_value in self.items():

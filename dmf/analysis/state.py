@@ -17,6 +17,7 @@ import ast
 
 import dmf.share
 from dmf.analysis.flow_util import ProgramPoint
+from dmf.analysis.heap import analysis_heap
 from dmf.analysis.stack import Stack, Frame
 from dmf.analysis.value import ClsType, Value, InsType, FuncType, ValueDict
 from dmf.log.logger import logger
@@ -129,11 +130,15 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
     elif isinstance(expr, ast.Attribute):
         receiver_value: Value = compute_value_of_expr(program_point, expr.value, state)
         receiver_attr: str = expr.attr
-        value = Value()
-        for lab, typ in receiver_value:
+        value: Value = Value()
+        for _, typ in receiver_value:
             if isinstance(typ, InsType):
-                v = state.read_field_from_heap(typ.get_addr(), receiver_attr)
-                value += v
+                try:
+                    v = analysis_heap.read_field_from_heap(typ, receiver_attr)
+                except AttributeError:
+                    pass
+                else:
+                    value += v
             elif isinstance(typ, FuncType):
                 v = typ.getattr(receiver_attr)
                 value += v

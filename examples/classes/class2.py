@@ -26,8 +26,10 @@
 
 
 class Test:
-    def __init__(self):
-        self.a = 1
+    pass
+    # def __init__(self):
+    #     self.a = 1
+    #     self.b = self.a
 
 
 t = Test()
