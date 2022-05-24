@@ -16,7 +16,7 @@ from __future__ import annotations
 import ast
 import logging
 from collections import defaultdict, deque
-from typing import Dict, Tuple, Deque, Set
+from typing import Dict, Tuple, Deque, Set, List
 
 import dmf.share
 from dmf.analysis.ctx_util import merge, record
@@ -227,8 +227,10 @@ class Analysis(Base):
         # procedural call
         elif isinstance(stmt, ast.Call):
             func = stmt.func
+            # x()
             if isinstance(func, ast.Name):
                 self.LAMBDA_Name(program_point, func.id)
+            # x.y()
             elif isinstance(func, ast.Attribute):
                 attr: str = func.attr
                 state = self.analysis_list[program_point]
@@ -243,14 +245,14 @@ class Analysis(Base):
         self, program_point: ProgramPoint, receiver_value: Value, attr: str
     ):
         # x has type ?
-        for lab, typ in receiver_value:
+        for _, typ in receiver_value:
             if isinstance(typ, ClsType):
                 attr_value: Value = typ.getattr(attr)
                 assert False
             elif isinstance(typ, FuncType):
                 assert False
             elif isinstance(typ, InsType):
-                self.lambda_method_call(program_point, typ, attr)
+                self.lambda_attribute_call(program_point, typ, attr)
             else:
                 assert False
 
@@ -314,32 +316,17 @@ class Analysis(Base):
     # 1. instance function. such as instance.method(args...)
     # 2. class method. such as instance.method(self, args...)
     # We support 1. now.
-    def lambda_method_call(
-        self, program_point: ProgramPoint, ins_type: InsType, attr: str
+    def lambda_attribute_call(
+        self, program_point: ProgramPoint, instance: InsType, attr: str
     ):
-        # call stuff
-        call_lab, call_ctx = program_point
-        # return label
-        return_lab = self.get_return_label(call_lab)
-        # call state to retrieve heap attributes
-        call_state: State = self.analysis_list[program_point]
-        # heap of instance
-        heap = ins_type.get_addr()
-        attr_value: Value = call_state.read_field_from_heap(heap, attr)
+        attr_value: Value = analysis_heap.read_field_from_heap(instance, attr)
         for _, typ in attr_value:
             if isinstance(typ, FuncType):
-                new_ctx = merge(call_lab, heap, call_ctx)
-                entry_lab, exit_lab = typ.get_code()
-                inter_flow = (
-                    (call_lab, call_ctx),
-                    (entry_lab, new_ctx),
-                    (exit_lab, new_ctx),
-                    (return_lab, call_ctx),
-                )
-                self.inter_flows.add(inter_flow)
-                self.self_info[(entry_lab, new_ctx)] = (ins_type.get_addr(), "", None)
+                self.lambda_func_call(program_point, typ)
             elif isinstance(typ, ClsType):
                 self.lambda_class_init(program_point, typ)
+            elif isinstance(typ, MethodType):
+                self.lambda_method_call(program_point, instance, typ)
             else:
                 logger.warn(typ)
                 assert False
@@ -351,6 +338,21 @@ class Analysis(Base):
         entry_lab, exit_lab = typ.get_code()
         return_lab = self.get_return_label(call_lab)
         new_ctx: Ctx = merge(call_lab, None, call_ctx)
+        inter_flow = (
+            (call_lab, call_ctx),
+            (entry_lab, new_ctx),
+            (exit_lab, new_ctx),
+            (return_lab, call_ctx),
+        )
+        self.inter_flows.add(inter_flow)
+
+    def lambda_method_call(
+        self, program_point: ProgramPoint, instance: InsType, typ: MethodType
+    ):
+        call_lab, call_ctx = program_point
+        entry_lab, exit_lab = typ.get_code()
+        return_lab = self.get_return_label(call_lab)
+        new_ctx: Ctx = merge(call_lab, instance, call_ctx)
         inter_flow = (
             (call_lab, call_ctx),
             (entry_lab, new_ctx),
@@ -524,19 +526,31 @@ class Analysis(Base):
         # abstract value for class
         value: Value = Value()
 
-        builtin_module = dmf.share.analysis_modules["static_builtins"]
-        builtin_namespace = builtin_module.get_namespace()
-        default_base = builtin_namespace["__object__"]
-        if "static_object" in builtin_namespace:
-            static_object: Value = builtin_namespace.read_value_from_var(
-                "static_object"
-            )
-            static_object_types = static_object.extract_cls_type()
-            for typ in static_object_types:
-                default_base = typ
+        def compute_bases(stmt: ast.ClassDef):
+            if stmt.bases:
+                base_types = []
+                for base in stmt.bases:
+                    assert isinstance(base, ast.Name)
+                    base_value: Value = new.read_var_from_stack(base.id)
+                    cls_types: List[ClsType] = base_value.extract_cls_type()
+                    assert len(cls_types) == 1
+                    for cls in cls_types:
+                        base_types.append(cls)
+                return base_types
+            else:
+                builtin_module = dmf.share.analysis_modules["static_builtins"]
+                builtin_namespace = builtin_module.get_namespace()
+                default_base = builtin_namespace["__object__"]
+                if "static_object" in builtin_namespace:
+                    static_object: Value = builtin_namespace.read_value_from_var(
+                        "static_object"
+                    )
+                    static_object_types = static_object.extract_cls_type()
+                    for typ in static_object_types:
+                        default_base = typ
+                return [default_base]
 
-        # bases = stmt.bases if stmt.bases else [builtin_object]
-        bases = stmt.bases if stmt.bases else [default_base]
+        bases = compute_bases(stmt)
         cls_type: ClsType = ClsType(cls_name, module, bases, frame.f_locals)
         # inject namespace
         value.inject_cls_type(cls_type)

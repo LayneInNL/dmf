@@ -269,7 +269,9 @@ class Var:
         return self.name == other.name
 
 
-# Dict[str, AbstractValue|VALUE_TOP]
+# Dict[Var|str, Value|VALUE_TOP]
+# Var | str, str represents magic variables, Var represents general variables
+# Value | VALUE_TOP, Value represents value, VALUE_TOP represents TOP
 class ValueDict(defaultdict):
     def __repr__(self):
         return dict.__repr__(self)
@@ -296,18 +298,26 @@ class ValueDict(defaultdict):
     def __le__(self, other: ValueDict):
         variables = self.keys() | other.keys()
         for var in variables:
-            if var.startswith("__") and var.endswith("__"):
-                continue
-            if not self.issubset(self[var], other[var]):
-                return False
+            if isinstance(var, str):
+                if var.startswith("__") and var.endswith("__"):
+                    continue
+            elif isinstance(var, Var):
+                if not self.issubset(self[var], other[var]):
+                    return False
+            else:
+                assert False
         return True
 
     def __iadd__(self, other: ValueDict):
         variables = self.keys() | other.keys()
         for var in variables:
-            if var.startswith("__") and var.endswith("__"):
-                continue
-            self[var] = self.union(self[var], other[var])
+            if isinstance(var, str):
+                if var.startswith("__") and var.endswith("__"):
+                    continue
+            elif isinstance(var, Var):
+                self[var] = self.union(self[var], other[var])
+            else:
+                assert False
         return self
 
     def __contains__(self, item: str):

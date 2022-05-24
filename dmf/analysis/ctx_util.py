@@ -11,12 +11,15 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-from typing import Tuple
+from __future__ import annotations
+
+from dmf.analysis.flow_util import Ctx, Lab
+from dmf.analysis.value import InsType
 
 
-def record(label, context):
+def record(label: Lab, context: Ctx):
     return label
 
 
-def merge(label, heap, context):
+def merge(label: Lab, heap: InsType | None, context: Ctx):
     return context[-1:] + (label,)
