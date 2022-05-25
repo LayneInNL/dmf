@@ -13,3 +13,4 @@
 #  limitations under the License.
 
 a = list()
+a.append(1)

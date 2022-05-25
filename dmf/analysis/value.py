@@ -37,10 +37,10 @@ VALUE_TOP = "VALUE_TOP"
 
 
 class FuncType:
-    def __init__(self, name, code):
+    def __init__(self, name, module, code):
         self._name_ = name
         self._qualname_ = None
-        self._module_ = None
+        self._module_ = module
         self._defaults_ = None
         self._code_ = code
         self._globals_ = None
@@ -59,6 +59,9 @@ class FuncType:
     def get_code(self):
         return self._code_
 
+    def get_module(self):
+        return self._module_
+
     def setattr(self, key, value):
         self._dict_[key] = value
 
@@ -70,7 +73,7 @@ class FuncType:
 
 
 class MethodType:
-    def __init__(self, ins, func_type):
+    def __init__(self, ins: InsType, func_type: FuncType):
         self._self_ = ins
         self._func_: FuncType = func_type
 
@@ -83,6 +86,12 @@ class MethodType:
 
     def get_code(self):
         return self._func_.get_code()
+
+    def get_instance(self):
+        return self._self_
+
+    def get_module(self):
+        return self._func_.get_module()
 
 
 class ClsType:
@@ -170,8 +179,18 @@ class ModuleType:
 
 
 class ListType:
-    def __init__(self, value: Value):
-        self.value = value
+    def __init__(self):
+        self.value: Value = Value()
+
+    def __le__(self, other: ListType):
+        return self.value <= other.value
+
+    def __iadd__(self, other):
+        self.value += other.value
+        return self
+
+    # def __repr__(self):
+    #     return self.value.__repr__()
 
 
 # Either VALUE_TOP or have some values
@@ -250,6 +269,10 @@ class Value:
     def inject_bytes_type(self):
         lab = PRIM_BYTES_ID
         self.type_dict[lab] = PRIM_BYTES
+
+    def inject_list_type(self, list_type):
+        lab = id(list_type)
+        self.type_dict[lab] = list_type
 
 
 class Var:
@@ -357,6 +380,7 @@ class ValueDict(defaultdict):
         return self["__name__"]
 
 
+Unused_Name = "-1024"
 Namespace = ValueDict
 SELF_FLAG = "self"
 INIT_FLAG = "19970303"

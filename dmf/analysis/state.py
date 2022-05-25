@@ -19,7 +19,7 @@ import dmf.share
 from dmf.analysis.flow_util import ProgramPoint
 from dmf.analysis.heap import analysis_heap
 from dmf.analysis.stack import Stack, Frame
-from dmf.analysis.value import ClsType, Value, InsType, FuncType, ValueDict
+from dmf.analysis.value import ClsType, Value, InsType, FuncType, ValueDict, ListType
 from dmf.log.logger import logger
 
 
@@ -68,8 +68,20 @@ class State:
     def write_var_to_stack(self, var: str, value: Value, scope: str = "local"):
         self.stack.write_var(var, value, scope)
 
-    def stack_exec_in_new_ns(self):
-        self.stack.next_ns()
+    def stack_exec_in_new_ns(self, new_module_name=None):
+        self.stack.next_ns(new_module_name)
+
+    def check_module_diff(self, new_module_name=None):
+        # if new_module_name is None, it's entering class definition
+        if not new_module_name:
+            return
+
+        curr_module_name = self.get_current_module()
+        if curr_module_name != new_module_name:
+            logger.warning("Go into a different module")
+            self.stack.frames[-1].f_globals = dmf.share.analysis_modules[
+                new_module_name
+            ].get_namespace()
 
     def get_current_module(self):
         frame: Frame = self.stack.top_frame()
@@ -128,6 +140,11 @@ def compute_value_of_expr(program_point: ProgramPoint, expr: ast.expr, state: St
     elif isinstance(expr, ast.Compare):
         value = Value()
         value.inject_bool_type()
+        return value
+    elif isinstance(expr, ast.List):
+        value = Value()
+        list_type = ListType()
+        value.inject_list_type(list_type)
         return value
     elif isinstance(expr, ast.Name):
         return state.read_var_from_stack(expr.id)

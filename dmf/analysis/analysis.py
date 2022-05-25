@@ -42,6 +42,7 @@ from dmf.analysis.value import (
     InsType,
     MethodType,
     Namespace,
+    Unused_Name,
 )
 from dmf.analysis.value import (
     Value,
@@ -155,7 +156,9 @@ class Base:
 class Analysis(Base):
     def __init__(self, start_lab, module_name):
         super().__init__(start_lab)
-        self.self_info: Dict[ProgramPoint, Tuple[InsType, str | None]] = {}
+        self.entry_info: Dict[
+            ProgramPoint, Tuple[InsType | None, str | None, str | None]
+        ] = {}
         self.work_list: Deque[Flow] = deque()
         self.analysis_list: None = None
         self.analysis_effect_list: None = None
@@ -269,17 +272,22 @@ class Analysis(Base):
     # deal with cases such as class xxx
     def LAMBDA_ClassDef(self, program_point: ProgramPoint):
         call_lab, call_ctx = program_point
-        return_lab = self.get_return_label(call_lab)
+
         cfg = self.sub_cfgs[call_lab]
+        entry_lab = cfg.start_block.bid
+        exit_lab = cfg.final_block.bid
+
+        return_lab = self.get_return_label(call_lab)
         self.add_sub_cfg(cfg)
         self.inter_flows.add(
             (
                 (call_lab, call_ctx),
-                (cfg.start_block.bid, call_ctx),
-                (cfg.final_block.bid, call_ctx),
+                (entry_lab, call_ctx),
+                (exit_lab, call_ctx),
                 (return_lab, call_ctx),
             )
         )
+        self.entry_info[(entry_lab, call_ctx)] = (None, None, None)
 
     # deal with cases such as name()
     def LAMBDA_Name(self, program_point: ProgramPoint, name: str):
@@ -292,6 +300,8 @@ class Analysis(Base):
                 self.lambda_class_init(program_point, typ)
             elif isinstance(typ, FuncType):
                 self.lambda_func_call(program_point, typ)
+            elif isinstance(typ, MethodType):
+                self.lambda_method_call(program_point, typ)
             else:
                 logger.warn(typ)
                 assert False
@@ -316,7 +326,12 @@ class Analysis(Base):
                     (return_lab, call_ctx),
                 )
                 self.inter_flows.add(inter_flow)
-                self.self_info[(entry_lab, call_ctx)] = (ins_type, INIT_FLAG)
+                init_method_module = init_method.get_module()
+                self.entry_info[(entry_lab, call_ctx)] = (
+                    ins_type,
+                    INIT_FLAG,
+                    init_method_module,
+                )
             else:
                 logger.warn(init_method)
                 assert False
@@ -356,12 +371,11 @@ class Analysis(Base):
         )
         self.inter_flows.add(inter_flow)
 
-    def lambda_method_call(
-        self, program_point: ProgramPoint, instance: InsType, typ: MethodType
-    ):
+    def lambda_method_call(self, program_point: ProgramPoint, typ: MethodType):
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = typ.get_code()
         return_lab = self.get_return_label(call_lab)
+        instance = typ.get_instance()
         new_ctx: Ctx = merge(call_lab, instance, call_ctx)
         inter_flow = (
             (call_lab, call_ctx),
@@ -370,6 +384,8 @@ class Analysis(Base):
             (return_lab, call_ctx),
         )
         self.inter_flows.add(inter_flow)
+        method_module = typ.get_module()
+        self.entry_info[(entry_lab, new_ctx)] = (instance, None, method_module)
 
     def transfer(self, program_point: ProgramPoint) -> State | STATE_BOT:
         lab, _ = program_point
@@ -423,13 +439,47 @@ class Analysis(Base):
             assert False
         return new
 
+    def transfer_AugAssign(self, program_point: ProgramPoint):
+        label, context = program_point
+        stmt: ast.AugAssign = self.get_stmt_by_label(label)
+
+        old: State = self.analysis_list[program_point]
+        new: State = old.copy()
+
+        lhs_value: Value = compute_value_of_expr(program_point, stmt.target, new)
+        rhs_value: Value = compute_value_of_expr(program_point, stmt.value, new)
+        lhs_value += rhs_value
+
+        return new
+
     def transfer_call(self, program_point: ProgramPoint):
         call_lab, call_ctx = program_point
         stmt: ast.stmt = self.get_stmt_by_label(call_lab)
-        if isinstance(stmt, (ast.ClassDef, ast.Call)):
+        if isinstance(stmt, ast.ClassDef):
             old: State = self.analysis_list[program_point]
             new: State = old.copy()
             new.stack_exec_in_new_ns()
+            return new
+        elif isinstance(stmt, ast.Call):
+            old: State = self.analysis_list[program_point]
+            new: State = old.copy()
+            new.stack_exec_in_new_ns()
+            func = stmt.func
+            func_value: Value = compute_value_of_expr(program_point, func, new)
+            for _, typ in func_value:
+                if isinstance(typ, ClsType):
+                    args = stmt.args
+                    for idx, arg in enumerate(args):
+                        arg_value = compute_value_of_expr(program_point, arg, new)
+                        new.write_var_to_stack(str(idx + 1), arg_value)
+                elif isinstance(typ, MethodType):
+                    args = stmt.args
+                    for idx, arg in enumerate(args):
+                        arg_value = compute_value_of_expr(program_point, arg, new)
+                        new.write_var_to_stack(str(idx + 1), arg_value)
+                elif isinstance(typ, FuncType):
+                    logger.error(typ)
+                    assert False
             return new
         else:
             assert False
@@ -440,21 +490,36 @@ class Analysis(Base):
         old: State = self.analysis_list[program_point]
         new: State = old.copy()
 
-        if isinstance(stmt, ast.Pass):
-            return new
-
         # is self.self_info[program_point] is not None, it means
         # this is a class method call
-        if program_point in self.self_info:
-            # heap is heap, flag denotes if it's init method
-            instance, init_flag = self.self_info[program_point]
+        # we pass instance information, INIT information and module name to entry labels
+        instance, init_flag, module_name = self.entry_info[program_point]
+        if instance:
             value = Value()
             value.inject_ins_type(instance)
-            new.write_var_to_stack(SELF_FLAG, value)
-            if init_flag:
-                # write the init flag to stack
-                new.write_var_to_stack(INIT_FLAG, INIT_FLAG_VALUE)
-        return new
+            # new.write_var_to_stack(SELF_FLAG, value)
+            new.write_var_to_stack(str(0), value)
+        if init_flag:
+            # write the init flag to stack
+            new.write_var_to_stack(INIT_FLAG, INIT_FLAG_VALUE)
+        if module_name:
+            new.check_module_diff(module_name)
+
+        if isinstance(stmt, ast.Pass):
+            return new
+        elif isinstance(stmt, ast.FunctionDef):
+            arguments = stmt.args
+            args = arguments.args
+
+            idx = 0
+            for arg in args:
+                parameter = arg.arg
+                parameter_value = new.read_var_from_stack(str(idx))
+                new.write_var_to_stack(parameter, parameter_value)
+            return new
+        else:
+            logger.error(stmt)
+            assert False
 
     def transfer_return(self, program_point: ProgramPoint):
         return_lab, return_ctx = program_point
@@ -463,10 +528,15 @@ class Analysis(Base):
         if isinstance(stmt, ast.ClassDef):
             return self.transfer_ClassDef_return(program_point)
         elif isinstance(stmt, ast.Name):
+            lhs_name = stmt.id
             return_state = self.analysis_list[program_point]
             # new_call_state: State = call_state.copy()
             new_return_state: State = return_state.copy()
             new_return_state.pop_frame_from_stack()
+
+            # no need to assign
+            if lhs_name == Unused_Name:
+                return new_return_state
 
             return_value: Value = return_state.read_var_from_stack(RETURN_FLAG)
             # write value to name
@@ -579,10 +649,11 @@ class Analysis(Base):
         new: State = old.copy()
 
         func_name: str = stmt.name
+        func_module: str = new.get_current_module()
         entry_lab, exit_lab = func_cfg.start_block.bid, func_cfg.final_block.bid
 
         value = Value()
-        func_type = FuncType(func_name, (entry_lab, exit_lab))
+        func_type = FuncType(func_name, func_module, (entry_lab, exit_lab))
         value.inject_func_type(lab, func_type)
 
         new.write_var_to_stack(func_name, value)

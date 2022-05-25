@@ -715,7 +715,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Expr(self, node: ast.Expr) -> None:
 
-        tmp_var = temp.RandomUnusedName.gen_unused_name()
+        tmp_var = temp.Unused_Name
         tmp_assign = ast.Assign(
             targets=[ast.Name(id=tmp_var, ctx=ast.Store())], value=node.value
         )

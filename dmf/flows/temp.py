@@ -12,15 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+Unused_Name = "-1024"
+
 
 class RandomVariableName:
     counter = 0
-    prefix = "0_var_"
 
     @classmethod
     def gen_random_name(cls) -> str:
         cls.counter += 1
-        return cls.prefix + str(cls.counter)
+        return str(cls.counter) + "var"
 
 
 class RandomGeneratorName:
@@ -43,14 +44,6 @@ class RandomLambdaName:
         return cls.prefix + str(cls.counter)
 
 
-class RandomUnusedName:
-    prefix = "_tmp_unused_var_"
-
-    @classmethod
-    def gen_unused_name(cls) -> str:
-        return cls.prefix
-
-
 class RandomIterable:
     counter = 0
     prefix = "_tmp_iter_"
@@ -67,15 +60,5 @@ class RandomReturnName:
 
     @classmethod
     def gen_return_name(cls) -> str:
-        cls.counter += 1
-        return cls.prefix + str(cls.counter)
-
-
-class RandomPassThroughName:
-    counter = 0
-    prefix = "_tmp_pass_through_"
-
-    @classmethod
-    def gen_pass_through_name(cls) -> str:
         cls.counter += 1
         return cls.prefix + str(cls.counter)

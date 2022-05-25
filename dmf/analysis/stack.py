@@ -232,12 +232,20 @@ class Stack:
         copied = Stack(self)
         return copied
 
-    def next_ns(self):
+    def next_ns(self, new_module_name=None):
         curr_frame = self.top_frame()
+
+        new_f_locals = Namespace()
+        new_f_back = curr_frame
+        new_f_globals = curr_frame.f_globals
+        if new_module_name is not None:
+            new_f_globals = dmf.share.analysis_modules[new_module_name].get_namespace()
+        new_f_builtins = curr_frame.f_builtins
+
         new_frame = Frame(
-            f_locals=ValueDict(),
-            f_back=curr_frame,
-            f_globals=curr_frame.f_globals,
-            f_builtins=curr_frame.f_builtins,
+            f_locals=new_f_locals,
+            f_back=new_f_back,
+            f_globals=new_f_globals,
+            f_builtins=new_f_builtins,
         )
         self.push_frame(new_frame)
