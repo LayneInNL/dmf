@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, Tuple, DefaultDict, List
+from typing import DefaultDict, List
 
 from dmf.analysis.value import (
     InsType,
@@ -25,7 +25,6 @@ from dmf.analysis.value import (
     FuncType,
     MethodType,
 )
-from dmf.analysis.value_util import issubset_twodict, update_twodict, issubset, update
 
 
 # class Singleton:
@@ -117,26 +116,30 @@ class Heap:
     def write_field_to_heap(self, ins: InsType, field: str, value: Value):
         self.singletons[ins][Var(field, "local")] = value
 
-    # function, method
-    def read_field_from_heap(self, ins: InsType, field: str):
+    # function
+    def read_field_from_instance(self, ins: InsType, field: str):
         if field in self.singletons[ins]:
-            return self.singletons[ins].read_value_from_var(field)
+            var_scope, var_value = self.singletons[ins].read_scope_and_value_by_name(
+                field
+            )
+            return var_value
         else:
             return self.read_field_from_class(ins, field)
 
-    def read_field_from_class(self, ins: InsType, field: str):
-        cls_type: ClsType = ins._class_
-        cls_mro: List[ClsType] = cls_type._mro_
+    def read_field_from_class(self, instance: InsType, field: str):
+        cls_type: ClsType = instance.cls
+        cls_mro: List[ClsType] = cls_type.mro
         for typ in cls_mro:
             try:
-                value = typ.getattr(field)
+                var_scope, var_value = typ.getattr(field)
+                assert var_scope == "local"
             except AttributeError:
                 pass
             else:
                 new_value = Value()
-                for idx, field_typ in value:
+                for idx, field_typ in var_value:
                     if isinstance(field_typ, FuncType):
-                        method_type = MethodType(ins, field_typ)
+                        method_type = MethodType(instance, field_typ, field_typ.module)
                         new_value.inject_method_type(method_type)
                     else:
                         new_value.type_dict[idx] = field_typ

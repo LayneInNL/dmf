@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Tuple, List
+from typing import List, Tuple
 
 import dmf.share
 from dmf.analysis.prim import (
@@ -30,7 +30,6 @@ from dmf.analysis.prim import (
     PRIM_BYTES,
 )
 
-# None to denote TOP type. it can save memory consumption.
 from dmf.log.logger import logger
 
 VALUE_TOP = "VALUE_TOP"
@@ -38,137 +37,181 @@ VALUE_TOP = "VALUE_TOP"
 
 class FuncType:
     def __init__(self, name, module, code):
-        self._name_ = name
-        self._qualname_ = None
-        self._module_ = module
-        self._defaults_ = None
-        self._code_ = code
-        self._globals_ = None
-        # to model real __dict__ in the function
-        self._dict_: ValueDict[str, Value] = ValueDict()
-        self._closure_ = None
-        self._kwdefaults_ = None
+        self.name = name
+        self.qualname = None
+        self.module = module
+        self.defaults = None
+        self.code = code
+        self.globals = None
+        self.dict: Namespace[str, Value] = Namespace()
+        self.closure = None
+        self.kwdefaults = None
 
     def __le__(self, other: FuncType):
-        return self._dict_ <= other._dict_
+        return self.dict <= other.dict
 
     def __iadd__(self, other: FuncType):
-        self._dict_ += other._dict_
+        self.dict += other.dict
         return self
 
-    def get_code(self):
-        return self._code_
+    @property
+    def name(self):
+        return self._name_
 
-    def get_module(self):
+    @name.setter
+    def name(self, name):
+        self._name_ = name
+
+    @property
+    def module(self):
         return self._module_
 
-    def setattr(self, key, value):
-        self._dict_[key] = value
+    @module.setter
+    def module(self, module):
+        self._module_ = module
 
-    def getattr(self, key):
-        return self._dict_.read_value_from_var(key)
+    @property
+    def code(self):
+        return self._code_
+
+    @code.setter
+    def code(self, code):
+        self._code_ = code
+
+    def setattr(self, attr: str, value: Value):
+        var = Var(attr, Namespace_Local)
+        self.dict[var] = value
+
+    def getattr(self, name: str) -> Tuple[str, Value]:
+        return self.dict.read_scope_and_value_by_name(name)
 
     # def __repr__(self):
     #     return self._dict_.__repr__()
 
 
 class MethodType:
-    def __init__(self, ins: InsType, func_type: FuncType):
-        self._self_ = ins
-        self._func_: FuncType = func_type
+    def __init__(self, instance: InsType, func: FuncType, module: str):
+        self.name = None
+        self.qualname = None
+        self.func = func
+        self.instance = instance
+        self.module = module
 
     def __le__(self, other: MethodType):
-        return self._func_ <= other._func_
+        return self.func <= other.func
 
     def __iadd__(self, other: MethodType):
-        self._func_ += other._func_
+        self.func += other.func
         return self
 
-    def get_code(self):
-        return self._func_.get_code()
+    @property
+    def instance(self):
+        return self._instance
 
-    def get_instance(self):
-        return self._self_
+    @instance.setter
+    def instance(self, instance: InsType):
+        self._instance: InsType = instance
 
-    def get_module(self):
-        return self._func_.get_module()
+    @property
+    def func(self):
+        return self._func
+
+    @func.setter
+    def func(self, func: FuncType):
+        self._func: FuncType = func
+
+    @property
+    def code(self):
+        return self.func.code
+
+    @property
+    def module(self):
+        return self._module
+
+    @module.setter
+    def module(self, module: str):
+        self._module: str = module
 
 
 class ClsType:
     def __init__(
-        self, name: str, module: str, bases: List, namespace: ValueDict[Var, Value]
+        self, name: str, module: str, bases: List, namespace: Namespace[Var, Value]
     ):
-        self._name_ = name
-        self._module_ = module
-        self._bases_ = bases
-        self._mro_ = static_c3(self)
+        self.name = name
+        self.module = module
+        self.bases = bases
+        self.mro = static_c3(self)
         # the last builtin_object is just a flag, remove it
-        self._mro_ = self._mro_[:-1]
-        logger.debug("mro for class {}".format(self._mro_, self._name_))
-        self._dict_: ValueDict[Var, Value] = namespace
+        self.mro = self.mro[:-1]
+        logger.debug("mro for class {}".format(self.mro, self.name))
+        self.dict: Namespace[Var, Value] = namespace
 
     def __repr__(self):
-        return self._name_
+        return self.name
 
     def __le__(self, other: ClsType):
-        return self._dict_ <= other._dict_
+        return self.dict <= other.dict
 
     def __iadd__(self, other: ClsType):
-        self._dict_ += other._dict_
+        self.dict += other.dict
         return self
 
-    def setattr(self, key, value):
-        self._dict_[key] = value
+    def setattr(self, attr: str, value):
+        self.dict[Var(attr, Namespace_Local)] = value
 
-    def getattr(self, name):
-        return self._dict_.read_value_from_var(name)
+    def getattr(self, name: str) -> Tuple[str, Value]:
+        return self.dict.read_scope_and_value_by_name(name)
 
 
 class InsType:
     def __init__(self, addr, cls_type: ClsType):
-        self._self_ = addr
-        self._class_ = cls_type
-        self._dict_: ValueDict[str, Value] = ValueDict()
+        self.addr = addr
+        self.cls = cls_type
+        self.dict: Namespace[Var, Value] = Namespace()
 
     def __le__(self, other: InsType):
-        return self._dict_ <= other._dict_
+        return self.dict <= other.dict
 
     def __iadd__(self, other: InsType):
-        self._dict_ += other._dict_
+        self.dict += other.dict
         return self
 
     def __hash__(self):
-        return hash(str(self._self_) + self._class_._name_)
+        return hash(str(self.addr) + self.cls.name)
 
     def __eq__(self, other: InsType):
-        return (
-            self._self_ == other._self_ and self._class_._name_ == other._class_._name_
-        )
+        return self.addr == other.addr and self.cls.name == other.cls.name
 
-    def get_addr(self):
-        return self._self_
+    @property
+    def addr(self):
+        return self._addr
 
-    def setattr(self, key, value):
-        self._dict_[key] = value
+    @addr.setter
+    def addr(self, addr):
+        self._addr = addr
 
-    def getattr(self, key):
-        return self._dict_[key]
+    def setattr(self, attr: str, value: Value):
+        var = Var(attr, Namespace_Local)
+        self.dict[var] = value
 
-
-# in order to denote TOP, we need a special value. Since python doesn't support algebraic data types,
-# we have to use functions outside class to do operations.
+    def getattr(self, name: str) -> Tuple[str, Value]:
+        return self.dict.read_scope_and_value_by_name(name)
 
 
 class ModuleType:
-    def __init__(self, namespace):
-        self._name_ = None
-        self._package_ = None
-        self._file_ = None
-        self._dict_ = None
-        self.namespace: Namespace = namespace
+    def __init__(self, namespace: Namespace):
+        self.name = None
+        self.package = None
+        self.file = None
+        self.namespace = namespace
 
-    def get_namespace(self):
-        return self.namespace
+    @property
+    def namespace(self):
+        return self._namespace
+
+    @namespace.setter
+    def namespace(self, namespace: Namespace):
+        self._namespace = namespace
 
     def __le__(self, other: ModuleType):
         return self.namespace <= other.namespace
@@ -185,7 +228,7 @@ class ListType:
     def __le__(self, other: ListType):
         return self.value <= other.value
 
-    def __iadd__(self, other):
+    def __iadd__(self, other: ListType):
         self.value += other.value
         return self
 
@@ -220,11 +263,7 @@ class Value:
     def __iter__(self):
         return iter(self.type_dict.items())
 
-    def inject_heap_type(self, lab, ins_type):
-        lab = id(ins_type)
-        self.type_dict[lab] = ins_type
-
-    def inject_func_type(self, lab, func_type: FuncType):
+    def inject_func_type(self, func_type: FuncType):
         lab = id(func_type)
         self.type_dict[lab] = func_type
 
@@ -239,6 +278,10 @@ class Value:
     def inject_method_type(self, method_type: MethodType):
         lab = id(method_type)
         self.type_dict[lab] = method_type
+
+    def inject_module_type(self, module_type: ModuleType):
+        lab = id(ModuleType)
+        self.type_dict[lab] = module_type
 
     def extract_cls_type(self):
         res = []
@@ -276,19 +319,29 @@ class Value:
 
 
 class Var:
-    def __init__(self, name, scope="local"):
+    def __init__(self, name: str, scope: str = "local"):
         self.name = name
         # scope could be local, nonlocal, global
         self.scope = scope
 
     def __repr__(self):
-        return "name: {} scope: {}".format(self.name, self.scope)
+        return "({},{})".format(self.name, self.scope)
 
-    def get_name(self):
-        return self.name
+    @property
+    def name(self):
+        return self._name
 
-    def get_scope(self):
+    @name.setter
+    def name(self, name):
+        self._name = name
+
+    @property
+    def scope(self):
         return self.scope
+
+    @scope.setter
+    def scope(self, scope):
+        self._scope = scope
 
     def __hash__(self):
         return hash(self.name)
@@ -297,10 +350,14 @@ class Var:
         return self.name == other.name
 
 
+Namespace_Local = "local"
+Namespace_Nonlocal = "nonlocal"
+Namespace_Global = "global"
+
 # Dict[Var|str, Value|VALUE_TOP]
 # Var | str, str represents magic variables, Var represents general variables
 # Value | VALUE_TOP, Value represents value, VALUE_TOP represents TOP
-class ValueDict(defaultdict):
+class Namespace(defaultdict):
     def __repr__(self):
         return dict.__repr__(self)
 
@@ -321,14 +378,20 @@ class ValueDict(defaultdict):
         this += other
         return this
 
+    def is_magic_attr(self, var: Var | str):
+        if isinstance(var, str):
+            return True
+        else:
+            return False
+
     # we use defaultdict, the default value of an unknown variable is TOP
     # So we have to collect all variables
-    def __le__(self, other: ValueDict):
+    def __le__(self, other: Namespace):
         variables = self.keys() | other.keys()
         for var in variables:
-            if isinstance(var, str):
-                if var.startswith("__") and var.endswith("__"):
-                    continue
+            # magic method
+            if self.is_magic_attr(var):
+                continue
             elif isinstance(var, Var):
                 if not self.issubset(self[var], other[var]):
                     return False
@@ -336,55 +399,43 @@ class ValueDict(defaultdict):
                 assert False
         return True
 
-    def __iadd__(self, other: ValueDict):
+    def __iadd__(self, other: Namespace):
         variables = self.keys() | other.keys()
         for var in variables:
-            if isinstance(var, str):
-                if var.startswith("__") and var.endswith("__"):
-                    continue
+            if self.is_magic_attr(var):
+                continue
             elif isinstance(var, Var):
                 self[var] = self.union(self[var], other[var])
             else:
                 assert False
         return self
 
-    def __contains__(self, item: str):
+    def __contains__(self, name: str):
         # __xxx__ and Var
-        for v in self:
-            if isinstance(v, str):
+        for var in self:
+            if self.is_magic_attr(var):
                 continue
-            v_name = v.get_name()
-            if item == v_name:
+            if name == var.name:
                 return True
         return False
 
-    def read_value_from_var(self, var: str) -> Value:
+    def read_scope_and_value_by_name(self, var: str) -> Tuple[str, Value]:
         for v, v_value in self.items():
-            if isinstance(v, str):
+            if self.is_magic_attr(var):
                 continue
-            v_name: str = v.get_name()
-            if var == v_name:
-                return v_value
+            if var == v.name:
+                return v.scope, v_value
         raise AttributeError(var)
 
-    def read_var_scope(self, var: str):
-        for v, v_value in self.items():
-            if isinstance(v, str):
-                continue
-            v_name: str = v.get_name()
-            if var == v_name:
-                return v.get_scope()
-        return None
-
-    def get_module_name(self):
+    @property
+    def module(self):
         return self["__name__"]
 
 
 Unused_Name = "-1024"
-Namespace = ValueDict
 SELF_FLAG = "self"
 INIT_FLAG = "19970303"
-INIT_FLAG_VALUE = Value()
+INIT_FLAG_VALUE = VALUE_TOP
 RETURN_FLAG = "__return__"
 
 # builtin_object = ClsType((), Namespace())
@@ -398,7 +449,7 @@ def static_c3(class_object):
     if class_object is builtin_object:
         return [class_object]
     return [class_object] + static_merge(
-        [static_c3(base) for base in class_object._bases_]
+        [static_c3(base) for base in class_object.bases]
     )
 
 
