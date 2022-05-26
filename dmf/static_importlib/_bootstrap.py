@@ -701,13 +701,17 @@ def _load_unlocked(spec):
         else:
             # execute module
             start_lab, end_lab = dmf.share.create_and_update_cfg(module.__file__)
+            analysis_module = ModuleType(
+                module.__name__,
+                module.__package__,
+                module.__file__,
+            )
+            if hasattr(module, "__path__"):
+                analysis_module.namespace["__path__"] = module.__path__
+            dmf.share.analysis_modules[spec.name] = analysis_module
             # call them to builtins
             analysis = Analysis(start_lab, module.__name__)
             analysis.compute_fixed_point()
-            # update module ns
-            custom_module = ModuleType(analysis.analysis_effect_list[(end_lab, ())])
-            # sync to global scope
-            dmf.share.analysis_modules[spec.name] = custom_module
             # spec.loader.exec_module(module)
 
     # We don't ensure that the import-related module attributes get

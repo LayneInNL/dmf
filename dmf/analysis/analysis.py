@@ -165,10 +165,7 @@ class Analysis(Base):
 
         # init first frame
         global_ns = dmf.share.analysis_modules[module_name].namespace
-        if dmf.share.static_builtins:
-            builtins_ns = dmf.share.analysis_modules["static_builtins"].namespace
-        else:
-            builtins_ns = Namespace()
+        builtins_ns = dmf.share.analysis_modules["static_builtins"].namespace
         self.extremal_value.init_first_frame(
             f_locals=global_ns, f_back=None, f_globals=global_ns, f_builtins=builtins_ns
         )
@@ -573,10 +570,10 @@ class Analysis(Base):
                 return base_types
             else:
                 builtin_module = dmf.share.analysis_modules["static_builtins"]
-                builtin_namespace = builtin_module.namespace
+                builtin_namespace: Namespace = builtin_module.namespace
                 default_base = builtin_namespace["__object__"]
                 if "static_object" in builtin_namespace:
-                    static_object: Value = builtin_namespace.read_value_from_var(
+                    _, static_object = builtin_namespace.read_scope_and_value_by_name(
                         "static_object"
                     )
                     static_object_types = static_object.extract_cls_type()

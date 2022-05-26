@@ -16,35 +16,29 @@ import argparse
 import os.path
 import sys
 import time
+
+import dmf.share
 from dmf.analysis.heap import analysis_heap
-from dmf.analysis.value import ModuleType, Namespace
+from dmf.analysis.value import ModuleType
 from dmf.log.logger import logger
 from dmf.share import (
     create_and_update_cfg,
 )
-import dmf.share
 
 parser = argparse.ArgumentParser()
 parser.add_argument("main", help="the main file path")
 
 
-def add_builtin_module():
-    static_builtin_module_ns = Namespace()
-    static_builtin_module_ns["__name__"] = "static_builtins"
-    static_builtin_module_ns["__package__"] = ""
-    static_builtin_module_ns["__object__"] = object()
-    static_builtin_module = ModuleType(static_builtin_module_ns)
+def add_builtin_module(path):
+    static_builtin_module = ModuleType(name="static_builtins", package=None, file=path)
+    static_builtin_module.namespace["__object__"] = object()
     dmf.share.analysis_modules["static_builtins"] = static_builtin_module
 
 
-def add_main_module():
-    main_module = type(sys)("__main__")
-    dmf.share.modules["__main__"] = main_module
-    main_module.package = ""
-    main_module_ns = Namespace()
-    main_module_ns["__name__"] = "__main__"
-    main_module_ns["__package__"] = ""
-    analysis_main_module = ModuleType(main_module_ns)
+def add_main_module(path):
+    # main_module = type(sys)("__main__")
+    # dmf.share.modules["__main__"] = main_module
+    analysis_main_module = ModuleType(name="__main__", package="", file=path)
     dmf.share.analysis_modules["__main__"] = analysis_main_module
 
 
@@ -67,7 +61,7 @@ if __name__ == "__main__":
     # add builtin objects
     builtin_file_path = "./share/static_builtins.py"
     builtin_abs_path = os.path.abspath(builtin_file_path)
-    add_builtin_module()
+    add_builtin_module(builtin_abs_path)
 
     from dmf.analysis.analysis import Analysis
 
@@ -82,7 +76,7 @@ if __name__ == "__main__":
 
     # module name
     main_module_name = os.path.basename(main_abs_path).rpartition(".")[0]
-    add_main_module()
+    add_main_module(main_abs_path)
     add_sys_path(main_abs_path)
 
     # load cfg of main module

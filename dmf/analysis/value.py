@@ -199,26 +199,22 @@ class InsType:
 
 
 class ModuleType:
-    def __init__(self, namespace: Namespace):
-        self.name = None
-        self.package = None
-        self.file = None
-        self.namespace = namespace
+    def __init__(self, name: str, package: str | None, file: str):
+        self.name = name
+        self.package = package
+        self.file = file
+        self.namespace = Namespace()
+        self.namespace["__name__"] = name
+        self.namespace["__package__"] = package
+        self.namespace["__file__"] = file
 
-    @property
-    def namespace(self):
-        return self._namespace
-
-    @namespace.setter
-    def namespace(self, namespace: Namespace):
-        self._namespace = namespace
-
-    def __le__(self, other: ModuleType):
-        return self.namespace <= other.namespace
-
-    def __iadd__(self, other: ModuleType):
-        self.namespace += other.namespace
-        return self
+    # @property
+    # def name(self):
+    #     return self._name
+    #
+    # @name.setter
+    # def name(self, name: str):
+    #     self._name = name
 
 
 class ListType:
@@ -337,7 +333,7 @@ class Var:
 
     @property
     def scope(self):
-        return self.scope
+        return self._scope
 
     @scope.setter
     def scope(self, scope):
@@ -353,6 +349,7 @@ class Var:
 Namespace_Local = "local"
 Namespace_Nonlocal = "nonlocal"
 Namespace_Global = "global"
+
 
 # Dict[Var|str, Value|VALUE_TOP]
 # Var | str, str represents magic variables, Var represents general variables
@@ -419,13 +416,13 @@ class Namespace(defaultdict):
                 return True
         return False
 
-    def read_scope_and_value_by_name(self, var: str) -> Tuple[str, Value]:
-        for v, v_value in self.items():
+    def read_scope_and_value_by_name(self, var_name: str) -> Tuple[str, Value]:
+        for var, v_value in self.items():
             if self.is_magic_attr(var):
                 continue
-            if var == v.name:
-                return v.scope, v_value
-        raise AttributeError(var)
+            if var_name == var.name:
+                return var.scope, v_value
+        raise AttributeError(var_name)
 
     @property
     def module(self):
