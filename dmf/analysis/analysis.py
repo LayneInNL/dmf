@@ -42,6 +42,7 @@ from dmf.analysis.value import (
     MethodType,
     Namespace,
     Unused_Name,
+    ModuleType,
 )
 from dmf.analysis.value import (
     Value,
@@ -60,14 +61,12 @@ empty_context = ()
 
 
 class Base:
-    def __init__(self, start_lab: int):
-
+    def __init__(self):
         self.flows: Set[Basic_Flow] = dmf.share.flows
         self.call_return_flows: Set[Basic_Flow] = dmf.share.call_return_flows
         self.blocks: Dict[Lab, BasicBlock] = dmf.share.blocks
         self.sub_cfgs: Dict[Lab, CFG] = dmf.share.sub_cfgs
         self.inter_flows: Set[Inter_Flow] = set()
-        self.extremal_point: ProgramPoint = (start_lab, empty_context)
 
     def get_stmt_by_label(self, label: Lab):
         return self.blocks[label].stmt[0]
@@ -153,8 +152,8 @@ class Base:
 
 
 class Analysis(Base):
-    def __init__(self, start_lab, module_name):
-        super().__init__(start_lab)
+    def __init__(self, module_name):
+        super().__init__()
         self.entry_info: Dict[
             ProgramPoint, Tuple[InsType | None, str | None, str | None]
         ] = {}
@@ -164,11 +163,15 @@ class Analysis(Base):
         self.extremal_value: State = State()
 
         # init first frame
-        global_ns = dmf.share.analysis_modules[module_name].namespace
+        curr_module: ModuleType = dmf.share.analysis_modules[module_name]
+        start_lab, final_lab = curr_module.entry_label, curr_module.exit_label
+        global_ns = curr_module.namespace
         builtins_ns = dmf.share.analysis_modules["static_builtins"].namespace
         self.extremal_value.init_first_frame(
             f_locals=global_ns, f_back=None, f_globals=global_ns, f_builtins=builtins_ns
         )
+        self.extremal_point: ProgramPoint = (start_lab, empty_context)
+        self.final_point: ProgramPoint = (final_lab, empty_context)
 
     def compute_fixed_point(self):
         self.initialize()

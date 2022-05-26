@@ -207,6 +207,10 @@ class ModuleType:
         self.namespace["__name__"] = name
         self.namespace["__package__"] = package
         self.namespace["__file__"] = file
+        self.entry_label, self.exit_label = dmf.share.create_and_update_cfg(self.file)
+
+    def getattr(self, name: str) -> Tuple[str, Value]:
+        return self.namespace.read_scope_and_value_by_name(name)
 
     # @property
     # def name(self):

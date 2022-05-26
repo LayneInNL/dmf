@@ -18,7 +18,7 @@ import ast
 import dmf.share
 from dmf.analysis.heap import analysis_heap
 from dmf.analysis.stack import Stack, Frame
-from dmf.analysis.value import ClsType, Value, InsType, FuncType, ListType
+from dmf.analysis.value import ClsType, Value, InsType, FuncType, ListType, ModuleType
 from dmf.log.logger import logger
 
 
@@ -156,11 +156,26 @@ def compute_value_of_expr(_, expr: ast.expr, state: State):
                 else:
                     value += v
             elif isinstance(typ, FuncType):
-                v = typ.getattr(receiver_attr)
-                value += v
+                try:
+                    attr_scope, attr_value = typ.getattr(receiver_attr)
+                except AttributeError:
+                    pass
+                else:
+                    value += attr_value
             elif isinstance(typ, ClsType):
-                v = typ.getattr(receiver_attr)
-                value += v
+                try:
+                    attr_scope, attr_value = typ.getattr(receiver_attr)
+                except AttributeError:
+                    pass
+                else:
+                    value += attr_value
+            elif isinstance(typ, ModuleType):
+                try:
+                    attr_scope, attr_value = typ.getattr(receiver_attr)
+                except AttributeError:
+                    pass
+                else:
+                    value += attr_value
             else:
                 logger.warn(typ)
         return value

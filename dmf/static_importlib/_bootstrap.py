@@ -700,7 +700,6 @@ def _load_unlocked(spec):
             # A namespace package so do nothing.
         else:
             # execute module
-            start_lab, end_lab = dmf.share.create_and_update_cfg(module.__file__)
             analysis_module = ModuleType(
                 module.__name__,
                 module.__package__,
@@ -710,7 +709,7 @@ def _load_unlocked(spec):
                 analysis_module.namespace["__path__"] = module.__path__
             dmf.share.analysis_modules[spec.name] = analysis_module
             # call them to builtins
-            analysis = Analysis(start_lab, module.__name__)
+            analysis = Analysis(module.__name__)
             analysis.compute_fixed_point()
             # spec.loader.exec_module(module)
 

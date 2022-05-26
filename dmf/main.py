@@ -17,13 +17,13 @@ import os.path
 import sys
 import time
 
+# Must put it here to initialize static_importlib
+import dmf.static_importlib
+
 import dmf.share
 from dmf.analysis.heap import analysis_heap
 from dmf.analysis.value import ModuleType
 from dmf.log.logger import logger
-from dmf.share import (
-    create_and_update_cfg,
-)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("main", help="the main file path")
@@ -66,8 +66,7 @@ if __name__ == "__main__":
     from dmf.analysis.analysis import Analysis
 
     # load cfg of static builtin module
-    start_lab, end_lab = create_and_update_cfg(builtin_abs_path)
-    analysis = Analysis(start_lab, "static_builtins")
+    analysis = Analysis("static_builtins")
     analysis.compute_fixed_point()
     # calculate builtin module
     dmf.share.static_builtins = True
@@ -80,7 +79,6 @@ if __name__ == "__main__":
     add_sys_path(main_abs_path)
 
     # load cfg of main module
-    start_lab, end_lab = create_and_update_cfg(main_abs_path)
-    analysis = Analysis(start_lab, "__main__")
+    analysis = Analysis("__main__")
     analysis.compute_fixed_point()
     print(analysis_heap)
