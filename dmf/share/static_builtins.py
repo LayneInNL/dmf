@@ -30,12 +30,12 @@ class static_object:
         pass
 
 
-class list:
-    def __init__(self):
-        self.value = []
-
-    def append(self, value):
-        self.value += value
+# class list:
+#     def __init__(self):
+#         self.value = []
+#
+#     def append(self, value):
+#         self.value += value
 
 
 # class Int:

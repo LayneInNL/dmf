@@ -55,6 +55,8 @@ def add_sys_path(path):
 if __name__ == "__main__":
     args = parser.parse_args()
     main_file_path = args.main
+    if not main_file_path:
+        exit()
     # get main module absolute path
     main_abs_path = os.path.abspath(main_file_path)
 

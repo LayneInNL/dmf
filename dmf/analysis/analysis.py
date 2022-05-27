@@ -525,18 +525,20 @@ class Analysis(Base):
         old: State = self.analysis_list[program_point]
         new: State = old.copy()
         stmt: ast.ImportFrom = self.get_stmt_by_label(lab)
+
         module_name = "" if stmt.module is None else stmt.module
         dot_number = "." * stmt.level
-        package = new.read_var_from_stack("__package__")
+        package = new.get_top_fram_package()
         mod = dmf.share.static_import_module(
             name=dot_number + module_name,
             package=package,
         )
         logger.debug("ImportFrom module {}".format(mod))
+
         aliases = stmt.names
         for alias in aliases:
             imported_name = alias.name
-            imported_value = mod.read_var_from_module(imported_name)
+            var_scope, imported_value = mod.getattr(imported_name)
             if alias.asname is None:
                 new.write_var_to_stack(imported_name, imported_value)
             else:

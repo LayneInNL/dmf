@@ -83,6 +83,10 @@ class State:
         top_frame: Frame = self.top_frame_on_stack()
         return top_frame.f_globals["__name__"]
 
+    def get_top_fram_package(self):
+        top_frame: Frame = self.top_frame_on_stack()
+        return top_frame.f_globals["__package__"]
+
     def copy(self):
         copied = State(self)
         return copied
@@ -147,6 +151,11 @@ def compute_value_of_expr(_, expr: ast.expr, state: State):
         receiver_value: Value = compute_value_of_expr(_, expr.value, state)
         receiver_attr: str = expr.attr
         value: Value = Value()
+
+        def intercept(scope: str):
+            if scope != "local":
+                assert False
+
         for _, typ in receiver_value:
             if isinstance(typ, InsType):
                 try:
@@ -158,6 +167,7 @@ def compute_value_of_expr(_, expr: ast.expr, state: State):
             elif isinstance(typ, FuncType):
                 try:
                     attr_scope, attr_value = typ.getattr(receiver_attr)
+                    intercept(attr_scope)
                 except AttributeError:
                     pass
                 else:
@@ -165,6 +175,7 @@ def compute_value_of_expr(_, expr: ast.expr, state: State):
             elif isinstance(typ, ClsType):
                 try:
                     attr_scope, attr_value = typ.getattr(receiver_attr)
+                    intercept(attr_scope)
                 except AttributeError:
                     pass
                 else:
@@ -172,6 +183,7 @@ def compute_value_of_expr(_, expr: ast.expr, state: State):
             elif isinstance(typ, ModuleType):
                 try:
                     attr_scope, attr_value = typ.getattr(receiver_attr)
+                    intercept(attr_scope)
                 except AttributeError:
                     pass
                 else:
