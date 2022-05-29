@@ -25,9 +25,45 @@
 #  limitations under the License.
 
 
-class static_object:
+class object:
     def __init__(self):
         pass
+
+
+def hash(obj):
+    return 1
+
+
+def all(obj):
+    return True
+
+
+def any(obj):
+    return True
+
+
+def ascii(obj):
+    return "hello"
+
+
+def id(obj):
+    return 1
+
+
+def isinstance(obj1, obj2):
+    return True
+
+
+def issubclass(obj1, obj2):
+    return True
+
+
+def repr(obj):
+    return "str"
+
+
+def hasattr(obj1, obj2):
+    return True
 
 
 # class list:

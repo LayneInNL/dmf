@@ -577,9 +577,9 @@ class Analysis(Base):
                 builtin_module = dmf.share.analysis_modules["static_builtins"]
                 builtin_namespace: Namespace = builtin_module.namespace
                 default_base = builtin_namespace["__object__"]
-                if "static_object" in builtin_namespace:
+                if "object" in builtin_namespace:
                     _, static_object = builtin_namespace.read_scope_and_value_by_name(
-                        "static_object"
+                        "object"
                     )
                     static_object_types = static_object.extract_cls_type()
                     for typ in static_object_types:
