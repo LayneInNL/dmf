@@ -13,5 +13,5 @@
 #  limitations under the License.
 
 
-def test1():
+def test1(a, b=test(1, 2)):
     pass

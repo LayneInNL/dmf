@@ -153,7 +153,7 @@ class CFG:
 class CFGVisitor(ast.NodeVisitor):
     def __init__(
         self,
-        parent_node=ast.Pass(),
+        entry_node=ast.Pass(),
         has_return: bool = False,
         return_name=None,
         not_in_function=False,
@@ -161,7 +161,7 @@ class CFGVisitor(ast.NodeVisitor):
         super().__init__()
         self.cfg: Optional[CFG] = None
         self.curr_block: Optional[BasicBlock] = None
-        self.parent_node = parent_node
+        self.parent_node = entry_node
         self.has_return = has_return
         self.return_name = return_name
         self.initial = not_in_function
@@ -199,7 +199,7 @@ class CFGVisitor(ast.NodeVisitor):
     def add_FuncCFG(self, tree: ast.FunctionDef) -> None:
         func_id = self.curr_block.bid
         visitor: CFGVisitor = CFGVisitor(
-            parent_node=self.curr_block.stmt[0],
+            entry_node=self.curr_block.stmt[0].args,
         )
         func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
         self.cfg.sub_cfgs[func_id] = func_cfg
@@ -303,7 +303,23 @@ class CFGVisitor(ast.NodeVisitor):
             self.cfg.final_block = self.curr_block
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        # We only display fields in classes.
+        # get func args
+        func_args: ast.arguments = node.args
+        seq = []
+        # defaults args
+        defaults: List[ast.expr] = func_args.defaults
+        for idx, expr in enumerate(defaults):
+            seq1, name1 = self.decompose_expr(expr)
+            defaults[idx] = name1
+            seq.extend(seq1)
+        # kw_defaults args
+        kw_defaults: List[ast.expr] = func_args.kw_defaults
+        for idx, expr in enumerate(kw_defaults):
+            seq1, name1 = self.decompose_expr(expr)
+            kw_defaults[idx] = name1
+            seq.extend(seq1)
+        self.populate_body(seq)
+
         add_stmt(self.curr_block, node)
         self.add_FuncCFG(node)
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
@@ -754,6 +770,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     # decompose a single expression.
     # new_expr_sequence stores a list of temporal statements
+    # decompose_expr(expr)-> List[expr], ast.Name
 
     def decompose_expr(self, expr: ast.expr) -> Tuple:
         seq = self.visit(expr)
@@ -799,9 +816,8 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_BinOp(self, node: ast.BinOp) -> Any:
         seq1, name1 = self.decompose_expr(node.left)
-        node.left = name1
         seq2, name2 = self.decompose_expr(node.right)
-        node.right = name2
+        node.left, node.right = name1, name2
 
         return seq1 + seq2 + [node]
 
@@ -1095,14 +1111,18 @@ class CFGVisitor(ast.NodeVisitor):
 
         seq = []
         names = []
-        if not isinstance(node.func, ast.Name):
-            seq1, name1 = self.decompose_expr(node.func)
-            seq.extend(seq1)
-            node.func = name1
+
+        # decompose func
+        seq1, name1 = self.decompose_expr(node.func)
+        seq.extend(seq1)
+        node.func = name1
+
+        # decompose args
         for expr in node.args:
             seq1, name1 = self.decompose_expr(expr)
             seq.extend(seq1)
             names.append(name1)
+
         node.args = names
         return seq + [node]
 
@@ -1138,10 +1158,10 @@ class CFGVisitor(ast.NodeVisitor):
         node.value = name
         return seq + [node]
 
-    def visit_Subscript(self, node: ast.Subscript) -> Any:
+    def visit_Subscript(self, node) -> Any:
         return self.visit_Attribute(node)
 
-    def visit_Starred(self, node: ast.Starred) -> Any:
+    def visit_Starred(self, node) -> Any:
         return self.visit_Attribute(node)
 
     def visit_Name(self, node: ast.Name) -> Any:
