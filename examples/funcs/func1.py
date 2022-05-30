@@ -13,5 +13,9 @@
 #  limitations under the License.
 
 
-def test1(a, b=test(1, 2)):
-    pass
+def test1(a, b):
+    c = a
+    return c
+
+
+d = test1(b=1, a=None)

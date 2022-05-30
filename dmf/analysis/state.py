@@ -199,4 +199,5 @@ def compute_value_of_expr(_, expr: ast.expr, state: State):
         # value = Value()
         assert False
     else:
+        logger.warn(expr)
         assert False

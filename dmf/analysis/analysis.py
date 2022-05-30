@@ -433,9 +433,19 @@ class Analysis(Base):
                 # __init__ or instance method
                 if isinstance(typ, (ClsType, MethodType, FuncType)):
                     args = stmt.args
-                    for idx, arg in enumerate(args):
-                        arg_value = compute_value_of_expr(program_point, arg, new)
-                        new.write_var_to_stack(str(idx + 1), arg_value)
+                    if args:
+                        for idx, arg in enumerate(args, 1):
+                            arg_value = compute_value_of_expr(program_point, arg, new)
+                            new.write_var_to_stack(str(idx), arg_value)
+                        new.write_var_to_stack("__positional__", idx)
+                    else:
+                        new.write_var_to_stack("__positional__", 0)
+                    keywords = stmt.keywords
+                    for keyword in keywords:
+                        keyword_value = compute_value_of_expr(
+                            program_point, keyword.value, new
+                        )
+                        new.write_var_to_stack(keyword.arg, keyword_value)
                 else:
                     assert False
             return new
@@ -454,10 +464,10 @@ class Analysis(Base):
         # we pass instance information, INIT information and module name to entry labels
         instance, init_flag, module_name = self.entry_info[program_point]
         if instance:
-            value = Value()
-            value.inject_ins_type(instance)
+            instance_value = Value()
+            instance_value.inject_ins_type(instance)
             # new.write_var_to_stack(SELF_FLAG, value)
-            new.write_var_to_stack(str(0), value)
+            new.write_var_to_stack(str(0), instance_value)
         if init_flag:
             # write the init flag to stack
             new.write_var_to_stack(INIT_FLAG, INIT_FLAG_VALUE)
@@ -466,19 +476,40 @@ class Analysis(Base):
 
         if isinstance(stmt, ast.Pass):
             return new
-        elif isinstance(stmt, ast.FunctionDef):
-            arguments = stmt.args
+        elif isinstance(stmt, ast.arguments):
+            arguments = stmt
+
+            # Positional and keyword arguments
             args = arguments.args
-
+            arg_flags = [False for _ in args]
             # if it has an instance, self is considered
-            idx = 1
-            if instance:
-                idx = 0
-
-            for arg in args:
-                parameter = arg.arg
-                parameter_value = new.read_var_from_stack(str(idx))
+            start_pos = 0 if instance else 1
+            arg_pos = 0
+            positional_len = new.read_var_from_stack("__positional__")
+            for position in range(start_pos, positional_len + 1):
+                parameter = args[arg_pos].arg
+                parameter_value = new.read_var_from_stack(str(position))
+                arg_flags[arg_pos] = True
                 new.write_var_to_stack(parameter, parameter_value)
+                arg_pos += 1
+
+            # keyword arguments
+            for idx, elt in enumerate(arg_flags):
+                if not elt:
+                    arg_name = args[idx].arg
+                    if new.top_frame_contains(arg_name):
+                        arg_flags[idx] = True
+
+            # default arguments
+            for idx, elt in enumerate(arg_flags):
+                if not elt:
+                    arg_name = args[idx].arg
+                    default = arguments.value_defaults[idx]
+                    if default is None:
+                        assert False
+                    else:
+                        new.write_var_to_stack(arg_name, default)
+
             return new
         else:
             logger.error(stmt)
@@ -603,6 +634,15 @@ class Analysis(Base):
         new: State = old.copy()
 
         func_name: str = stmt.name
+        func_args: ast.arguments = stmt.args
+        value_defaults = [
+            compute_value_of_expr(program_point, default, new)
+            for default in func_args.defaults
+        ]
+        if len(func_args.args) != len(value_defaults):
+            diff = len(func_args.args) - len(value_defaults)
+            diff_none = [None] * diff
+            func_args.value_defaults = diff_none + value_defaults
         func_module: str = new.get_top_frame_module()
         entry_lab, exit_lab = func_cfg.start_block.bid, func_cfg.final_block.bid
 

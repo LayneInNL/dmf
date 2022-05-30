@@ -19,10 +19,9 @@ class Base:
     def __init__(self):
         self.v = self.value
 
-    def test(self):
-        t = "S"
-        return t
+    def test(self, a):
+        return a
 
 
 b = Base()
-x = b.test()
+x = b.test(False)
