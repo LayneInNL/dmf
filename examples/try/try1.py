@@ -32,3 +32,5 @@ def test(a):
 ret = test(1)
 ret2 = test(0)
 print(ret, ret2)
+
+a = (lambda x: test(1))(1)

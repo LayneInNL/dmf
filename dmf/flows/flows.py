@@ -347,26 +347,31 @@ class CFGVisitor(ast.NodeVisitor):
             self.cfg.final_block = self.curr_block
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        # get func args
-        func_args: ast.arguments = node.args
-        seq = []
-        # defaults args
-        defaults: List[ast.expr] = func_args.defaults
-        for idx, expr in enumerate(defaults):
-            seq1, name1 = self.decompose_expr(expr)
-            defaults[idx] = name1
-            seq.extend(seq1)
-        # kw_defaults args
-        kw_defaults: List[ast.expr] = func_args.kw_defaults
-        for idx, expr in enumerate(kw_defaults):
-            seq1, name1 = self.decompose_expr(expr)
-            kw_defaults[idx] = name1
-            seq.extend(seq1)
+
+        # deal with node.arguments
+        seq = self.visit_arguments(node.args)
         self.populate_body(seq)
 
         add_stmt(self.curr_block, node)
         self.add_FuncCFG(node)
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
+    def visit_arguments(self, node: ast.arguments) -> Any:
+        seq = []
+
+        # defaults args
+        defaults: List[ast.expr] = node.defaults
+        for idx, expr in enumerate(defaults):
+            seq1, defaults[idx] = self.decompose_expr(expr)
+            seq.extend(seq1)
+
+        # kw_defaults args
+        kw_defaults: List[ast.expr] = node.kw_defaults
+        for idx, expr in enumerate(kw_defaults):
+            seq1, kw_defaults[idx] = self.decompose_expr(expr)
+            seq.extend(seq1)
+
+        return seq
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         add_stmt(self.curr_block, node)
@@ -510,46 +515,6 @@ class CFGVisitor(ast.NodeVisitor):
         iter_sequence.append(new_while)
         self.populate_body(iter_sequence)
 
-    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
-        iter_sequence = self.visit(node.iter)
-        node.iter = iter_sequence[-1]
-        self.populate_body(iter_sequence[:-1])
-
-        loop_guard = self.add_loop_block()
-        self.curr_block = loop_guard
-        add_stmt(self.curr_block, node)
-        self.loop_guard_stack.append(loop_guard)
-
-        # New block for the body of the for-loop.
-        for_block: BasicBlock = self.new_block()
-        self.add_edge(self.curr_block.bid, for_block.bid)
-        after_for_block: BasicBlock = self.new_block()
-        self.add_edge(self.curr_block.bid, after_for_block.bid)
-        self.after_loop_stack.append(after_for_block)
-        if not node.orelse:
-            # Block of code after the for loop.
-            # self.add_edge(self.curr_block.bid, after_for_block.bid)
-
-            # self.loop_stack.append(after_for_block)
-            self.curr_block = for_block
-            self.populate_body_to_next_bid(node.body, loop_guard.bid)
-        else:
-            # Block of code after the for loop.
-            or_else_block: BasicBlock = self.new_block()
-            self.add_edge(self.curr_block.bid, or_else_block.bid)
-
-            # self.loop_stack.append(after_for_block)
-            self.curr_block = for_block
-            self.populate_body_to_next_bid(node.body, loop_guard.bid)
-
-            self.curr_block = or_else_block
-            self.populate_body_to_next_bid(node.orelse, after_for_block.bid)
-
-        # Continue building the CFG in the after-for block.
-        self.curr_block = after_for_block
-        self.after_loop_stack.pop()
-        self.loop_guard_stack.pop()
-
     def visit_While(self, node: ast.While) -> None:
 
         test_sequence = self.visit(node.test)
@@ -620,19 +585,6 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block: BasicBlock = after_if_block
 
     def visit_With(self, node: ast.With) -> None:
-        add_stmt(self.curr_block, node)
-
-        with_body_block = self.new_block()
-        after_with_block = self.new_block()
-
-        self.add_edge(self.curr_block.bid, with_body_block.bid)
-        self.add_edge(self.curr_block.bid, after_with_block.bid)
-        self.curr_block = with_body_block
-        self.populate_body_to_next_bid(node.body, after_with_block.bid)
-
-        self.curr_block = after_with_block
-
-    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
         add_stmt(self.curr_block, node)
 
         with_body_block = self.new_block()
@@ -868,31 +820,32 @@ class CFGVisitor(ast.NodeVisitor):
         return current_sequence + [ast.Name(id=new_var, ctx=ast.Load())]
 
     def visit_BinOp(self, node: ast.BinOp) -> Any:
-        seq1, name1 = self.decompose_expr(node.left)
-        seq2, name2 = self.decompose_expr(node.right)
-        node.left, node.right = name1, name2
+        seq1, node.left = self.decompose_expr(node.left)
+        seq2, node.right = self.decompose_expr(node.right)
 
         return seq1 + seq2 + [node]
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
-        expr = node.operand
-        seq, name = self.decompose_expr(expr)
-        node.operand = name
+        seq, node.operand = self.decompose_expr(node.operand)
 
         return seq + [node]
 
     def visit_Lambda(self, node: ast.Lambda) -> Any:
-        tmp_lambda_name = temp.RandomLambdaName.gen_lambda_name()
+        tmp_var = temp.RandomVariableName.gen_random_name()
+
+        seq_args = self.visit_arguments(node.args)
+        seq_ret, name = self.decompose_expr(node.body)
+
         tmp_function_def = ast.FunctionDef(
-            name=tmp_lambda_name,
+            name=tmp_var,
             args=node.args,
-            body=[ast.Return(node.body)],
+            body=seq_ret + [ast.Return(name)],
             decorator_list=[],
             returns=None,
         )
-        tmp_function_name = ast.Name(id=tmp_lambda_name, ctx=ast.Load())
+        tmp_function_name = ast.Name(id=tmp_var, ctx=ast.Load())
 
-        return [tmp_function_def, tmp_function_name]
+        return seq_args + [tmp_function_def, tmp_function_name]
 
     def visit_IfExp(self, node: ast.IfExp) -> Any:
         tmp_var: str = temp.RandomVariableName.gen_random_name()
@@ -906,10 +859,21 @@ class CFGVisitor(ast.NodeVisitor):
         return [new_if, tmp_name]
 
     def visit_Dict(self, node: ast.Dict) -> Any:
-        return [node]
+        seq = []
+        for idx, key in enumerate(node.keys):
+            seq1, node.keys[idx] = self.decompose_expr(key)
+            seq.extend(seq1)
+            seq1, node.values[idx] = self.decompose_expr(node.values[idx])
+            seq.extend(seq1)
+
+        return seq + [node]
 
     def visit_Set(self, node: ast.Set) -> Any:
-        return [node]
+        seq = []
+        for idx, elt in node.elts:
+            seq1, node.elts[idx] = self.decompose_expr(elt)
+            seq.extend(seq1)
+        return seq + [node]
 
     def visit_ListComp(self, node: ast.ListComp) -> Any:
 
@@ -1121,27 +1085,16 @@ class CFGVisitor(ast.NodeVisitor):
                 )
             ]
 
-    def visit_Await(self, node: ast.Await) -> Any:
-        expr = node.value
-        seq, name = self.decompose_expr(expr)
-        node.value = name
-
-        return seq + [node]
-
     def visit_Yield(self, node: ast.Yield) -> Any:
         if node.value is None:
             return [node]
 
-        expr = node.value
-        seq, name = self.decompose_expr(expr)
-        node.value = name
+        seq, node.value = self.decompose_expr(node.value)
 
         return seq + [node]
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Any:
-        expr = node.value
-        seq, name = self.decompose_expr(expr)
-        node.value = name
+        seq, node.value = self.decompose_expr(node.value)
 
         return seq + [node]
 
@@ -1157,26 +1110,27 @@ class CFGVisitor(ast.NodeVisitor):
         return seq + [node]
 
     def visit_Call(self, node: ast.Call) -> Any:
-        if type(node.func) == ast.Lambda:
+        if isinstance(node.func, ast.Lambda):
+            assert False
             seq1, name = self.decompose_expr(node.func)
-            tmp_call = ast.Call(args=node.args, func=name, keywords=[])
+            tmp_call = ast.Call(args=node.args, func=name, keywords=node.keywords)
             return seq1 + [tmp_call]
 
         seq = []
-        names = []
 
         # decompose func
-        seq1, name1 = self.decompose_expr(node.func)
+        seq1, node.func = self.decompose_expr(node.func)
         seq.extend(seq1)
-        node.func = name1
 
         # decompose args
-        for expr in node.args:
-            seq1, name1 = self.decompose_expr(expr)
+        for idx, expr in enumerate(node.args):
+            seq1, node.args[idx] = self.decompose_expr(expr)
             seq.extend(seq1)
-            names.append(name1)
 
-        node.args = names
+        for idx, keyword in enumerate(node.keywords):
+            seq1, keyword.value = self.decompose_expr(keyword.value)
+            seq.extend(seq1)
+
         return seq + [node]
 
     def visit_Num(self, node: ast.Num) -> Any:
@@ -1186,9 +1140,24 @@ class CFGVisitor(ast.NodeVisitor):
         return [node]
 
     def visit_FormattedValue(self, node: ast.FormattedValue) -> Any:
-        return [node]
+        seq = []
+
+        # deal with node.value
+        seq1, node.value = self.decompose_expr(node.value)
+        seq.extend(seq1)
+
+        # deal with node.format_spec
+        if node.format_spec:
+            seq1, node.format_spec = self.decompose_expr(node.format_spec)
+            seq.extend(seq1)
+
+        return seq + [node]
 
     def visit_JoinedStr(self, node: ast.JoinedStr) -> Any:
+        seq = []
+        for idx, value in enumerate(node.values):
+            seq1, node.values[idx] = self.decompose_expr(value)
+            seq.extend(seq1)
         return [node]
 
     def visit_Bytes(self, node: ast.Bytes) -> Any:
@@ -1206,9 +1175,7 @@ class CFGVisitor(ast.NodeVisitor):
     # x.y
     # -> tmp = x.y
     def visit_Attribute(self, node) -> Any:
-        expr = node.value
-        seq, name = self.decompose_expr(expr)
-        node.value = name
+        seq, node.value = self.decompose_expr(node.value)
         return seq + [node]
 
     def visit_Subscript(self, node) -> Any:
@@ -1222,12 +1189,9 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_List(self, node) -> Any:
         seq = []
-        names = []
-        for elt in node.elts:
-            seq1, name1 = self.decompose_expr(elt)
+        for idx, elt in enumerate(node.elts):
+            seq1, node.elts[idx] = self.decompose_expr(elt)
             seq.extend(seq1)
-            names.append(name1)
-        node.elts = names
         return seq + [node]
 
     def visit_Tuple(self, node) -> Any:
