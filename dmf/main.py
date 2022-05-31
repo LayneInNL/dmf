@@ -60,27 +60,28 @@ if __name__ == "__main__":
     # get main module absolute path
     main_abs_path = os.path.abspath(main_file_path)
 
-    # add builtin objects
-    builtin_file_path = "./share/static_builtins.py"
-    builtin_abs_path = os.path.abspath(builtin_file_path)
-    add_builtin_module(builtin_abs_path)
-
-    from dmf.analysis.analysis import Analysis
-
-    # load cfg of static builtin module
-    analysis = Analysis("static_builtins")
-    analysis.compute_fixed_point()
-    # calculate builtin module
-    dmf.share.static_builtins = True
-    # sleep 2 seconds
-    time.sleep(1)
-
-    # module name
-    main_module_name = os.path.basename(main_abs_path).rpartition(".")[0]
     add_main_module(main_abs_path)
-    add_sys_path(main_abs_path)
-
-    # load cfg of main module
-    analysis = Analysis("__main__")
-    analysis.compute_fixed_point()
-    print(analysis_heap)
+    # # add builtin objects
+    # builtin_file_path = "./share/static_builtins.py"
+    # builtin_abs_path = os.path.abspath(builtin_file_path)
+    # add_builtin_module(builtin_abs_path)
+    #
+    # from dmf.analysis.analysis import Analysis
+    #
+    # # load cfg of static builtin module
+    # analysis = Analysis("static_builtins")
+    # analysis.compute_fixed_point()
+    # # calculate builtin module
+    # dmf.share.static_builtins = True
+    # # sleep 2 seconds
+    # time.sleep(1)
+    #
+    # # module name
+    # main_module_name = os.path.basename(main_abs_path).rpartition(".")[0]
+    # add_main_module(main_abs_path)
+    # add_sys_path(main_abs_path)
+    #
+    # # load cfg of main module
+    # analysis = Analysis("__main__")
+    # analysis.compute_fixed_point()
+    # print(analysis_heap)

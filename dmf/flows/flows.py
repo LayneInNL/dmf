@@ -132,10 +132,30 @@ class CFG:
         self.graph = gv.Digraph(name="cluster_" + str(self.start_block.bid), format=fmt)
         self.graph.attr(label=name)
         self._traverse(self.start_block)
-        for func_label, funcCFG in self.sub_cfgs.items():
-            self.graph.subgraph(
-                funcCFG.generate(fmt, "CFG at label {}".format(func_label))
-            )
+        for lab, cfg in self.sub_cfgs.items():
+            self.graph.subgraph(cfg.generate(fmt, "CFG at label {}".format(lab)))
+            if hasattr(cfg, "handler_cfgs"):
+                handler_cfgs = getattr(cfg, "handler_cfgs")
+                for handler_cfg in handler_cfgs:
+                    condition = handler_cfg.condition
+                    line = astor.to_source(condition).partition("\n")[0]
+                    self.graph.subgraph(
+                        handler_cfg.generate(
+                            fmt,
+                            "{} at label {}".format(line, lab),
+                        )
+                    )
+            if hasattr(cfg, "orelse_cfg"):
+                orelse_cfg = getattr(cfg, "orelse_cfg")
+                self.graph.subgraph(
+                    orelse_cfg.generate(fmt, "orelse at label {}".format(lab))
+                )
+            if hasattr(cfg, "finalbody_cfg"):
+                orelse_cfg = getattr(cfg, "finalbody_cfg")
+                self.graph.subgraph(
+                    orelse_cfg.generate(fmt, "finalbody at label {}".format(lab))
+                )
+
         return self.graph
 
     def show(
@@ -204,18 +224,42 @@ class CFGVisitor(ast.NodeVisitor):
         func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
         self.cfg.sub_cfgs[func_id] = func_cfg
 
-    def add_AsyncFuncCFG(self, tree: ast.AsyncFunctionDef) -> None:
-        name_id_pair = (tree.name, self.curr_block.bid)
-        visitor: CFGVisitor = CFGVisitor()
-        func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
-        self.cfg.async_func_cfgs[name_id_pair] = func_cfg
-
     def add_ClassCFG(self, node: ast.ClassDef):
         class_id = self.curr_block.bid
         class_body: ast.Module = ast.Module(body=node.body)
         visitor: CFGVisitor = CFGVisitor(not_in_function=True)
         class_cfg: CFG = visitor.build(node.name, class_body)
         self.cfg.sub_cfgs[class_id] = class_cfg
+
+    def add_TryCFG(self, node: ast.Try):
+        # get try node id
+        try_id = self.curr_block.bid
+        # deal with try body
+        try_body = node.body
+        visitor: CFGVisitor = CFGVisitor(not_in_function=True)
+        try_cfg: CFG = visitor.build("try", ast.Module(body=try_body))
+        self.cfg.sub_cfgs[try_id] = try_cfg
+
+        # deal with handlers
+        handlers = node.handlers
+        self.cfg.sub_cfgs[try_id].handler_cfgs = []
+        for handler in handlers:
+            visitor: CFGVisitor = CFGVisitor(entry_node=handler, not_in_function=True)
+            handler_cfg: CFG = visitor.build("except", ast.Module(body=handler.body))
+            handler_cfg.condition = handler
+            self.cfg.sub_cfgs[try_id].handler_cfgs.append(handler_cfg)
+
+        # deal with orelse
+        orelse = node.orelse
+        visitor: CFGVisitor = CFGVisitor(not_in_function=True)
+        orelse_cfg: CFG = visitor.build("orelse", ast.Module(body=orelse))
+        self.cfg.sub_cfgs[try_id].orelse_cfg = orelse_cfg
+
+        # deal with finalbody
+        finalbody = node.finalbody
+        visitor: CFGVisitor = CFGVisitor(not_in_function=True)
+        finalbody_cfg: CFG = visitor.build("orelse", ast.Module(body=finalbody))
+        self.cfg.sub_cfgs[try_id].finalbody_cfg = finalbody_cfg
 
     def remove_empty_blocks(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
@@ -613,7 +657,16 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_Try(self, node: ast.Try) -> None:
         loop_guard = self.add_loop_block()
         self.curr_block = loop_guard
-        add_stmt(loop_guard, ast.Try(body=[], handlers=[], orelse=[], finalbody=[]))
+        if not node.orelse:
+            node.orelse = []
+        if not node.finalbody:
+            node.finalbody = []
+        # add_stmt(loop_guard, ast.Try(body=[], handlers=[], orelse=[], finalbody=[]))
+        add_stmt(loop_guard, node)
+
+        self.add_TryCFG(node)
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        return
 
         try_body_block = self.new_block()
         self.curr_block = self.add_edge(self.curr_block.bid, try_body_block.bid)
