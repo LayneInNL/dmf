@@ -600,10 +600,10 @@ class CFGVisitor(ast.NodeVisitor):
     # Need to record exception handling stack
     def visit_Raise(self, node: ast.Raise) -> None:
         add_stmt(self.curr_block, node)
-        if self.raise_except_stack and self.raise_except_stack[-1] is not None:
-            self.add_edge(self.curr_block.bid, self.raise_except_stack[-1].bid)
-        if self.raise_final_stack and self.raise_final_stack[-1] is not None:
-            self.add_edge(self.curr_block.bid, self.raise_final_stack[-1].bid)
+        # if self.raise_except_stack and self.raise_except_stack[-1] is not None:
+        #     self.add_edge(self.curr_block.bid, self.raise_except_stack[-1].bid)
+        # if self.raise_final_stack and self.raise_final_stack[-1] is not None:
+        #     self.add_edge(self.curr_block.bid, self.raise_final_stack[-1].bid)
         self.curr_block = self.new_block()
 
     def visit_Try(self, node: ast.Try) -> None:
@@ -620,70 +620,70 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         return
 
-        try_body_block = self.new_block()
-        self.curr_block = self.add_edge(self.curr_block.bid, try_body_block.bid)
-        exception_handling_sentinel = self.new_block()
-        self.raise_except_stack.append(exception_handling_sentinel)
-        self.populate_body_to_next_bid(node.body, exception_handling_sentinel.bid)
-        self.raise_except_stack.pop()
-        add_stmt(
-            exception_handling_sentinel,
-            ast.Name(id="exception handling", ctx=ast.Load()),
-        )
-        self.curr_block = exception_handling_sentinel
-
-        fake_after_try_block = self.new_block()
-        if node.handlers:
-            self.raise_except_stack.append(None)
-            self.raise_final_stack.append(
-                fake_after_try_block if node.finalbody else None
-            )
-            for handler in node.handlers:
-                handler_type_block = self.new_block()
-                self.curr_block = handler_type_block
-                add_stmt(
-                    handler_type_block,
-                    handler.type
-                    if handler.type
-                    else ast.Name(id="BaseException", ctx=ast.Load()),
-                )
-                self.add_edge(
-                    exception_handling_sentinel.bid,
-                    handler_type_block.bid,
-                    ast.Name(id="Except Type", ctx=ast.Load()),
-                )
-                self.curr_block = self.add_edge(
-                    self.curr_block.bid, self.new_block().bid
-                )
-
-                self.populate_body_to_next_bid(handler.body, fake_after_try_block.bid)
-            self.raise_final_stack.pop()
-            self.raise_except_stack.pop()
-
-        if node.orelse:
-            before_else_block = self.new_block()
-            self.curr_block = before_else_block
-            self.add_edge(
-                exception_handling_sentinel.bid,
-                before_else_block.bid,
-                ast.Name(id="No Error", ctx=ast.Load()),
-            )
-
-            self.populate_body_to_next_bid(node.orelse, fake_after_try_block.bid)
-
-        self.curr_block = fake_after_try_block
-        finally_block = fake_after_try_block
-        if node.finalbody:
-            self.add_edge(
-                exception_handling_sentinel.bid,
-                finally_block.bid,
-                ast.Name(id="Finally", ctx=ast.Load()),
-            )
-            after_finally_block = self.new_block()
-            self.populate_body_to_next_bid(node.finalbody, after_finally_block.bid)
-            self.curr_block = after_finally_block
-        else:
-            self.add_edge(exception_handling_sentinel.bid, finally_block.bid)
+        # try_body_block = self.new_block()
+        # self.curr_block = self.add_edge(self.curr_block.bid, try_body_block.bid)
+        # exception_handling_sentinel = self.new_block()
+        # self.raise_except_stack.append(exception_handling_sentinel)
+        # self.populate_body_to_next_bid(node.body, exception_handling_sentinel.bid)
+        # self.raise_except_stack.pop()
+        # add_stmt(
+        #     exception_handling_sentinel,
+        #     ast.Name(id="exception handling", ctx=ast.Load()),
+        # )
+        # self.curr_block = exception_handling_sentinel
+        #
+        # fake_after_try_block = self.new_block()
+        # if node.handlers:
+        #     self.raise_except_stack.append(None)
+        #     self.raise_final_stack.append(
+        #         fake_after_try_block if node.finalbody else None
+        #     )
+        #     for handler in node.handlers:
+        #         handler_type_block = self.new_block()
+        #         self.curr_block = handler_type_block
+        #         add_stmt(
+        #             handler_type_block,
+        #             handler.type
+        #             if handler.type
+        #             else ast.Name(id="BaseException", ctx=ast.Load()),
+        #         )
+        #         self.add_edge(
+        #             exception_handling_sentinel.bid,
+        #             handler_type_block.bid,
+        #             ast.Name(id="Except Type", ctx=ast.Load()),
+        #         )
+        #         self.curr_block = self.add_edge(
+        #             self.curr_block.bid, self.new_block().bid
+        #         )
+        #
+        #         self.populate_body_to_next_bid(handler.body, fake_after_try_block.bid)
+        #     self.raise_final_stack.pop()
+        #     self.raise_except_stack.pop()
+        #
+        # if node.orelse:
+        #     before_else_block = self.new_block()
+        #     self.curr_block = before_else_block
+        #     self.add_edge(
+        #         exception_handling_sentinel.bid,
+        #         before_else_block.bid,
+        #         ast.Name(id="No Error", ctx=ast.Load()),
+        #     )
+        #
+        #     self.populate_body_to_next_bid(node.orelse, fake_after_try_block.bid)
+        #
+        # self.curr_block = fake_after_try_block
+        # finally_block = fake_after_try_block
+        # if node.finalbody:
+        #     self.add_edge(
+        #         exception_handling_sentinel.bid,
+        #         finally_block.bid,
+        #         ast.Name(id="Finally", ctx=ast.Load()),
+        #     )
+        #     after_finally_block = self.new_block()
+        #     self.populate_body_to_next_bid(node.finalbody, after_finally_block.bid)
+        #     self.curr_block = after_finally_block
+        # else:
+        #     self.add_edge(exception_handling_sentinel.bid, finally_block.bid)
 
     # If assert fails, AssertionError will be raised.
     # If assert succeeds, execute normal flow.
@@ -1158,7 +1158,7 @@ class CFGVisitor(ast.NodeVisitor):
         for idx, value in enumerate(node.values):
             seq1, node.values[idx] = self.decompose_expr(value)
             seq.extend(seq1)
-        return [node]
+        return seq + [node]
 
     def visit_Bytes(self, node: ast.Bytes) -> Any:
         return [node]
