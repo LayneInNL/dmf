@@ -13,14 +13,15 @@
 #  limitations under the License.
 def test():
     try:
-        pass
+        if x:
+            raise
+        b = 2
     except AttributeError as exp:
         pass
-        return
     else:
-        pass
+        els = 1
     finally:
-        pass
+        fina = 1
 
 
 test()

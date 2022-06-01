@@ -240,17 +240,17 @@ class CFGVisitor(ast.NodeVisitor):
             handler_cfg.condition = handler
             self.cfg.sub_cfgs[try_id].handler_cfgs.append(handler_cfg)
 
-        # deal with orelse
-        orelse = node.orelse
-        visitor: CFGVisitor = CFGVisitor()
-        orelse_cfg: CFG = visitor.build("orelse", ast.Module(body=orelse))
-        self.cfg.sub_cfgs[try_id].orelse_cfg = orelse_cfg
-
-        # deal with finalbody
-        finalbody = node.finalbody
-        visitor: CFGVisitor = CFGVisitor()
-        finalbody_cfg: CFG = visitor.build("orelse", ast.Module(body=finalbody))
-        self.cfg.sub_cfgs[try_id].finalbody_cfg = finalbody_cfg
+        # # deal with orelse
+        # orelse = node.orelse
+        # visitor: CFGVisitor = CFGVisitor()
+        # orelse_cfg: CFG = visitor.build("orelse", ast.Module(body=orelse))
+        # self.cfg.sub_cfgs[try_id].orelse_cfg = orelse_cfg
+        #
+        # # deal with finalbody
+        # finalbody = node.finalbody
+        # visitor: CFGVisitor = CFGVisitor()
+        # finalbody_cfg: CFG = visitor.build("orelse", ast.Module(body=finalbody))
+        # self.cfg.sub_cfgs[try_id].finalbody_cfg = finalbody_cfg
 
     def remove_empty_blocks(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
@@ -545,24 +545,52 @@ class CFGVisitor(ast.NodeVisitor):
     # Need to record exception handling stack
     def visit_Raise(self, node: ast.Raise) -> None:
         add_stmt(self.curr_block, node)
-        # if self.raise_except_stack and self.raise_except_stack[-1] is not None:
-        #     self.add_edge(self.curr_block.bid, self.raise_except_stack[-1].bid)
-        # if self.raise_final_stack and self.raise_final_stack[-1] is not None:
-        #     self.add_edge(self.curr_block.bid, self.raise_final_stack[-1].bid)
         self.curr_block = self.new_block()
 
     def visit_Try(self, node: ast.Try) -> None:
-        loop_guard = self.add_loop_block()
-        self.curr_block = loop_guard
         if not node.orelse:
             node.orelse = []
         if not node.finalbody:
             node.finalbody = []
+
+        # stage curr_block
+        try_block = self.curr_block
+        after_try_block = self.new_block()
+
+        # deal with finalbody
+        final_body_entry_block = self.new_block()
+        add_stmt(final_body_entry_block, ast.Pass())
+        final_body_exit_block = self.new_block()
+        add_stmt(final_body_exit_block, ast.Pass())
+        self.curr_block = self.add_edge(
+            final_body_entry_block.bid, self.new_block().bid
+        )
+        self.populate_body_to_next_bid(node.finalbody, final_body_exit_block.bid)
+        self.add_edge(final_body_exit_block.bid, after_try_block.bid)
+
+        # deal with orelse
+        orelse_body_entry_block = self.new_block()
+        add_stmt(orelse_body_entry_block, ast.Pass())
+        orelse_body_exit_block = self.new_block()
+        add_stmt(orelse_body_exit_block, ast.Pass())
+        self.curr_block = self.add_edge(
+            orelse_body_entry_block.bid, self.new_block().bid
+        )
+        self.populate_body_to_next_bid(node.orelse, orelse_body_exit_block.bid)
+        self.add_edge(orelse_body_exit_block.bid, final_body_entry_block.bid)
+
         # add_stmt(loop_guard, ast.Try(body=[], handlers=[], orelse=[], finalbody=[]))
-        add_stmt(loop_guard, node)
+        self.curr_block = try_block
+        add_stmt(self.curr_block, node)
+
+        # deal with trybody
+        try_body_entry_block = self.new_block()
+        self.add_edge(self.curr_block.bid, try_body_entry_block.bid),
+        self.curr_block = try_body_entry_block
+        self.populate_body_to_next_bid(node.body, orelse_body_entry_block.bid)
 
         self.add_TryCFG(node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        self.curr_block = after_try_block
         return
 
         # try_body_block = self.new_block()
