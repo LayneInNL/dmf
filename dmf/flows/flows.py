@@ -226,9 +226,8 @@ class CFGVisitor(ast.NodeVisitor):
         # get try node id
         try_id = self.curr_block.bid
         # deal with try body
-        try_body = node.body
         visitor: CFGVisitor = CFGVisitor()
-        try_cfg: CFG = visitor.build("try", ast.Module(body=try_body))
+        try_cfg: CFG = visitor.build("try", ast.Module(body=[]))
         self.cfg.sub_cfgs[try_id] = try_cfg
 
         # deal with handlers
@@ -555,6 +554,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         # stage curr_block
         try_block = self.curr_block
+        self.add_TryCFG(node)
         after_try_block = self.new_block()
 
         # deal with finalbody
@@ -589,7 +589,6 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = try_body_entry_block
         self.populate_body_to_next_bid(node.body, orelse_body_entry_block.bid)
 
-        self.add_TryCFG(node)
         self.curr_block = after_try_block
         return
 

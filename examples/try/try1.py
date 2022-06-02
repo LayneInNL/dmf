@@ -22,6 +22,8 @@ except:
 # finally:
 #     pass
 
+super()
+
 
 def test(a):
     if a:

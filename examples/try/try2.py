@@ -12,16 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 def test():
-    try:
-        if x:
-            raise
-        b = 2
-    except AttributeError as exp:
-        pass
-    else:
-        els = 1
-    finally:
-        fina = 1
+    while x:
+        try:
+            b = 2
+            return
+        except AttributeError as exp:
+            pass
+        else:
+            els = 1
+        finally:
+            fina = 1
+        # a = 1
 
 
 test()
