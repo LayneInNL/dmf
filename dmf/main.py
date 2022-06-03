@@ -15,13 +15,11 @@
 import argparse
 import os.path
 import sys
-import time
 
 # Must put it here to initialize static_importlib
 import dmf.static_importlib
 
 import dmf.share
-from dmf.analysis.heap import analysis_heap
 from dmf.analysis.value import ModuleType
 from dmf.log.logger import logger
 
@@ -36,8 +34,6 @@ def add_builtin_module(path):
 
 
 def add_main_module(path):
-    # main_module = type(sys)("__main__")
-    # dmf.share.modules["__main__"] = main_module
     analysis_main_module = ModuleType(name="__main__", package="", file=path)
     dmf.share.analysis_modules["__main__"] = analysis_main_module
 

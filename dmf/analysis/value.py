@@ -212,14 +212,6 @@ class ModuleType:
     def getattr(self, name: str) -> Tuple[str, Value]:
         return self.namespace.read_scope_and_value_by_name(name)
 
-    # @property
-    # def name(self):
-    #     return self._name
-    #
-    # @name.setter
-    # def name(self, name: str):
-    #     self._name = name
-
 
 class ListType:
     def __init__(self):

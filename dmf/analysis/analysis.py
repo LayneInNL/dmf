@@ -76,6 +76,12 @@ class Base:
                 return True
         return False
 
+    def is_exit_point(self, program_point: ProgramPoint):
+        for _, _, exit_point, _ in self.inter_flows:
+            if program_point == exit_point:
+                return True
+        return False
+
     def is_return_label(self, label):
         for _, return_label in self.call_return_flows:
             if label == return_label:
@@ -155,22 +161,25 @@ class Analysis(Base):
         self.analysis_effect_list: None = None
         self.extremal_value: Stack = Stack()
 
-        # init first frame
         curr_module: ModuleType = dmf.share.analysis_modules[module_name]
         start_lab, final_lab = curr_module.entry_label, curr_module.exit_label
-        global_ns = curr_module.namespace
-        # builtins_ns = dmf.share.analysis_modules["static_builtins"].namespace
-        builtins_ns = None
-        self.extremal_value.push_frame(
-            Frame(
-                f_locals=global_ns,
-                f_back=None,
-                f_globals=global_ns,
-                f_builtins=builtins_ns,
-            )
-        )
         self.extremal_point: ProgramPoint = (start_lab, empty_context)
         self.final_point: ProgramPoint = (final_lab, empty_context)
+
+        # init first frame
+        def init_first_frame(extremal_value, module):
+            global_ns = module.namespace
+            builtins_ns = None
+            extremal_value.push_frame(
+                Frame(
+                    f_locals=global_ns,
+                    f_back=None,
+                    f_globals=global_ns,
+                    f_builtins=builtins_ns,
+                )
+            )
+
+        init_first_frame(self.extremal_value, curr_module)
 
     def compute_fixed_point(self):
         self.initialize()
@@ -356,9 +365,11 @@ class Analysis(Base):
 
         if self.is_call_label(lab):
             return self.transfer_call(program_point)
-        if self.is_entry_point(program_point):
+        elif self.is_entry_point(program_point):
             return self.transfer_entry(program_point)
-        if self.is_return_label(lab):
+        elif self.is_exit_point(program_point):
+            pass
+        elif self.is_return_label(lab):
             return self.transfer_return(program_point)
         return self.do_transfer(program_point)
 
@@ -510,6 +521,17 @@ class Analysis(Base):
         else:
             logger.error(stmt)
             assert False
+
+    def transfer_exit(self, program_point: ProgramPoint):
+        old: Stack = self.analysis_list[program_point]
+        new: Stack = old.copy()
+
+        if not new.top_frame_contains(RETURN_FLAG):
+            value = Value()
+            value.inject_none_type()
+            new.write_var(RETURN_FLAG, value)
+
+        return new
 
     def transfer_return(self, program_point: ProgramPoint):
         return_lab, return_ctx = program_point
