@@ -29,7 +29,7 @@ from dmf.analysis.flow_util import (
 )
 from dmf.analysis.heap import analysis_heap
 from dmf.analysis.prim import Int, Bool, NoneType
-from dmf.analysis.stack import Frame, Stack, STACK_BOT, union_stack, issubset_stack
+from dmf.analysis.stack import Frame, Stack, stack_bot_builder
 from dmf.analysis.value import (
     InsType,
     MethodType,
@@ -159,7 +159,8 @@ class Analysis(Base):
         curr_module: ModuleType = dmf.share.analysis_modules[module_name]
         start_lab, final_lab = curr_module.entry_label, curr_module.exit_label
         global_ns = curr_module.namespace
-        builtins_ns = dmf.share.analysis_modules["static_builtins"].namespace
+        # builtins_ns = dmf.share.analysis_modules["static_builtins"].namespace
+        builtins_ns = None
         self.extremal_value.push_frame(
             Frame(
                 f_locals=global_ns,
@@ -180,8 +181,8 @@ class Analysis(Base):
         # add flows to work_list
         self.work_list.extendleft(self.DELTA(self.extremal_point))
         # default init analysis_list
-        self.analysis_list: defaultdict[ProgramPoint, Stack | STACK_BOT] = defaultdict(
-            lambda: STACK_BOT
+        self.analysis_list: defaultdict[ProgramPoint, Stack] = defaultdict(
+            stack_bot_builder
         )
         self.analysis_effect_list = {}
         # update extremal label
@@ -195,12 +196,11 @@ class Analysis(Base):
                     program_point1, self.analysis_list[program_point1]
                 )
             )
-            transferred: Stack | STACK_BOT = self.transfer(program_point1)
-            old: Stack | STACK_BOT = self.analysis_list[program_point2]
-            if not issubset_stack(transferred, old):
-                self.analysis_list[program_point2]: Stack = union_stack(
-                    transferred, old
-                )
+            transferred: Stack = self.transfer(program_point1)
+            old: Stack = self.analysis_list[program_point2]
+            if not transferred <= old:
+                transferred += old
+                self.analysis_list[program_point2]: Stack = transferred
                 self.LAMBDA(program_point2)
                 added_program_points = self.DELTA(program_point2)
                 logger.debug("added flows {}".format(added_program_points))
@@ -220,7 +220,7 @@ class Analysis(Base):
                     program_point, self.analysis_effect_list[program_point]
                 )
             )
-            logger.warning(dmf.share.analysis_modules["static_builtins"].namespace)
+            # logger.warning(dmf.share.analysis_modules["static_builtins"].namespace)
 
     # based on current program point, update self.IF
     def LAMBDA(self, program_point: ProgramPoint) -> None:
@@ -349,10 +349,10 @@ class Analysis(Base):
         self.inter_flows.add(inter_flow)
         self.entry_info[(entry_lab, new_ctx)] = (instance, None, typ.module)
 
-    def transfer(self, program_point: ProgramPoint) -> Stack | STACK_BOT:
+    def transfer(self, program_point: ProgramPoint) -> Stack:
         lab, _ = program_point
-        if self.analysis_list[program_point] == STACK_BOT:
-            return STACK_BOT
+        if self.analysis_list[program_point].is_bot():
+            return self.analysis_list[program_point]
 
         if self.is_call_label(lab):
             return self.transfer_call(program_point)

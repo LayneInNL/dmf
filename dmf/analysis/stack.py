@@ -31,25 +31,6 @@ from dmf.analysis.value import (
 from dmf.log.logger import logger
 
 
-def issubset_stack(stack1: Stack | STACK_BOT, stack2: Stack | STACK_BOT):
-    if stack1 is STACK_BOT:
-        return True
-
-    if stack2 is STACK_BOT:
-        return False
-
-    return stack1 <= stack2
-
-
-def union_stack(stack1: Stack | STACK_BOT, stack2: Stack | STACK_BOT):
-    if stack2 is STACK_BOT:
-        return stack1
-
-    stack1 += stack2
-
-    return stack1
-
-
 class Frame:
     def __init__(self, f_locals=None, f_back=None, f_globals=None, f_builtins=None):
         self.f_locals: Namespace[Var, Value] = f_locals
@@ -181,16 +162,10 @@ class Frame:
             self.f_locals[var] = value
 
 
-class StackBot:
-    pass
-
-
-STACK_BOT = StackBot()
-
-
 class Stack:
     def __init__(self, stack: Stack = None):
-        self.frames: List[Frame] = []
+        # if self.frames is "BOT", it's BOT
+        self.frames: List[Frame] | BOT = []
         if stack is not None:
             ns_mark = self.duplicate_frames(stack)
             self.fill_frames(stack, ns_mark)
@@ -241,7 +216,10 @@ class Stack:
             frame.f_builtins = builtins_ns
 
     def __le__(self, other: Stack):
-        assert len(self.frames) == len(other.frames)
+        if self.frames == BOT:
+            return True
+        if other.frames == BOT:
+            return False
 
         frame_pairs = zip(reversed(self.frames), reversed(other.frames))
         for frame_pair in frame_pairs:
@@ -250,6 +228,9 @@ class Stack:
         return True
 
     def __iadd__(self, other: Stack):
+        if other.frames == BOT:
+            return self
+
         frame_pairs = zip(reversed(self.frames), reversed(other.frames))
         for frame_pair1, frame_pair2 in frame_pairs:
             frame_pair1 += frame_pair2
@@ -257,6 +238,9 @@ class Stack:
 
     def __repr__(self):
         return self.frames.__repr__()
+
+    def is_bot(self):
+        return self.frames == BOT
 
     def push_frame(self, frame: Frame):
         self.frames.append(frame)
@@ -394,3 +378,12 @@ class Stack:
         else:
             logger.warn(expr)
             assert False
+
+
+BOT = "BOT"
+
+
+def stack_bot_builder() -> Stack:
+    bot = Stack()
+    bot.frames = BOT
+    return bot
