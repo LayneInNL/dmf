@@ -14,15 +14,24 @@
 def test():
     while x:
         try:
-            b = 2
-            return
-        except AttributeError as exp:
+            if x:
+                # continue
+                # break
+                # raise
+                assert x == 5
+            else:
+                b = 4
+            # break
+            # return
+        except AttributeError:
             pass
         else:
             els = 1
         finally:
-            fina = 1
+            fina = 2
         # a = 1
+    else:
+        eee = 3
 
 
-test()
+assert x == 1

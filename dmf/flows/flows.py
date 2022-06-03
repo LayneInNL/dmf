@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import ast
-import logging
 import os
 from typing import Dict, List, Tuple, Set, Optional, Any
 
@@ -86,6 +85,7 @@ class BasicBlock(object):
 
 
 def add_stmt(block: BasicBlock, stmt) -> None:
+    assert not block.stmt
     block.stmt.append(stmt)
 
 
@@ -181,6 +181,8 @@ class CFGVisitor(ast.NodeVisitor):
         self.parent_node = entry_node
         self.after_loop_stack: List[BasicBlock] = []
         self.loop_guard_stack: List[BasicBlock] = []
+        self.final_body_entry_stack: List[BasicBlock] = []
+        self.final_body_exit_stack: List[BasicBlock] = []
 
     def build(self, name: str, tree: ast.Module) -> CFG:
         self.cfg = CFG(name)
@@ -196,8 +198,14 @@ class CFGVisitor(ast.NodeVisitor):
         return self.cfg.blocks[bid]
 
     def add_edge(self, frm_id: int, to_id: int, condition=None) -> BasicBlock:
+        if to_id in self.cfg.blocks[frm_id].next:
+            assert False
         self.cfg.blocks[frm_id].next.append(to_id)
+
+        if frm_id in self.cfg.blocks[to_id].prev:
+            assert False
         self.cfg.blocks[to_id].prev.append(frm_id)
+
         self.cfg.edges[(frm_id, to_id)] = condition
         return self.cfg.blocks[to_id]
 
@@ -221,35 +229,6 @@ class CFGVisitor(ast.NodeVisitor):
         visitor: CFGVisitor = CFGVisitor()
         class_cfg: CFG = visitor.build(node.name, ast.Module(body=node.body))
         self.cfg.sub_cfgs[class_id] = class_cfg
-
-    def add_TryCFG(self, node: ast.Try):
-        # get try node id
-        try_id = self.curr_block.bid
-        # deal with try body
-        visitor: CFGVisitor = CFGVisitor()
-        try_cfg: CFG = visitor.build("try", ast.Module(body=[]))
-        self.cfg.sub_cfgs[try_id] = try_cfg
-
-        # deal with handlers
-        handlers = node.handlers
-        self.cfg.sub_cfgs[try_id].handler_cfgs = []
-        for handler in handlers:
-            visitor: CFGVisitor = CFGVisitor(entry_node=handler)
-            handler_cfg: CFG = visitor.build("except", ast.Module(body=handler.body))
-            handler_cfg.condition = handler
-            self.cfg.sub_cfgs[try_id].handler_cfgs.append(handler_cfg)
-
-        # # deal with orelse
-        # orelse = node.orelse
-        # visitor: CFGVisitor = CFGVisitor()
-        # orelse_cfg: CFG = visitor.build("orelse", ast.Module(body=orelse))
-        # self.cfg.sub_cfgs[try_id].orelse_cfg = orelse_cfg
-        #
-        # # deal with finalbody
-        # finalbody = node.finalbody
-        # visitor: CFGVisitor = CFGVisitor()
-        # finalbody_cfg: CFG = visitor.build("orelse", ast.Module(body=finalbody))
-        # self.cfg.sub_cfgs[try_id].finalbody_cfg = finalbody_cfg
 
     def remove_empty_blocks(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
@@ -357,7 +336,12 @@ class CFGVisitor(ast.NodeVisitor):
         seq, node.value = self.decompose_expr(node.value)
         self.populate_body(seq)
         add_stmt(self.curr_block, node)
-        self.add_edge(self.curr_block.bid, self.cfg.final_block.bid)
+
+        if self.final_body_entry_stack and self.final_body_exit_stack:
+            self.add_edge(self.curr_block.bid, self.final_body_entry_stack[-1].bid)
+            self.add_edge(self.final_body_exit_stack[-1].bid, self.cfg.final_block.bid)
+        else:
+            self.add_edge(self.curr_block.bid, self.cfg.final_block.bid)
         self.curr_block = self.new_block()
 
     def visit_Delete(self, node: ast.Delete) -> None:
@@ -543,8 +527,12 @@ class CFGVisitor(ast.NodeVisitor):
 
     # Need to record exception handling stack
     def visit_Raise(self, node: ast.Raise) -> None:
-        add_stmt(self.curr_block, node)
-        self.curr_block = self.new_block()
+        if self.final_body_entry_stack and self.final_body_exit_stack:
+            return_as_raise = ast.Return(value=None)
+            self.visit(return_as_raise)
+        else:
+            pass_as_raise = ast.Pass()
+            self.visit(pass_as_raise)
 
     def visit_Try(self, node: ast.Try) -> None:
         if not node.orelse:
@@ -553,8 +541,7 @@ class CFGVisitor(ast.NodeVisitor):
             node.finalbody = []
 
         # stage curr_block
-        try_block = self.curr_block
-        self.add_TryCFG(node)
+        try_body_entry_block = self.curr_block
         after_try_block = self.new_block()
 
         # deal with finalbody
@@ -568,6 +555,9 @@ class CFGVisitor(ast.NodeVisitor):
         self.populate_body_to_next_bid(node.finalbody, final_body_exit_block.bid)
         self.add_edge(final_body_exit_block.bid, after_try_block.bid)
 
+        self.final_body_entry_stack.append(final_body_entry_block)
+        self.final_body_exit_stack.append(final_body_exit_block)
+
         # deal with orelse
         orelse_body_entry_block = self.new_block()
         add_stmt(orelse_body_entry_block, ast.Pass())
@@ -579,83 +569,14 @@ class CFGVisitor(ast.NodeVisitor):
         self.populate_body_to_next_bid(node.orelse, orelse_body_exit_block.bid)
         self.add_edge(orelse_body_exit_block.bid, final_body_entry_block.bid)
 
-        # add_stmt(loop_guard, ast.Try(body=[], handlers=[], orelse=[], finalbody=[]))
-        self.curr_block = try_block
-        add_stmt(self.curr_block, node)
-
-        # deal with trybody
-        try_body_entry_block = self.new_block()
-        self.add_edge(self.curr_block.bid, try_body_entry_block.bid),
+        # deal with try body
         self.curr_block = try_body_entry_block
         self.populate_body_to_next_bid(node.body, orelse_body_entry_block.bid)
 
-        self.curr_block = after_try_block
-        return
+        self.final_body_entry_stack.pop()
+        self.final_body_exit_stack.pop()
 
-        # try_body_block = self.new_block()
-        # self.curr_block = self.add_edge(self.curr_block.bid, try_body_block.bid)
-        # exception_handling_sentinel = self.new_block()
-        # self.raise_except_stack.append(exception_handling_sentinel)
-        # self.populate_body_to_next_bid(node.body, exception_handling_sentinel.bid)
-        # self.raise_except_stack.pop()
-        # add_stmt(
-        #     exception_handling_sentinel,
-        #     ast.Name(id="exception handling", ctx=ast.Load()),
-        # )
-        # self.curr_block = exception_handling_sentinel
-        #
-        # fake_after_try_block = self.new_block()
-        # if node.handlers:
-        #     self.raise_except_stack.append(None)
-        #     self.raise_final_stack.append(
-        #         fake_after_try_block if node.finalbody else None
-        #     )
-        #     for handler in node.handlers:
-        #         handler_type_block = self.new_block()
-        #         self.curr_block = handler_type_block
-        #         add_stmt(
-        #             handler_type_block,
-        #             handler.type
-        #             if handler.type
-        #             else ast.Name(id="BaseException", ctx=ast.Load()),
-        #         )
-        #         self.add_edge(
-        #             exception_handling_sentinel.bid,
-        #             handler_type_block.bid,
-        #             ast.Name(id="Except Type", ctx=ast.Load()),
-        #         )
-        #         self.curr_block = self.add_edge(
-        #             self.curr_block.bid, self.new_block().bid
-        #         )
-        #
-        #         self.populate_body_to_next_bid(handler.body, fake_after_try_block.bid)
-        #     self.raise_final_stack.pop()
-        #     self.raise_except_stack.pop()
-        #
-        # if node.orelse:
-        #     before_else_block = self.new_block()
-        #     self.curr_block = before_else_block
-        #     self.add_edge(
-        #         exception_handling_sentinel.bid,
-        #         before_else_block.bid,
-        #         ast.Name(id="No Error", ctx=ast.Load()),
-        #     )
-        #
-        #     self.populate_body_to_next_bid(node.orelse, fake_after_try_block.bid)
-        #
-        # self.curr_block = fake_after_try_block
-        # finally_block = fake_after_try_block
-        # if node.finalbody:
-        #     self.add_edge(
-        #         exception_handling_sentinel.bid,
-        #         finally_block.bid,
-        #         ast.Name(id="Finally", ctx=ast.Load()),
-        #     )
-        #     after_finally_block = self.new_block()
-        #     self.populate_body_to_next_bid(node.finalbody, after_finally_block.bid)
-        #     self.curr_block = after_finally_block
-        # else:
-        #     self.add_edge(exception_handling_sentinel.bid, finally_block.bid)
+        self.curr_block = after_try_block
 
     # If assert fails, AssertionError will be raised.
     # If assert succeeds, execute normal flow.
@@ -720,13 +641,23 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Break(self, node: ast.Break) -> None:
         add_stmt(self.curr_block, node)
-        assert len(self.after_loop_stack), "Found break not inside loop"
-        self.add_edge(self.curr_block.bid, self.after_loop_stack[-1].bid)
+
+        if self.final_body_entry_stack and self.final_body_exit_stack:
+            self.add_edge(self.curr_block.bid, self.final_body_entry_stack[-1].bid)
+            self.add_edge(self.curr_block.bid, self.final_body_exit_stack[-1].bid)
+            self.add_edge(
+                self.final_body_exit_stack[-1].bid, self.after_loop_stack[-1].bid
+            )
+        else:
+            self.add_edge(self.curr_block.bid, self.after_loop_stack[-1].bid)
 
     def visit_Continue(self, node: ast.Continue) -> None:
         add_stmt(self.curr_block, node)
-        assert self.loop_guard_stack, "Found continue not inside loop"
-        self.add_edge(self.curr_block.bid, self.loop_guard_stack[-1].bid)
+        # continue in a try block
+        if self.final_body_entry_stack:
+            self.add_edge(self.curr_block.bid, self.final_body_entry_stack[-1].bid)
+        else:
+            self.add_edge(self.curr_block.bid, self.loop_guard_stack[-1].bid)
 
     ################################################################
     ################################################################
