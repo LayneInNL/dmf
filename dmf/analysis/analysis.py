@@ -18,15 +18,6 @@ from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, Set, List
 
 import dmf.share
-from dmf.analysis.ctx_util import merge, record
-from dmf.analysis.flow_util import (
-    ProgramPoint,
-    Flow,
-    Inter_Flow,
-    Lab,
-    Basic_Flow,
-    Ctx,
-)
 from dmf.analysis.heap import analysis_heap
 from dmf.analysis.prim import Int, Bool, NoneType
 from dmf.analysis.stack import Frame, Stack, stack_bot_builder
@@ -50,7 +41,22 @@ from dmf.flows import CFG
 from dmf.flows.flows import BasicBlock
 from dmf.log.logger import logger
 
-empty_context = ()
+Empty_Ctx = ()
+Ctx = Tuple
+Heap = int
+Lab = int
+Basic_Flow = Tuple[Lab, Lab]
+ProgramPoint = Tuple[Lab, Ctx]
+Flow = Tuple[ProgramPoint, ProgramPoint]
+Inter_Flow = Tuple[ProgramPoint, ProgramPoint, ProgramPoint, ProgramPoint]
+
+
+def record(label: Lab, context: Ctx):
+    return label
+
+
+def merge(label: Lab, heap: InsType | None, context: Ctx):
+    return context[-1:] + (label,)
 
 
 class Base:
@@ -163,8 +169,8 @@ class Analysis(Base):
 
         curr_module: ModuleType = dmf.share.analysis_modules[module_name]
         start_lab, final_lab = curr_module.entry_label, curr_module.exit_label
-        self.extremal_point: ProgramPoint = (start_lab, empty_context)
-        self.final_point: ProgramPoint = (final_lab, empty_context)
+        self.extremal_point: ProgramPoint = (start_lab, Empty_Ctx)
+        self.final_point: ProgramPoint = (final_lab, Empty_Ctx)
 
         # init first frame
         def init_first_frame(extremal_value, module):
