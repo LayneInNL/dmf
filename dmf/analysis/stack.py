@@ -49,6 +49,9 @@ class Frame:
         self.f_globals += other.f_globals
         return self
 
+    def __repr__(self):
+        return self.f_locals.__repr__()
+
     def read_var(self, var_name: str, scope: str) -> Value:
 
         # Implement LEGB rule
@@ -132,10 +135,13 @@ class Frame:
 
     def write_var(self, var_name: str, value: Value, scope: str):
         if var_name in self.f_locals:
-            var_scope, _ = self.f_locals.read_scope_and_value_by_name(var_name)
+            var_scope, pre_value = self.f_locals.read_scope_and_value_by_name(var_name)
             var: Var = Var(var_name, var_scope)
             if var_scope == "local":
-                self.f_locals[var] = value
+                if self.f_locals is self.f_globals:
+                    self.f_locals[var].inject_value(value)
+                else:
+                    self.f_locals[var] = value
             elif var_scope == "nonlocal":
                 new_var = Var(var_name, "local")
                 parent_frame: Frame = self.f_back
@@ -296,30 +302,26 @@ class Stack:
             ].namespace
 
     def compute_value_of_expr(self, expr: ast.expr):
+        value = Value()
         if isinstance(expr, ast.Num):
-            value = Value()
             if isinstance(expr.n, int):
                 value.inject_int_type()
             else:
                 assert False
             return value
         elif isinstance(expr, ast.NameConstant):
-            value = Value()
             if expr.value is None:
                 value.inject_none_type()
             else:
                 value.inject_bool_type()
             return value
         elif isinstance(expr, (ast.Str, ast.JoinedStr)):
-            value = Value()
             value.inject_str_type()
             return value
         elif isinstance(expr, ast.Bytes):
-            value = Value()
             value.inject_bytes_type()
             return value
         elif isinstance(expr, ast.Compare):
-            value = Value()
             value.inject_bool_type()
             return value
         elif isinstance(expr, ast.Name):

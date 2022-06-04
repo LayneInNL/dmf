@@ -14,8 +14,8 @@
 
 # a = b"ss"
 # b = 0
-c = True
-d = c
+# c = True
+# d = c
 # c = False
 # d = None
 # d = c
@@ -30,3 +30,8 @@ d = c
 # a = 1
 # a = True
 # e = a > b
+
+a = 1
+a = False
+a = "str"
+# a.b = 1

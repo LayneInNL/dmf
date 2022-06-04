@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 import dmf.share
 from dmf.analysis.prim import (
@@ -231,9 +231,14 @@ class ListType:
 # Either VALUE_TOP or have some values
 class Value:
     def __init__(self):
-        self.type_dict = {}
+        self.type_dict: Dict | VALUE_TOP = {}
 
     def __le__(self, other: Value):
+        if other.type_dict == VALUE_TOP:
+            return True
+        if self.type_dict == VALUE_TOP:
+            return False
+
         for k in self.type_dict:
             if k not in other.type_dict:
                 return False
@@ -242,6 +247,10 @@ class Value:
         return True
 
     def __iadd__(self, other: Value):
+        if self.type_dict == VALUE_TOP or other.type_dict == VALUE_TOP:
+            self.type_dict = VALUE_TOP
+            return self
+
         for k in other.type_dict:
             if k not in self.type_dict:
                 self.type_dict[k] = other.type_dict[k]
@@ -309,6 +318,10 @@ class Value:
         lab = id(list_type)
         self.type_dict[lab] = list_type
 
+    def inject_value(self, value: Value):
+        for lab, typ in value.type_dict.items():
+            self.type_dict[lab] = typ
+
 
 class Var:
     def __init__(self, name: str, scope: str = "local"):
@@ -342,6 +355,12 @@ class Var:
         return self.name == other.name
 
 
+def value_top_builder() -> Value:
+    value = Value()
+    value.type_dict = VALUE_TOP
+    return value
+
+
 Namespace_Local = "local"
 Namespace_Nonlocal = "nonlocal"
 Namespace_Global = "global"
@@ -355,21 +374,8 @@ class Namespace(defaultdict):
         return dict.__repr__(self)
 
     def __missing__(self, key):
-        self[key] = value = VALUE_TOP
+        self[key] = value = value_top_builder()
         return value
-
-    def issubset(self, this: Value | VALUE_TOP, other: Value | VALUE_TOP):
-        if other == VALUE_TOP:
-            return True
-        if this == VALUE_TOP:
-            return False
-        return this <= other
-
-    def union(self, this: Value | VALUE_TOP, other: Value | VALUE_TOP):
-        if this == VALUE_TOP or other == VALUE_TOP:
-            return VALUE_TOP
-        this += other
-        return this
 
     def is_magic_attr(self, var: Var | str):
         if isinstance(var, str):
@@ -386,7 +392,7 @@ class Namespace(defaultdict):
             if self.is_magic_attr(var):
                 continue
             elif isinstance(var, Var):
-                if not self.issubset(self[var], other[var]):
+                if not self[var] <= other[var]:
                     return False
             else:
                 assert False
@@ -398,7 +404,7 @@ class Namespace(defaultdict):
             if self.is_magic_attr(var):
                 continue
             elif isinstance(var, Var):
-                self[var] = self.union(self[var], other[var])
+                self[var] += other[var]
             else:
                 assert False
         return self
