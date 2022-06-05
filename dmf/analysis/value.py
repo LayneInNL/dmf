@@ -42,7 +42,7 @@ class FuncType:
         self.defaults = None
         self.code = code
         self.globals = None
-        self.dict: Namespace[str, Value] = Namespace()
+        self.dict: Namespace[Var, Value] = Namespace()
         self.closure = None
         self.kwdefaults = None
 
@@ -52,6 +52,9 @@ class FuncType:
     def __iadd__(self, other: FuncType):
         self.dict += other.dict
         return self
+
+    def __repr__(self):
+        return self.dict.__repr__()
 
     @property
     def name(self):
@@ -78,8 +81,12 @@ class FuncType:
         self._code_ = code
 
     def setattr(self, attr: str, value: Value):
-        var = Var(attr, Namespace_Local)
-        self.dict[var] = value
+        if attr in self.dict:
+            _, attr_value = self.dict.read_scope_and_value_by_name(attr)
+            attr_value.inject_value(value)
+        else:
+            var = Var(attr, Namespace_Local)
+            self.dict[var] = value
 
     def getattr(self, name: str) -> Tuple[str, Value]:
         return self.dict.read_scope_and_value_by_name(name)
@@ -134,15 +141,21 @@ class MethodType:
 
 class ClsType:
     def __init__(
-        self, name: str, module: str, bases: List, namespace: Namespace[Var, Value]
+        self,
+        label: int,
+        name: str,
+        module: str,
+        bases: List,
+        namespace: Namespace[Var, Value],
     ):
+        self.label = label
         self.name = name
         self.module = module
         self.bases = bases
         self.mro = static_c3(self)
         # the last builtin_object is just a flag, remove it
         self.mro = self.mro[:-1]
-        logger.debug("mro for class {}".format(self.mro, self.name))
+        logger.critical("mro for class {}".format(self.mro, self.name))
         self.dict: Namespace[Var, Value] = namespace
 
     def __repr__(self):
@@ -212,21 +225,6 @@ class ModuleType:
         return self.namespace.read_scope_and_value_by_name(name)
 
 
-class ListType:
-    def __init__(self):
-        self.value: Value = Value()
-
-    def __le__(self, other: ListType):
-        return self.value <= other.value
-
-    def __iadd__(self, other: ListType):
-        self.value += other.value
-        return self
-
-    # def __repr__(self):
-    #     return self.value.__repr__()
-
-
 class TOP:
     pass
 
@@ -281,6 +279,14 @@ class Value:
     def inject_type(self, typ):
         if isinstance(typ, FuncType):
             self.inject_func_type(typ)
+        elif isinstance(typ, ClsType):
+            self.inject_cls_type(typ)
+        elif isinstance(typ, InsType):
+            self.inject_ins_type(typ)
+        elif isinstance(typ, MethodType):
+            self.inject_method_type(typ)
+        elif isinstance(typ, ModuleType):
+            self.inject_module_type(typ)
 
     # to promise uniqueness, we use function label
     def inject_func_type(self, func_type: FuncType):
@@ -288,7 +294,7 @@ class Value:
         self.type_dict[lab] = func_type
 
     def inject_cls_type(self, cls_type: ClsType):
-        lab = id(cls_type)
+        lab = cls_type.label
         self.type_dict[lab] = cls_type
 
     def inject_ins_type(self, ins_type: InsType):
@@ -313,9 +319,6 @@ class Value:
     def inject_int_type(self):
         lab = PRIM_INT_ID
         self.type_dict[lab] = PRIM_INT
-
-    def inject_float_type(self):
-        pass
 
     def inject_bool_type(self):
         lab = PRIM_BOOL_ID
@@ -459,20 +462,19 @@ class Namespace(defaultdict):
         return self["__name__"]
 
 
-Unused_Name = "-1024"
+Unused_Name = "00_unused_name"
 SELF_FLAG = "self"
-INIT_FLAG = "19970303"
+INIT_FLAG = "00_init_flag"
 INIT_FLAG_VALUE = VALUE_TOP
-RETURN_FLAG = "__return__"
+RETURN_FLAG = "00__return__flag"
 
 # builtin_object = ClsType((), Namespace())
 # builtin_object = dmf.share.analysis_modules["static_builtins"].namespace["__object__"]
 
+builtin_object = object()
+
 
 def static_c3(class_object):
-    builtin_object = dmf.share.analysis_modules["static_builtins"].namespace[
-        "__object__"
-    ]
     if class_object is builtin_object:
         return [class_object]
     return [class_object] + static_merge(

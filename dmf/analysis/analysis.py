@@ -27,6 +27,7 @@ from dmf.analysis.value import (
     Namespace,
     Unused_Name,
     ModuleType,
+    builtin_object,
 )
 from dmf.analysis.value import (
     Value,
@@ -227,8 +228,8 @@ class Analysis(Base):
             )
 
     def present(self):
-        for program_point, state in self.analysis_list.items():
-            logger.info("Context at program point {}: {}".format(program_point, state))
+        for program_point, stack in self.analysis_list.items():
+            logger.info("Context at program point {}: {}".format(program_point, stack))
             self.analysis_effect_list[program_point] = self.transfer(program_point)
             logger.info(
                 "Effect at program point {}: {}".format(
@@ -545,22 +546,27 @@ class Analysis(Base):
         stmt: ast.stmt = self.get_stmt_by_label(return_lab)
 
         if isinstance(stmt, ast.ClassDef):
-            return self.transfer_ClassDef_return(program_point)
+            return self.transfer_return_classdef(program_point)
         elif isinstance(stmt, ast.Name):
-            return_state: Stack = self.analysis_list[program_point]
-            new_return_state: Stack = return_state.copy()
-            new_return_state.pop_frame()
-
-            # no need to assign
-            if stmt.id == Unused_Name:
-                return new_return_state
-
-            return_value: Value = return_state.read_var(RETURN_FLAG)
-            # write value to name
-            new_return_state.write_var(stmt.id, return_value)
-            return new_return_state
+            return self.transfer_return_name(program_point, stmt)
         else:
             assert False
+
+    def transfer_return_name(self, program_point: ProgramPoint, stmt: ast.Name):
+        return_state: Stack = self.analysis_list[program_point]
+        new_return_state: Stack = return_state.copy()
+        return_value: Value = new_return_state.read_var(RETURN_FLAG)
+        if new_return_state.top_frame_contains(INIT_FLAG):
+            return_value: Value = new_return_state.read_var(SELF_FLAG)
+        new_return_state.pop_frame()
+
+        # no need to assign
+        if stmt.id == Unused_Name:
+            return new_return_state
+
+        # write value to name
+        new_return_state.write_var(stmt.id, return_value)
+        return new_return_state
 
     def transfer_Import(self, program_point: ProgramPoint):
         lab, ctx = program_point
@@ -601,7 +607,7 @@ class Analysis(Base):
                 new.write_var(alias.asname, imported_value)
         return new
 
-    def transfer_ClassDef_return(self, program_point: ProgramPoint):
+    def transfer_return_classdef(self, program_point: ProgramPoint):
         # return stuff
         return_lab, return_ctx = program_point
         # stmt
@@ -630,21 +636,13 @@ class Analysis(Base):
                         base_types.append(cls)
                 return base_types
             else:
-                builtin_module = dmf.share.analysis_modules["static_builtins"]
-                builtin_namespace: Namespace = builtin_module.namespace
-                default_base = builtin_namespace["__object__"]
-                if "object" in builtin_namespace:
-                    _, static_object = builtin_namespace.read_scope_and_value_by_name(
-                        "object"
-                    )
-                    static_object_types = static_object.extract_cls_type()
-                    for typ in static_object_types:
-                        default_base = typ
+                default_base = builtin_object
                 return [default_base]
 
         value: Value = Value()
         bases = compute_bases(stmt)
-        cls_type: ClsType = ClsType(cls_name, module, bases, frame.f_locals)
+        call_lab = self.get_call_label(return_lab)
+        cls_type: ClsType = ClsType(call_lab, cls_name, module, bases, frame.f_locals)
         value.inject_cls_type(cls_type)
         new_return_state.write_var(cls_name, value)
         return new_return_state

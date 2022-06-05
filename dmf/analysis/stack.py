@@ -81,10 +81,10 @@ class Frame:
         except AttributeError:
             pass
 
-        try:
-            return self.read_builtin_frame(var_name)
-        except AttributeError:
-            pass
+        # try:
+        #     return self.read_builtin_frame(var_name)
+        # except AttributeError:
+        #     pass
 
         raise AttributeError(var_name)
 
