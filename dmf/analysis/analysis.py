@@ -374,7 +374,7 @@ class Analysis(Base):
         elif self.is_entry_point(program_point):
             return self.transfer_entry(program_point)
         elif self.is_exit_point(program_point):
-            pass
+            return self.transfer_exit(program_point)
         elif self.is_return_label(lab):
             return self.transfer_return(program_point)
         return self.do_transfer(program_point)

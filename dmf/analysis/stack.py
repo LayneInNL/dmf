@@ -173,53 +173,29 @@ class Stack:
         # if self.frames is "BOT", it's BOT
         self.frames: List[Frame] | BOT = []
         if stack is not None:
-            ns_mark = self.duplicate_frames(stack)
-            self.fill_frames(stack, ns_mark)
+            self.duplicate_frames(stack)
 
     def duplicate_frames(self, stack: Stack):
-        frames: List[Frame] = self.frames
+        memo = {}
         f_back: Frame | None = None
-        for _ in stack.frames:
+        for idx, f in enumerate(stack.frames):
+
             frame = Frame()
             frame.f_back = f_back
             f_back = frame
-            frames.append(frame)
+            self.frames.append(frame)
 
-        ns_mark = defaultdict(list)
-        for idx, f in enumerate(stack.frames):
-            if f.f_locals is not None:
-                ns_mark[id(f.f_locals)].append((idx, "f_locals"))
-            if f.f_globals is not None:
-                ns_mark[id(f.f_globals)].append((idx, "f_globals"))
+            if f.f_locals is f.f_globals:
+                frame.f_locals = f.f_locals
+                frame.f_globals = f.f_globals
+                continue
 
-        return ns_mark
+            id_f_locals = id(f.f_locals)
+            if id_f_locals not in memo:
+                memo[id_f_locals] = f.f_locals.copy()
 
-    def fill_frames(self, stack: Stack, ns_mark: defaultdict):
-        for _, nss in ns_mark.items():
-            first_ns_loc = nss[0]
-            old_frame = stack.frames[first_ns_loc[0]]
-            attr = first_ns_loc[1]
-            old_ns = getattr(old_frame, attr)
-            new_ns = old_ns.copy()
-            for ns in nss:
-                setattr(self.frames[ns[0]], ns[1], new_ns)
-
-        self.update_analysis_modules()
-
-    def update_analysis_modules(self):
-        # write updated global and builtin frames to analysis_modules
-        for frame in self.frames:
-            # update global
-            glo: Namespace = frame.f_globals
-            module_name: str = glo.module
-            dmf.share.analysis_modules[module_name].namespace = glo
-
-            # update builtins
-            if dmf.share.static_builtins:
-                builtins_ns = dmf.share.analysis_modules["static_builtins"].namespace
-            else:
-                builtins_ns = Namespace()
-            frame.f_builtins = builtins_ns
+            frame.f_locals = memo[id_f_locals]
+            frame.f_globals = f.f_globals
 
     def __le__(self, other: Stack):
         if self.frames == BOT:

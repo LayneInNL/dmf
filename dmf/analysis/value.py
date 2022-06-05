@@ -32,8 +32,6 @@ from dmf.analysis.prim import (
 
 from dmf.log.logger import logger
 
-VALUE_TOP = "VALUE_TOP"
-
 
 class FuncType:
     def __init__(self, name, module, code):
@@ -228,6 +226,15 @@ class ListType:
     #     return self.value.__repr__()
 
 
+class TOP:
+    pass
+
+    def copy(self):
+        return self
+
+
+VALUE_TOP = TOP()
+
 # Either VALUE_TOP or have some values
 class Value:
     def __init__(self):
@@ -263,6 +270,11 @@ class Value:
 
     def __iter__(self):
         return iter(self.type_dict.items())
+
+    def copy(self):
+        value = Value()
+        value.type_dict = self.type_dict.copy()
+        return value
 
     def inject_func_type(self, func_type: FuncType):
         lab = id(func_type)
@@ -366,9 +378,13 @@ Namespace_Nonlocal = "nonlocal"
 Namespace_Global = "global"
 
 
-# Dict[Var|str, Value|VALUE_TOP]
-# Var | str, str represents magic variables, Var represents general variables
-# Value | VALUE_TOP, Value represents value, VALUE_TOP represents TOP
+def is_magic_attr(var: Var | str):
+    if isinstance(var, str):
+        return True
+    else:
+        return False
+
+
 class Namespace(defaultdict):
     def __repr__(self):
         return dict.__repr__(self)
@@ -377,19 +393,13 @@ class Namespace(defaultdict):
         self[key] = value = value_top_builder()
         return value
 
-    def is_magic_attr(self, var: Var | str):
-        if isinstance(var, str):
-            return True
-        else:
-            return False
-
     # we use defaultdict, the default value of an unknown variable is TOP
     # So we have to collect all variables
     def __le__(self, other: Namespace):
         variables = self.keys() | other.keys()
         for var in variables:
             # magic method
-            if self.is_magic_attr(var):
+            if is_magic_attr(var):
                 continue
             elif isinstance(var, Var):
                 if not self[var] <= other[var]:
@@ -401,7 +411,7 @@ class Namespace(defaultdict):
     def __iadd__(self, other: Namespace):
         variables = self.keys() | other.keys()
         for var in variables:
-            if self.is_magic_attr(var):
+            if is_magic_attr(var):
                 continue
             elif isinstance(var, Var):
                 self[var] += other[var]
@@ -412,15 +422,24 @@ class Namespace(defaultdict):
     def __contains__(self, name: str):
         # __xxx__ and Var
         for var in self:
-            if self.is_magic_attr(var):
+            if is_magic_attr(var):
                 continue
             if name == var.name:
                 return True
         return False
 
+    def copy(self):
+        namespace = Namespace()
+        for var, var_value in self.items():
+            if is_magic_attr(var):
+                namespace[var] = var_value
+            elif isinstance(var, Var):
+                namespace[var] = var_value.copy()
+        return namespace
+
     def read_scope_and_value_by_name(self, var_name: str) -> Tuple[str, Value]:
         for var, v_value in self.items():
-            if self.is_magic_attr(var):
+            if is_magic_attr(var):
                 continue
             if var_name == var.name:
                 return var.scope, v_value
