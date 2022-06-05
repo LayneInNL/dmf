@@ -18,6 +18,3 @@ else:
     x = False
 
 a = x
-
-if True:
-    y = 1

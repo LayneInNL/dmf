@@ -34,7 +34,8 @@ from dmf.log.logger import logger
 
 
 class FuncType:
-    def __init__(self, name, module, code):
+    def __init__(self, label, name, module, code):
+        self.label = label
         self.name = name
         self.qualname = None
         self.module = module
@@ -235,6 +236,7 @@ class TOP:
 
 VALUE_TOP = TOP()
 
+
 # Either VALUE_TOP or have some values
 class Value:
     def __init__(self):
@@ -276,8 +278,13 @@ class Value:
         value.type_dict = self.type_dict.copy()
         return value
 
+    def inject_type(self, typ):
+        if isinstance(typ, FuncType):
+            self.inject_func_type(typ)
+
+    # to promise uniqueness, we use function label
     def inject_func_type(self, func_type: FuncType):
-        lab = id(func_type)
+        lab = func_type.label
         self.type_dict[lab] = func_type
 
     def inject_cls_type(self, cls_type: ClsType):
@@ -332,7 +339,8 @@ class Value:
 
     def inject_value(self, value: Value):
         for lab, typ in value.type_dict.items():
-            self.type_dict[lab] = typ
+            if lab not in self.type_dict:
+                self.type_dict[lab] = typ
 
 
 class Var:
@@ -385,6 +393,7 @@ def is_magic_attr(var: Var | str):
         return False
 
 
+# Namespace[Var|str, Value|int]
 class Namespace(defaultdict):
     def __repr__(self):
         return dict.__repr__(self)

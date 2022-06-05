@@ -52,6 +52,9 @@ class Frame:
     def __repr__(self):
         return self.f_locals.__repr__()
 
+    def read_special_var(self, var_name: str):
+        return self.f_locals[var_name]
+
     def read_var(self, var_name: str, scope: str) -> Value:
 
         # Implement LEGB rule
@@ -167,6 +170,9 @@ class Frame:
             var: Var = Var(var_name, scope)
             self.f_locals[var] = value
 
+    def write_special_var(self, var_name: str, value):
+        self.f_locals[var_name] = value
+
 
 class Stack:
     def __init__(self, stack: Stack = None):
@@ -178,24 +184,28 @@ class Stack:
     def duplicate_frames(self, stack: Stack):
         memo = {}
         f_back: Frame | None = None
-        for idx, f in enumerate(stack.frames):
+        for _, f in enumerate(stack.frames):
 
             frame = Frame()
             frame.f_back = f_back
             f_back = frame
             self.frames.append(frame)
 
-            if f.f_locals is f.f_globals:
-                frame.f_locals = f.f_locals
-                frame.f_globals = f.f_globals
-                continue
-
             id_f_locals = id(f.f_locals)
             if id_f_locals not in memo:
                 memo[id_f_locals] = f.f_locals.copy()
-
             frame.f_locals = memo[id_f_locals]
-            frame.f_globals = f.f_globals
+
+            id_f_globals = id(f.f_globals)
+            if id_f_globals not in memo:
+                memo[id_f_globals] = f.f_globals.copy()
+            frame.f_globals = memo[id_f_globals]
+
+        for name, module in dmf.share.analysis_modules.items():
+            namespace = module.namespace
+            id_namespace = id(namespace)
+            if id_namespace in memo:
+                module.namespace = memo[id_namespace]
 
     def __le__(self, other: Stack):
         if self.frames == BOT:
@@ -236,7 +246,7 @@ class Stack:
         return self.frames[-1]
 
     def top_frame_contains(self, name):
-        return name in self.top_frame()
+        return name in self.top_frame().f_locals
 
     def get_top_frame_module(self):
         return self.top_frame().f_globals["__name__"]
@@ -247,8 +257,14 @@ class Stack:
     def read_var(self, var: str, scope: str = "local"):
         return self.top_frame().read_var(var, scope)
 
+    def read_special_var(self, var: str):
+        return self.top_frame().read_special_var(var)
+
     def write_var(self, var: str, value: Value, scope: str = "local"):
         self.top_frame().write_var(var, value, scope)
+
+    def write_special_var(self, var: str, value):
+        self.top_frame().write_special_var(var, value)
 
     def copy(self):
         copied = Stack(self)
@@ -301,7 +317,9 @@ class Stack:
             value.inject_bool_type()
             return value
         elif isinstance(expr, ast.Name):
-            return self.read_var(expr.id)
+            old_value = self.read_var(expr.id)
+            new_value = old_value.copy()
+            return new_value
         elif isinstance(expr, ast.Attribute):
             receiver_value: Value = self.compute_value_of_expr(expr.value)
             receiver_attr: str = expr.attr

@@ -235,7 +235,8 @@ class Analysis(Base):
                     program_point, self.analysis_effect_list[program_point]
                 )
             )
-            # logger.warning(dmf.share.analysis_modules["static_builtins"].namespace)
+        self.transfer(self.final_point)
+        # logger.warning(dmf.share.analysis_modules["static_builtins"].namespace)
 
     # based on current program point, update self.IF
     def LAMBDA(self, program_point: ProgramPoint) -> None:
@@ -452,9 +453,9 @@ class Analysis(Base):
                         for idx, arg in enumerate(args, 1):
                             arg_value = new.compute_value_of_expr(arg)
                             new.write_var(str(idx), arg_value)
-                        new.write_var("__positional__", idx)
+                        new.write_special_var("__positional__", idx)
                     else:
-                        new.write_var("__positional__", 0)
+                        new.write_special_var("__positional__", 0)
                     keywords = stmt.keywords
                     for keyword in keywords:
                         keyword_value = new.compute_value_of_expr(keyword.value)
@@ -498,7 +499,7 @@ class Analysis(Base):
             # if it has an instance, self is considered
             start_pos = 0 if instance else 1
             arg_pos = 0
-            positional_len = new.read_var("__positional__")
+            positional_len = new.read_special_var("__positional__")
             for position in range(start_pos, positional_len + 1):
                 parameter = args[arg_pos].arg
                 parameter_value = new.read_var(str(position))
@@ -546,7 +547,7 @@ class Analysis(Base):
         if isinstance(stmt, ast.ClassDef):
             return self.transfer_ClassDef_return(program_point)
         elif isinstance(stmt, ast.Name):
-            return_state = self.analysis_list[program_point]
+            return_state: Stack = self.analysis_list[program_point]
             new_return_state: Stack = return_state.copy()
             new_return_state.pop_frame()
 
@@ -554,7 +555,7 @@ class Analysis(Base):
             if stmt.id == Unused_Name:
                 return new_return_state
 
-            return_value: Value = return_state.read_var_from_stack(RETURN_FLAG)
+            return_value: Value = return_state.read_var(RETURN_FLAG)
             # write value to name
             new_return_state.write_var(stmt.id, return_value)
             return new_return_state
@@ -670,8 +671,8 @@ class Analysis(Base):
         entry_lab, exit_lab = func_cfg.start_block.bid, func_cfg.final_block.bid
 
         value = Value()
-        func_type = FuncType(func_name, func_module, (entry_lab, exit_lab))
-        value.inject_func_type(func_type)
+        func_type = FuncType(lab, func_name, func_module, (entry_lab, exit_lab))
+        value.inject_type(func_type)
 
         new.write_var(func_name, value)
         return new
