@@ -14,11 +14,9 @@
 from __future__ import annotations
 
 import ast
-from collections import defaultdict
 from typing import List
 
 import dmf.share
-from dmf.analysis.heap import analysis_heap
 from dmf.analysis.value import (
     Value,
     Namespace,
@@ -27,6 +25,8 @@ from dmf.analysis.value import (
     FuncType,
     ClsType,
     ModuleType,
+    SuperType,
+    analysis_heap,
 )
 from dmf.log.logger import logger
 
@@ -55,7 +55,7 @@ class Frame:
     def read_special_var(self, var_name: str):
         return self.f_locals[var_name]
 
-    def read_var(self, var_name: str, scope: str) -> Value:
+    def read_var(self, var_name: str, scope: str = "local", args=None) -> Value:
 
         # Implement LEGB rule
         if var_name in self.f_locals:
@@ -81,10 +81,10 @@ class Frame:
         except AttributeError:
             pass
 
-        # try:
-        #     return self.read_builtin_frame(var_name)
-        # except AttributeError:
-        #     pass
+        try:
+            return self.read_builtin_name(var_name, args=args)
+        except AttributeError:
+            pass
 
         raise AttributeError(var_name)
 
@@ -120,6 +120,23 @@ class Frame:
             else:
                 return var_value
         raise AttributeError(var_name)
+
+    def read_builtin_name(self, var_name: str, args=None) -> Value:
+        value = Value()
+        if var_name == "super":
+            pos_keyword_args = args
+            assert len(pos_keyword_args) == 2
+            pos1_value = self.read_var(pos_keyword_args[0].id)
+            pos2_value = self.read_var(pos_keyword_args[1].id)
+            for lab1, typ1 in pos1_value:
+                if not isinstance(typ1, ClsType):
+                    continue
+                for lab2, typ2 in pos2_value:
+                    if not isinstance(typ2, InsType):
+                        continue
+                    super_type = SuperType(typ1, typ2)
+                    value.inject_type(super_type)
+            return value
 
     def read_builtin_frame(self, var_name: str) -> Value:
         if var_name in self.f_builtins:
@@ -254,8 +271,8 @@ class Stack:
     def get_top_frame_package(self):
         return self.top_frame().f_globals["__package__"]
 
-    def read_var(self, var: str, scope: str = "local"):
-        return self.top_frame().read_var(var, scope)
+    def read_var(self, var: str, scope: str = "local", args=None):
+        return self.top_frame().read_var(var, scope, args)
 
     def read_special_var(self, var: str):
         return self.top_frame().read_special_var(var)
@@ -361,16 +378,23 @@ class Stack:
                         pass
                     else:
                         value += attr_value
+                elif isinstance(typ, SuperType):
+                    try:
+                        attr_value = typ.getattr(receiver_attr)
+                    except AttributeError:
+                        pass
+                    else:
+                        value += attr_value
                 else:
                     logger.warn(typ)
             return value
         elif isinstance(expr, ast.BinOp):
-            # left_value = compute_value_of_expr(expr.left, state)
-            # right_value = compute_value_of_expr(expr.right, state)
-            # left_prims = left_value.extract_prim_types()
-            # right_prims = right_value.extract_prim_types()
-            # value = Value()
             assert False
+        elif isinstance(expr, ast.Call):
+            if isinstance(expr.func, ast.Name):
+                old_value = self.read_var(expr.func.id, args=expr.args)
+                new_value = old_value.copy()
+                return new_value
         else:
             logger.warn(expr)
             assert False

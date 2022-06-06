@@ -11,21 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-from __future__ import annotations
-
-from collections import defaultdict
-from typing import DefaultDict, List
-
-from dmf.analysis.value import (
-    InsType,
-    Value,
-    Namespace,
-    Var,
-    ClsType,
-    FuncType,
-    MethodType,
-)
-
+# from __future__ import annotations
 
 # class Singleton:
 #     def __init__(self, cls_obj):
@@ -66,89 +52,3 @@ from dmf.analysis.value import (
 #     def __iadd__(self, other: Summary):
 #         update_twodict(self.internal, other.internal)
 #         return self
-
-
-class Heap:
-    def __init__(self, heap: Heap = None):
-        self.singletons: DefaultDict[InsType, Namespace[Var, Value]] = defaultdict(
-            Namespace
-        )
-        if heap is not None:
-            self.singletons.copy()
-
-    def __le__(self, other: Heap):
-        for ins in self.singletons:
-            if ins not in other.singletons:
-                return False
-            else:
-                self_dict = self.singletons[ins]
-                other_dict = other.singletons[ins]
-                for field in self_dict:
-                    if field not in other_dict:
-                        return False
-                    elif not self_dict[field] <= other_dict[field]:
-                        return False
-        return True
-
-    def __iadd__(self, other: Heap):
-        for ins in other.singletons:
-            if ins not in self.singletons:
-                self.singletons[ins] = other.singletons[ins]
-            else:
-                self_dict = self.singletons[ins]
-                other_dict = other.singletons[ins]
-                for field in other_dict:
-                    if field not in self.singletons:
-                        self_dict[field] = other_dict[field]
-                    else:
-                        self_dict[field] += other_dict[field]
-        return self
-
-    def __repr__(self):
-        return "singleton: {}".format(self.singletons)
-
-    def write_ins_to_heap(self, ins: InsType):
-        if ins in self.singletons:
-            pass
-        else:
-            self.singletons[ins] = Namespace()
-
-    def write_field_to_heap(self, ins: InsType, field: str, value: Value):
-        self.singletons[ins][Var(field, "local")] = value
-
-    # function
-    def read_field_from_instance(self, ins: InsType, field: str):
-        if field in self.singletons[ins]:
-            var_scope, var_value = self.singletons[ins].read_scope_and_value_by_name(
-                field
-            )
-            return var_value
-        else:
-            return self.read_field_from_class(ins, field)
-
-    def read_field_from_class(self, instance: InsType, field: str):
-        cls_type: ClsType = instance.cls
-        cls_mro: List[ClsType] = cls_type.mro
-        for typ in cls_mro:
-            try:
-                var_scope, var_value = typ.getattr(field)
-                assert var_scope == "local"
-            except AttributeError:
-                pass
-            else:
-                new_value = Value()
-                for idx, field_typ in var_value:
-                    if isinstance(field_typ, FuncType):
-                        method_type = MethodType(instance, field_typ, field_typ.module)
-                        new_value.inject_method_type(method_type)
-                    else:
-                        new_value.type_dict[idx] = field_typ
-                return new_value
-        return AttributeError(field)
-
-    def copy(self):
-        copied = Heap(self)
-        return copied
-
-
-analysis_heap = Heap()

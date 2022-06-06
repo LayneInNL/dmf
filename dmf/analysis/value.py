@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, DefaultDict
 
 import dmf.share
 from dmf.analysis.prim import (
@@ -29,7 +29,6 @@ from dmf.analysis.prim import (
     PRIM_BYTES_ID,
     PRIM_BYTES,
 )
-
 from dmf.log.logger import logger
 
 
@@ -180,6 +179,7 @@ class InsType:
         self.addr = addr
         self.cls = cls_type
         self.dict: Namespace[Var, Value] = Namespace()
+        analysis_heap.write_ins_to_heap(self)
 
     def __le__(self, other: InsType):
         return self.dict <= other.dict
@@ -189,10 +189,10 @@ class InsType:
         return self
 
     def __hash__(self):
-        return hash(str(self.addr) + self.cls.name)
+        return hash(str(self.addr) + str(self.cls.label))
 
     def __eq__(self, other: InsType):
-        return self.addr == other.addr and self.cls.name == other.cls.name
+        return self.addr == other.addr and self.cls.label == other.cls.label
 
     @property
     def addr(self):
@@ -225,9 +225,28 @@ class ModuleType:
         return self.namespace.read_scope_and_value_by_name(name)
 
 
-class TOP:
-    pass
+class SuperType:
+    def __init__(self, type1: ClsType, type2: InsType):
+        instance_mro = type2.cls.mro
+        idx = instance_mro.index(type1) + 1
+        self.proxy_location = idx
+        self.proxy_class = instance_mro[idx]
+        self.proxy_instance = type2
+        self.uuid = "{}-{}".format(type1.label, type2.addr)
 
+    def getattr(self, field: str):
+        return analysis_heap.read_field_from_class(
+            self.proxy_instance, field, self.proxy_location
+        )
+
+    def __le__(self, other: SuperType):
+        return True
+
+    def __iadd__(self, other: SuperType):
+        return self
+
+
+class TOP:
     def copy(self):
         return self
 
@@ -287,6 +306,12 @@ class Value:
             self.inject_method_type(typ)
         elif isinstance(typ, ModuleType):
             self.inject_module_type(typ)
+        elif isinstance(typ, SuperType):
+            self.inject_super_type(typ)
+
+    def inject_super_type(self, super_type: SuperType):
+        lab = super_type.uuid
+        self.type_dict[lab] = super_type
 
     # to promise uniqueness, we use function label
     def inject_func_type(self, func_type: FuncType):
@@ -396,7 +421,7 @@ def is_magic_attr(var: Var | str):
         return False
 
 
-# Namespace[Var|str, Value|int]
+# Namespace[Var|str, Value]
 class Namespace(defaultdict):
     def __repr__(self):
         return dict.__repr__(self)
@@ -465,7 +490,7 @@ class Namespace(defaultdict):
 Unused_Name = "00_unused_name"
 SELF_FLAG = "self"
 INIT_FLAG = "00_init_flag"
-INIT_FLAG_VALUE = VALUE_TOP
+INIT_FLAG_VALUE = value_top_builder()
 RETURN_FLAG = "00__return__flag"
 
 # builtin_object = ClsType((), Namespace())
@@ -495,3 +520,90 @@ def static_merge(mro_list):
             )
     else:
         raise TypeError("No legal mro")
+
+
+class Heap:
+    def __init__(self, heap: Heap = None):
+        self.singletons: DefaultDict[InsType, Namespace[Var, Value]] = defaultdict(
+            Namespace
+        )
+        if heap is not None:
+            self.singletons.copy()
+
+    def __le__(self, other: Heap):
+        for ins in self.singletons:
+            if ins not in other.singletons:
+                return False
+            else:
+                self_dict = self.singletons[ins]
+                other_dict = other.singletons[ins]
+                for field in self_dict:
+                    if field not in other_dict:
+                        return False
+                    elif not self_dict[field] <= other_dict[field]:
+                        return False
+        return True
+
+    def __iadd__(self, other: Heap):
+        for ins in other.singletons:
+            if ins not in self.singletons:
+                self.singletons[ins] = other.singletons[ins]
+            else:
+                self_dict = self.singletons[ins]
+                other_dict = other.singletons[ins]
+                for field in other_dict:
+                    if field not in self.singletons:
+                        self_dict[field] = other_dict[field]
+                    else:
+                        self_dict[field] += other_dict[field]
+        return self
+
+    def __repr__(self):
+        return "singleton: {}".format(self.singletons)
+
+    def write_ins_to_heap(self, ins: InsType):
+        if ins in self.singletons:
+            pass
+        else:
+            self.singletons[ins] = Namespace()
+
+    def write_field_to_heap(self, ins: InsType, field: str, value: Value):
+        self.singletons[ins][Var(field, "local")] = value
+
+    # function
+    def read_field_from_instance(self, ins: InsType, field: str):
+        if field in self.singletons[ins]:
+            var_scope, var_value = self.singletons[ins].read_scope_and_value_by_name(
+                field
+            )
+            return var_value
+        else:
+            return self.read_field_from_class(ins, field)
+
+    def read_field_from_class(self, instance: InsType, field: str, index=0):
+        cls_type: ClsType = instance.cls
+        cls_mro: List[ClsType] = cls_type.mro
+        considered_cls_mro = cls_mro[index:]
+        for typ in considered_cls_mro:
+            try:
+                var_scope, var_value = typ.getattr(field)
+                assert var_scope == "local"
+            except AttributeError:
+                pass
+            else:
+                new_value = Value()
+                for idx, field_typ in var_value:
+                    if isinstance(field_typ, FuncType):
+                        method_type = MethodType(instance, field_typ, field_typ.module)
+                        new_value.inject_method_type(method_type)
+                    else:
+                        new_value.type_dict[idx] = field_typ
+                return new_value
+        return AttributeError(field)
+
+    def copy(self):
+        copied = Heap(self)
+        return copied
+
+
+analysis_heap = Heap()

@@ -18,16 +18,16 @@ from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, Set, List
 
 import dmf.share
-from dmf.analysis.heap import analysis_heap
 from dmf.analysis.prim import Int, Bool, NoneType
 from dmf.analysis.stack import Frame, Stack, stack_bot_builder
 from dmf.analysis.value import (
     InsType,
     MethodType,
-    Namespace,
     Unused_Name,
     ModuleType,
     builtin_object,
+    SuperType,
+    analysis_heap,
 )
 from dmf.analysis.value import (
     Value,
@@ -228,15 +228,16 @@ class Analysis(Base):
             )
 
     def present(self):
-        for program_point, stack in self.analysis_list.items():
-            logger.info("Context at program point {}: {}".format(program_point, stack))
+        for program_point, stack in list(self.analysis_list.items()):
+            # logger.info("Context at program point {}: {}".format(program_point, stack))
             self.analysis_effect_list[program_point] = self.transfer(program_point)
-            logger.info(
-                "Effect at program point {}: {}".format(
-                    program_point, self.analysis_effect_list[program_point]
-                )
-            )
+            # logger.info(
+            #     "Effect at program point {}: {}".format(
+            #         program_point, self.analysis_effect_list[program_point]
+            #     )
+            # )
         self.transfer(self.final_point)
+        print(analysis_heap)
         # logger.warning(dmf.share.analysis_modules["static_builtins"].namespace)
 
     # based on current program point, update self.IF
@@ -256,7 +257,7 @@ class Analysis(Base):
             func: ast.expr = stmt.func
             # x()
             if isinstance(func, ast.Name):
-                self.lambda_name(program_point, func.id)
+                self.lambda_name(program_point, stmt)
             # x.y()
             elif isinstance(func, ast.Attribute):
                 # attr: str = func.attr
@@ -289,21 +290,53 @@ class Analysis(Base):
         self.entry_info[(entry_lab, call_ctx)] = (None, None, None)
 
     # deal with cases such as name()
-    def lambda_name(self, program_point: ProgramPoint, name: str):
-        state: Stack = self.analysis_list[program_point]
-        # get abstract value of name
-        value: Value = state.read_var(name)
-        # iterate all types to find which is callable
-        for _, typ in value:
-            if isinstance(typ, ClsType):
-                self.lambda_class_init(program_point, typ)
-            elif isinstance(typ, FuncType):
-                self.lambda_func_call(program_point, typ)
-            elif isinstance(typ, MethodType):
-                self.lambda_method_call(program_point, typ)
-            else:
-                logger.warn(typ)
-                assert False
+    def lambda_name(self, program_point: ProgramPoint, expr: ast.Call):
+        assert isinstance(expr.func, ast.Name)
+        name = expr.func.id
+
+        stack: Stack = self.analysis_list[program_point]
+        try:
+            # get abstract value of name
+            value: Value = stack.read_var(name, args=expr.args)
+        except AttributeError:
+            logger.critical("No attribute named {}".format(name))
+        else:
+            # iterate all types to find which is callable
+            for _, typ in value:
+                if isinstance(typ, ClsType):
+                    self.lambda_class_init(program_point, typ)
+                elif isinstance(typ, FuncType):
+                    self.lambda_func_call(program_point, typ)
+                elif isinstance(typ, MethodType):
+                    self.lambda_method_call(program_point, typ)
+                elif isinstance(typ, SuperType):
+                    call_lab, call_ctx = program_point
+                    return_lab = self.get_return_label(call_lab)
+                    return_stmt: ast.Name = self.get_stmt_by_label(return_lab)
+                    old = self.analysis_list[program_point]
+                    fake_return_stack = old.copy()
+                    value = Value()
+                    value.inject_type(typ)
+                    fake_return_stack.write_var(return_stmt.id, value)
+                    return_program_point = (return_lab, call_ctx)
+                    self.LAMBDA(return_program_point)
+                    added_flows = self.DELTA(return_program_point)
+                    assert len(added_flows) == 1
+                    return_next_program_point = added_flows[0][1]
+                    old_return_next_stack = self.analysis_list[
+                        return_next_program_point
+                    ]
+                    if not fake_return_stack <= old_return_next_stack:
+                        fake_return_stack += old_return_next_stack
+                        self.analysis_list[
+                            return_next_program_point
+                        ] = fake_return_stack
+                        self.LAMBDA(return_next_program_point)
+                        added_flows = self.DELTA(return_next_program_point)
+                        self.work_list.extendleft(added_flows)
+                else:
+                    logger.warn(typ)
+                    assert False
 
     # deal with class initialization
     # find __init__ method
@@ -316,7 +349,6 @@ class Analysis(Base):
         init_methods: Value = analysis_heap.read_field_from_instance(ins_type, attr)
         for _, init_method in init_methods:
             if isinstance(init_method, MethodType):
-                analysis_heap.write_ins_to_heap(ins_type)
                 entry_lab, exit_lab = init_method.code
                 inter_flow = (
                     (call_lab, call_ctx),
@@ -444,8 +476,9 @@ class Analysis(Base):
         elif isinstance(stmt, ast.Call):
             old: Stack = self.analysis_list[program_point]
             new: Stack = old.copy()
+            func_value: Value = new.compute_value_of_expr(stmt)
+
             new.next_ns()
-            func_value: Value = new.compute_value_of_expr(stmt.func)
             for _, typ in func_value:
                 # __init__ or instance method
                 if isinstance(typ, (ClsType, MethodType, FuncType)):
@@ -461,6 +494,30 @@ class Analysis(Base):
                     for keyword in keywords:
                         keyword_value = new.compute_value_of_expr(keyword.value)
                         new.write_var(keyword.arg, keyword_value)
+                elif isinstance(typ, SuperType):
+                    return_label = self.get_return_label(call_lab)
+                    return_stmt: ast.Name = self.get_stmt_by_label(return_label)
+                    fake_return_stack = old.copy()
+                    value = Value()
+                    value.inject_type(typ)
+                    fake_return_stack.write_var(return_stmt.id, value)
+                    old_return_stack = self.analysis_list[(return_label, call_ctx)]
+                    if not fake_return_stack <= old_return_stack:
+                        fake_return_stack += old_return_stack
+                        self.analysis_list[(return_label, call_ctx)] = fake_return_stack
+                    self.LAMBDA((return_label, call_ctx))
+                    added_flows = self.DELTA((return_label, call_ctx))
+                    assert len(added_flows) == 1
+                    old_return_stack = self.analysis_list[
+                        (return_label, call_ctx)
+                    ].copy()
+                    old_return_next_stack = self.analysis_list[added_flows[0][1]]
+                    if not old_return_stack <= old_return_next_stack:
+                        old_return_stack += old_return_next_stack
+                        self.analysis_list[added_flows[0][1]] = old_return_stack
+                        self.LAMBDA(added_flows[0][1])
+                        added_flows = self.DELTA(added_flows[0][1])
+                        self.work_list.extendleft(added_flows)
                 else:
                     assert False
             return new
@@ -553,20 +610,20 @@ class Analysis(Base):
             assert False
 
     def transfer_return_name(self, program_point: ProgramPoint, stmt: ast.Name):
-        return_state: Stack = self.analysis_list[program_point]
-        new_return_state: Stack = return_state.copy()
-        return_value: Value = new_return_state.read_var(RETURN_FLAG)
-        if new_return_state.top_frame_contains(INIT_FLAG):
-            return_value: Value = new_return_state.read_var(SELF_FLAG)
-        new_return_state.pop_frame()
+        before_return_stack: Stack = self.analysis_list[program_point]
+        after_return_stack: Stack = before_return_stack.copy()
+        return_value: Value = after_return_stack.read_var(RETURN_FLAG)
+        if after_return_stack.top_frame_contains(INIT_FLAG):
+            return_value: Value = after_return_stack.read_var(SELF_FLAG)
+        after_return_stack.pop_frame()
 
         # no need to assign
         if stmt.id == Unused_Name:
-            return new_return_state
+            return after_return_stack
 
         # write value to name
-        new_return_state.write_var(stmt.id, return_value)
-        return new_return_state
+        after_return_stack.write_var(stmt.id, return_value)
+        return after_return_stack
 
     def transfer_Import(self, program_point: ProgramPoint):
         lab, ctx = program_point
