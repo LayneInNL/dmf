@@ -11,3 +11,8 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+
+a = [1, True, None]
+b = list()
+for _ in range(5):
+    c = list()

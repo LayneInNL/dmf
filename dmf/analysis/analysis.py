@@ -18,7 +18,7 @@ from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, Set, List
 
 import dmf.share
-from dmf.analysis.prim import Int, Bool, NoneType
+from dmf.analysis.prim import Int, Bool, NoneType, ListType
 from dmf.analysis.stack import Frame, Stack, stack_bot_builder
 from dmf.analysis.value import (
     InsType,
@@ -26,7 +26,7 @@ from dmf.analysis.value import (
     Unused_Name,
     ModuleType,
     builtin_object,
-    SuperType,
+    SuperIns,
     analysis_heap,
 )
 from dmf.analysis.value import (
@@ -257,7 +257,7 @@ class Analysis(Base):
             func: ast.expr = stmt.func
             # x()
             if isinstance(func, ast.Name):
-                self.lambda_name(program_point, stmt)
+                self.lambda_call_name(program_point, stmt)
             # x.y()
             elif isinstance(func, ast.Attribute):
                 # attr: str = func.attr
@@ -290,16 +290,21 @@ class Analysis(Base):
         self.entry_info[(entry_lab, call_ctx)] = (None, None, None)
 
     # deal with cases such as name()
-    def lambda_name(self, program_point: ProgramPoint, expr: ast.Call):
+    def lambda_call_name(self, program_point: ProgramPoint, expr: ast.Call):
         assert isinstance(expr.func, ast.Name)
         name = expr.func.id
+
+        call_lab, call_ctx = program_point
+        address = record(call_lab, call_ctx)
 
         stack: Stack = self.analysis_list[program_point]
         try:
             # get abstract value of name
-            value: Value = stack.read_var(name, args=expr.args)
+            value: Value = stack.compute_value_of_expr(expr.func, address)
         except AttributeError:
             logger.critical("No attribute named {}".format(name))
+        except BaseException as base:
+            logger.critical(base)
         else:
             # iterate all types to find which is callable
             for _, typ in value:
@@ -309,7 +314,7 @@ class Analysis(Base):
                     self.lambda_func_call(program_point, typ)
                 elif isinstance(typ, MethodType):
                     self.lambda_method_call(program_point, typ)
-                elif isinstance(typ, SuperType):
+                elif isinstance(typ, SuperIns):
                     call_lab, call_ctx = program_point
                     return_lab = self.get_return_label(call_lab)
                     return_stmt: ast.Name = self.get_stmt_by_label(return_lab)
@@ -334,6 +339,8 @@ class Analysis(Base):
                         self.LAMBDA(return_next_program_point)
                         added_flows = self.DELTA(return_next_program_point)
                         self.work_list.extendleft(added_flows)
+                elif isinstance(typ, ListType):
+                    pass
                 else:
                     logger.warn(typ)
                     assert False
@@ -427,7 +434,7 @@ class Analysis(Base):
         old: Stack = self.analysis_list[program_point]
         new: Stack = old.copy()
 
-        rhs_value: Value = new.compute_value_of_expr(stmt.value)
+        rhs_value: Value = new.compute_value_of_expr(stmt.value, program_point)
         target: ast.expr = stmt.targets[0]
         if isinstance(target, ast.Name):
             lhs_name: str = target.id
@@ -494,7 +501,7 @@ class Analysis(Base):
                     for keyword in keywords:
                         keyword_value = new.compute_value_of_expr(keyword.value)
                         new.write_var(keyword.arg, keyword_value)
-                elif isinstance(typ, SuperType):
+                elif isinstance(typ, SuperIns):
                     return_label = self.get_return_label(call_lab)
                     return_stmt: ast.Name = self.get_stmt_by_label(return_label)
                     fake_return_stack = old.copy()
@@ -557,7 +564,7 @@ class Analysis(Base):
             # if it has an instance, self is considered
             start_pos = 0 if instance else 1
             arg_pos = 0
-            positional_len = new.read_special_var("__positional__")
+            positional_len = new.read_special_attribute("__positional__")
             for position in range(start_pos, positional_len + 1):
                 parameter = args[arg_pos].arg
                 parameter_value = new.read_var(str(position))

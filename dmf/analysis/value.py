@@ -18,21 +18,16 @@ from typing import List, Tuple, Dict, DefaultDict
 
 import dmf.share
 from dmf.analysis.prim import (
-    PRIM_BOOL_ID,
-    PRIM_INT_ID,
-    PRIM_INT,
-    PRIM_BOOL,
-    PRIM_NONE_ID,
-    PRIM_NONE,
-    PRIM_STR_ID,
-    PRIM_STR,
-    PRIM_BYTES_ID,
-    PRIM_BYTES,
     Int,
     Bool,
     NoneType,
     Str,
     Bytes,
+    SuperType,
+    ListType,
+    DictType,
+    SetType,
+    TupleType,
 )
 from dmf.log.logger import logger
 
@@ -230,7 +225,7 @@ class ModuleType:
         return self.namespace.read_scope_and_value_by_name(name)
 
 
-class SuperType:
+class SuperIns:
     def __init__(self, type1: ClsType, type2: InsType):
         instance_mro = type2.cls.mro
         idx = instance_mro.index(type1) + 1
@@ -244,11 +239,28 @@ class SuperType:
             self.proxy_instance, field, self.proxy_location
         )
 
-    def __le__(self, other: SuperType):
+    def __le__(self, other: SuperIns):
         return True
 
-    def __iadd__(self, other: SuperType):
+    def __iadd__(self, other: SuperIns):
         return self
+
+
+class ListIns:
+    def __init__(self, uuid, elts: Value = None):
+        self.uuid = uuid
+        self.internal = Value()
+        if elts is not None:
+            self.internal += elts
+
+    def __le__(self, other: ListIns):
+        return self.internal <= other.internal
+
+    def __iadd__(self, other: ListIns):
+        self.internal += other.internal
+
+    def __repr__(self):
+        return self.internal.__repr__()
 
 
 class TOP:
@@ -311,22 +323,30 @@ class Value:
             self.inject_method_type(typ)
         elif isinstance(typ, ModuleType):
             self.inject_module_type(typ)
-        elif isinstance(typ, SuperType):
-            self.inject_super_type(typ)
-        elif isinstance(typ, Int):
-            self.inject_int_type()
-        elif isinstance(typ, Bool):
-            self.inject_bool_type()
-        elif isinstance(typ, NoneType):
-            self.inject_none_type()
-        elif isinstance(typ, Str):
-            self.inject_str_type()
-        elif isinstance(typ, Bytes):
-            self.inject_bytes_type()
+        elif isinstance(typ, SuperIns):
+            self.inject_super_ins(typ)
+        elif isinstance(typ, ListIns):
+            self.type_dict[typ.uuid] = typ
+        elif isinstance(
+            typ,
+            (
+                Int,
+                Bool,
+                NoneType,
+                Str,
+                Bytes,
+                ListType,
+                TupleType,
+                SetType,
+                DictType,
+                SuperType,
+            ),
+        ):
+            self.type_dict[typ.uuid] = typ
         else:
             assert False
 
-    def inject_super_type(self, super_type: SuperType):
+    def inject_super_ins(self, super_type: SuperIns):
         lab = super_type.uuid
         self.type_dict[lab] = super_type
 
@@ -357,26 +377,6 @@ class Value:
             if isinstance(typ, ClsType):
                 res.append(typ)
         return res
-
-    def inject_int_type(self):
-        lab = PRIM_INT_ID
-        self.type_dict[lab] = PRIM_INT
-
-    def inject_bool_type(self):
-        lab = PRIM_BOOL_ID
-        self.type_dict[lab] = PRIM_BOOL
-
-    def inject_none_type(self):
-        lab = PRIM_NONE_ID
-        self.type_dict[lab] = PRIM_NONE
-
-    def inject_str_type(self):
-        lab = PRIM_STR_ID
-        self.type_dict[lab] = PRIM_STR
-
-    def inject_bytes_type(self):
-        lab = PRIM_BYTES_ID
-        self.type_dict[lab] = PRIM_BYTES
 
     def inject_value(self, value: Value):
         for lab, typ in value.type_dict.items():

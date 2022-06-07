@@ -17,7 +17,18 @@ import ast
 from typing import List
 
 import dmf.share
-from dmf.analysis.prim import BUILTIN_TYPES
+from dmf.analysis.prim import (
+    BUILTIN_TYPES,
+    ListType,
+    SuperType,
+    Int,
+    NoneType,
+    Bool,
+    Str,
+    Bytes,
+    Float,
+    Complex,
+)
 from dmf.analysis.value import (
     Value,
     Namespace,
@@ -26,8 +37,9 @@ from dmf.analysis.value import (
     FuncType,
     ClsType,
     ModuleType,
-    SuperType,
+    SuperIns,
     analysis_heap,
+    ListIns,
 )
 from dmf.log.logger import logger
 
@@ -53,10 +65,10 @@ class Frame:
     def __repr__(self):
         return self.f_locals.__repr__()
 
-    def read_special_var(self, var_name: str):
+    def read_special_attribute(self, var_name: str):
         return self.f_locals[var_name]
 
-    def read_var(self, var_name: str, scope: str = "local", args=None) -> Value:
+    def read_var(self, var_name: str, scope: str = "local") -> Value:
 
         # Implement LEGB rule
         if var_name in self.f_locals:
@@ -83,7 +95,7 @@ class Frame:
             pass
 
         try:
-            return self.read_builtin_name(var_name, args=args)
+            return self.read_builtin_name(var_name)
         except AttributeError:
             pass
 
@@ -122,22 +134,31 @@ class Frame:
                 return var_value
         raise AttributeError(var_name)
 
-    def read_builtin_name(self, var_name: str, args=None) -> Value:
+    def read_builtin_name(self, var_name: str) -> Value:
         value = Value()
         if var_name == "super":
-            pos_keyword_args = args
-            assert len(pos_keyword_args) == 2
-            pos1_value = self.read_var(pos_keyword_args[0].id)
-            pos2_value = self.read_var(pos_keyword_args[1].id)
-            for lab1, typ1 in pos1_value:
-                if not isinstance(typ1, ClsType):
-                    continue
-                for lab2, typ2 in pos2_value:
-                    if not isinstance(typ2, InsType):
-                        continue
-                    super_type = SuperType(typ1, typ2)
-                    value.inject_type(super_type)
+            super_type = SuperType()
+            value.inject_type(super_type)
             return value
+            # pos_keyword_args = args
+            # assert len(pos_keyword_args) == 2
+            # pos1_value = self.read_var(pos_keyword_args[0].id)
+            # pos2_value = self.read_var(pos_keyword_args[1].id)
+            # for lab1, typ1 in pos1_value:
+            #     if not isinstance(typ1, ClsType):
+            #         continue
+            #     for lab2, typ2 in pos2_value:
+            #         if not isinstance(typ2, InsType):
+            #             continue
+            #         super_type = SuperIns(typ1, typ2)
+            #         value.inject_type(super_type)
+            # return value
+        elif var_name == "list":
+            list_type = ListType()
+            value.inject_type(list_type)
+            return value
+        else:
+            assert False
 
     def read_builtin_frame(self, var_name: str) -> Value:
         if var_name in self.f_builtins:
@@ -272,11 +293,11 @@ class Stack:
     def get_top_frame_package(self):
         return self.top_frame().f_globals["__package__"]
 
-    def read_var(self, var: str, scope: str = "local", args=None):
-        return self.top_frame().read_var(var, scope, args)
+    def read_var(self, var: str, scope: str = "local"):
+        return self.top_frame().read_var(var, scope)
 
-    def read_special_var(self, var: str):
-        return self.top_frame().read_special_var(var)
+    def read_special_attribute(self, var: str):
+        return self.top_frame().read_special_attribute(var)
 
     def write_var(self, var: str, value: Value, scope: str = "local"):
         self.top_frame().write_var(var, value, scope)
@@ -311,28 +332,30 @@ class Stack:
                 new_module_name
             ].namespace
 
-    def compute_value_of_expr(self, expr: ast.expr):
+    def compute_value_of_expr(self, expr: ast.expr, address=None):
         value = Value()
         if isinstance(expr, ast.Num):
             if isinstance(expr.n, int):
-                value.inject_int_type()
-            else:
-                assert False
+                value.inject_type(Int())
+            elif isinstance(expr.n, float):
+                value.inject_type(Float())
+            elif isinstance(expr.n, complex):
+                value.inject_type(Complex())
             return value
         elif isinstance(expr, ast.NameConstant):
             if expr.value is None:
-                value.inject_none_type()
+                value.inject_type(NoneType())
             else:
-                value.inject_bool_type()
+                value.inject_type(Bool())
             return value
         elif isinstance(expr, (ast.Str, ast.JoinedStr)):
-            value.inject_str_type()
+            value.inject_type(Str())
             return value
         elif isinstance(expr, ast.Bytes):
-            value.inject_bytes_type()
+            value.inject_type(Bytes())
             return value
         elif isinstance(expr, ast.Compare):
-            value.inject_bool_type()
+            value.inject_type(Bool())
             return value
         elif isinstance(expr, ast.Name):
             old_value = self.read_var(expr.id)
@@ -379,7 +402,7 @@ class Stack:
                         pass
                     else:
                         value += attr_value
-                elif isinstance(typ, SuperType):
+                elif isinstance(typ, SuperIns):
                     try:
                         attr_value = typ.getattr(receiver_attr)
                     except AttributeError:
@@ -406,10 +429,16 @@ class Stack:
             return value
 
         elif isinstance(expr, ast.Call):
-            if isinstance(expr.func, ast.Name):
-                old_value = self.read_var(expr.func.id, args=expr.args)
-                new_value = old_value.copy()
-                return new_value
+            old_value = self.compute_value_of_expr(expr.func, address)
+
+        elif isinstance(expr, ast.List):
+            elts_val = Value()
+            for elt in expr.elts:
+                elt_value = self.compute_value_of_expr(elt, address)
+                elts_val += elt_value
+            list_type = ListIns(address, elts_val)
+            value.inject_type(list_type)
+            return value
         else:
             logger.warn(expr)
             assert False

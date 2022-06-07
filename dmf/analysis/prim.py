@@ -34,72 +34,250 @@ class BinOp:
                 assert False
 
 
+index = -1
+
+
+def index_generator():
+    global index
+    temp = index
+    index -= 1
+    return temp
+
+
 class Int(BinOp):
+    uuid = index_generator()
     internal = 1
+
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
 
     def __repr__(self):
         return self.internal.__class__.__name__
 
 
 class Float(BinOp):
-    def __init__(self):
-        self.internal = 1.0
+    uuid = index_generator()
+    internal = 1.0
+
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __repr__(self):
+        return self.internal.__class__.__name__
+
+
+class Complex(BinOp):
+    uuid = index_generator()
+    internal = 1j
+
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
 
     def __repr__(self):
         return self.internal.__class__.__name__
 
 
 class Bool(BinOp):
-    def __init__(self):
-        self.internal = True
+    uuid = index_generator()
+    internal = True
+
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
 
     def __repr__(self):
         return self.internal.__class__.__name__
 
 
 class NoneType(BinOp):
-    def __init__(self):
-        self.internal = None
+    uuid = index_generator()
+    internal = None
+
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
 
     def __repr__(self):
         return self.internal.__class__.__name__
 
 
 class Str(BinOp):
-    def __init__(self):
-        self.internal = ""
+    uuid = index_generator()
+    internal = ""
+
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
 
     def __repr__(self):
         return self.internal.__class__.__name__
 
 
 class Bytes(BinOp):
-    def __init__(self):
-        self.internal = b""
+    uuid = index_generator()
+    internal = b""
+
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
 
     def __repr__(self):
         return self.internal.__class__.__name__
 
 
-PRIM_INT = Int()
-PRIM_INT_ID = id(PRIM_INT)
-PRIM_FLOAT = Float()
-PRIM_FLOAT_ID = id(PRIM_FLOAT)
-PRIM_BOOL = Bool()
-PRIM_BOOL_ID = id(PRIM_BOOL)
-PRIM_NONE = NoneType()
-PRIM_NONE_ID = id(PRIM_NONE)
-PRIM_STR = Str()
-PRIM_STR_ID = id(PRIM_STR)
-PRIM_BYTES = Bytes()
-PRIM_BYTES_ID = id(PRIM_BYTES)
+class ListType:
+    uuid = index_generator()
+    internal = []
+
+    def __new__(cls):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __repr__(self):
+        return self.internal.__class__.__name__
+
+
+class TupleType:
+    uuid = index_generator()
+    internal = ()
+
+    def __new__(cls):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __repr__(self):
+        return self.internal.__class__.__name__
+
+
+class SetType:
+    uuid = index_generator()
+    internal = set()
+
+    def __new__(cls):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __repr__(self):
+        return self.internal.__class__.__name__
+
+
+class DictType:
+    uuid = index_generator()
+    internal = {}
+
+    def __new__(cls):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __repr__(self):
+        return self.internal.__class__.__name__
+
+
+class SuperType:
+    uuid = index_generator()
+    internal = super
+
+    def __new__(cls):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __repr__(self):
+        return self.internal.__name__
+
 
 BUILTIN_TYPES = (Int, Float, Bool, NoneType, Str, Bytes)
 real2abstract = {
-    "int": PRIM_INT,
-    "float": PRIM_FLOAT,
-    "bool": PRIM_BOOL,
-    "NoneType": PRIM_NONE,
-    "str": PRIM_STR,
-    "bytes": PRIM_BYTES,
+    "int": Int(),
+    "float": Float(),
+    "bool": Bool(),
+    "NoneType": NoneType(),
+    "str": Str(),
+    "bytes": Bytes(),
 }
