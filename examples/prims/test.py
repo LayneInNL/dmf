@@ -35,3 +35,5 @@ a = 1
 a = False
 a = "str"
 # a.b = 1
+b = 2
+c = a * b

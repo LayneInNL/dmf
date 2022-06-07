@@ -10,124 +10,81 @@
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
+#  limitations under the License.
+
 from __future__ import annotations
 
-#  limitations under the License.
-from dmf.log.logger import logger
+
+class BinOp:
+    def binop(self, dunder_method, other):
+        try:
+            method = getattr(self.internal, dunder_method)
+        except AttributeError:
+            raise
+
+        try:
+            res = method(other.internal)
+        except TypeError:
+            raise
+        else:
+            res_type_name = res.__class__.__name__
+            if res_type_name in real2abstract:
+                return real2abstract[res_type_name]
+            else:
+                assert False
 
 
-class Int:
-    def __init__(self):
-        pass
-
-    def __le__(self, other: Int):
-        return True
-
-    def __iadd__(self, other: Int):
-        return self
-
-    def __repr__(self):
-        return "int"
-
-    def setattr(self, key, value):
-        logger.warning("set attr to int, ignore")
-        assert False
-
-    def getattr(self, key):
-        logger.warning("get attr from int, ignore")
-        assert False
-
-
-class Bool:
-    def __init__(self):
-        pass
-
-    def __le__(self, other: Bool):
-        return True
-
-    def __iadd__(self, other: Bool):
-        return self
+class Int(BinOp):
+    internal = 1
 
     def __repr__(self):
-        return "bool"
-
-    def setattr(self, key, value):
-        logger.warning("set attr to bool, ignore")
-        assert False
-
-    def getattr(self, key):
-        logger.warning("get attr from bool, ignore")
-        assert False
+        return self.internal.__class__.__name__
 
 
-class NoneType:
+class Float(BinOp):
     def __init__(self):
-        pass
-
-    def __le__(self, other: NoneType):
-        return True
-
-    def __iadd__(self, other):
-        return self
+        self.internal = 1.0
 
     def __repr__(self):
-        return "None"
-
-    def setattr(self, key, value):
-        logger.warning("set attr to none, ignore")
-        assert False
-
-    def getattr(self, key):
-        logger.warning("set attr from none, ignore")
-        assert False
+        return self.internal.__class__.__name__
 
 
-class Str:
+class Bool(BinOp):
     def __init__(self):
-        pass
-
-    def __le__(self, other: Str):
-        return True
-
-    def __iadd__(self, other: Str):
-        return self
+        self.internal = True
 
     def __repr__(self):
-        return "str"
-
-    def setattr(self, key, value):
-        logger.warning("set attr to none, ignore")
-        assert False
-
-    def getattr(self, key):
-        logger.warning("set attr from none, ignore")
-        assert False
+        return self.internal.__class__.__name__
 
 
-class Bytes:
+class NoneType(BinOp):
     def __init__(self):
-        pass
-
-    def __le__(self, other: Bytes):
-        return True
-
-    def __iadd__(self, other: Bytes):
-        return self
+        self.internal = None
 
     def __repr__(self):
-        return "bytes"
+        return self.internal.__class__.__name__
 
-    def setattr(self, key, value):
-        logger.warning("set attr to none, ignore")
-        assert False
 
-    def getattr(self, key):
-        logger.warning("set attr from none, ignore")
-        assert False
+class Str(BinOp):
+    def __init__(self):
+        self.internal = ""
+
+    def __repr__(self):
+        return self.internal.__class__.__name__
+
+
+class Bytes(BinOp):
+    def __init__(self):
+        self.internal = b""
+
+    def __repr__(self):
+        return self.internal.__class__.__name__
 
 
 PRIM_INT = Int()
 PRIM_INT_ID = id(PRIM_INT)
+PRIM_FLOAT = Float()
+PRIM_FLOAT_ID = id(PRIM_FLOAT)
 PRIM_BOOL = Bool()
 PRIM_BOOL_ID = id(PRIM_BOOL)
 PRIM_NONE = NoneType()
@@ -136,3 +93,13 @@ PRIM_STR = Str()
 PRIM_STR_ID = id(PRIM_STR)
 PRIM_BYTES = Bytes()
 PRIM_BYTES_ID = id(PRIM_BYTES)
+
+BUILTIN_TYPES = (Int, Float, Bool, NoneType, Str, Bytes)
+real2abstract = {
+    "int": PRIM_INT,
+    "float": PRIM_FLOAT,
+    "bool": PRIM_BOOL,
+    "NoneType": PRIM_NONE,
+    "str": PRIM_STR,
+    "bytes": PRIM_BYTES,
+}

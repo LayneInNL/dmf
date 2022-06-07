@@ -17,6 +17,7 @@ import ast
 from typing import List
 
 import dmf.share
+from dmf.analysis.prim import BUILTIN_TYPES
 from dmf.analysis.value import (
     Value,
     Namespace,
@@ -389,7 +390,21 @@ class Stack:
                     logger.warn(typ)
             return value
         elif isinstance(expr, ast.BinOp):
-            assert False
+            dunder_method = op2dunder(expr.op)
+            lhs_value: Value = self.compute_value_of_expr(expr.left)
+            rhs_value: Value = self.compute_value_of_expr(expr.right)
+            for lab1, typ1 in lhs_value:
+                if not isinstance(typ1, BUILTIN_TYPES):
+                    assert False
+                for lab2, typ2 in rhs_value:
+                    try:
+                        res_type = typ1.binop(dunder_method, typ2)
+                    except (AttributeError, TypeError):
+                        pass
+                    else:
+                        value.inject_type(res_type)
+            return value
+
         elif isinstance(expr, ast.Call):
             if isinstance(expr.func, ast.Name):
                 old_value = self.read_var(expr.func.id, args=expr.args)
@@ -398,6 +413,38 @@ class Stack:
         else:
             logger.warn(expr)
             assert False
+
+
+def op2dunder(operator: ast.operator):
+    magic_method = None
+    if isinstance(operator, ast.Add):
+        magic_method = "__add__"
+    elif isinstance(operator, ast.Sub):
+        magic_method = "__sub__"
+    elif isinstance(operator, ast.Mult):
+        magic_method = "__mul__"
+    elif isinstance(operator, ast.MatMult):
+        assert False
+    elif isinstance(operator, ast.Div):
+        magic_method = "__div__"
+    elif isinstance(operator, ast.Mod):
+        magic_method = "__mod__"
+    elif isinstance(operator, ast.Pow):
+        magic_method = "__pow__"
+    elif isinstance(operator, ast.LShift):
+        magic_method = "__lshift__"
+    elif isinstance(operator, ast.RShift):
+        magic_method = "__rshift__"
+    elif isinstance(operator, ast.BitOr):
+        magic_method = "__or__"
+    elif isinstance(operator, ast.BitXor):
+        magic_method = "__xor__"
+    elif isinstance(operator, ast.BitAnd):
+        magic_method = "__and__"
+    elif isinstance(operator, ast.FloorDiv):
+        magic_method = "__floordiv__"
+
+    return magic_method
 
 
 BOT = "BOT"

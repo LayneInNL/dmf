@@ -28,6 +28,11 @@ from dmf.analysis.prim import (
     PRIM_STR,
     PRIM_BYTES_ID,
     PRIM_BYTES,
+    Int,
+    Bool,
+    NoneType,
+    Str,
+    Bytes,
 )
 from dmf.log.logger import logger
 
@@ -308,6 +313,18 @@ class Value:
             self.inject_module_type(typ)
         elif isinstance(typ, SuperType):
             self.inject_super_type(typ)
+        elif isinstance(typ, Int):
+            self.inject_int_type()
+        elif isinstance(typ, Bool):
+            self.inject_bool_type()
+        elif isinstance(typ, NoneType):
+            self.inject_none_type()
+        elif isinstance(typ, Str):
+            self.inject_str_type()
+        elif isinstance(typ, Bytes):
+            self.inject_bytes_type()
+        else:
+            assert False
 
     def inject_super_type(self, super_type: SuperType):
         lab = super_type.uuid
@@ -360,10 +377,6 @@ class Value:
     def inject_bytes_type(self):
         lab = PRIM_BYTES_ID
         self.type_dict[lab] = PRIM_BYTES
-
-    def inject_list_type(self, list_type):
-        lab = id(list_type)
-        self.type_dict[lab] = list_type
 
     def inject_value(self, value: Value):
         for lab, typ in value.type_dict.items():
