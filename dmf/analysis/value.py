@@ -276,6 +276,11 @@ class Value:
     def __init__(self):
         self.type_dict: Dict | VALUE_TOP = {}
 
+    def __bool__(self):
+        if isinstance(self.type_dict, dict) and self.type_dict:
+            return True
+        return False
+
     def __le__(self, other: Value):
         if other.type_dict == VALUE_TOP:
             return True

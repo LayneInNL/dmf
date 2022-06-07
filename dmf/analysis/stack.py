@@ -140,19 +140,6 @@ class Frame:
             super_type = SuperType()
             value.inject_type(super_type)
             return value
-            # pos_keyword_args = args
-            # assert len(pos_keyword_args) == 2
-            # pos1_value = self.read_var(pos_keyword_args[0].id)
-            # pos2_value = self.read_var(pos_keyword_args[1].id)
-            # for lab1, typ1 in pos1_value:
-            #     if not isinstance(typ1, ClsType):
-            #         continue
-            #     for lab2, typ2 in pos2_value:
-            #         if not isinstance(typ2, InsType):
-            #             continue
-            #         super_type = SuperIns(typ1, typ2)
-            #         value.inject_type(super_type)
-            # return value
         elif var_name == "list":
             list_type = ListType()
             value.inject_type(list_type)

@@ -18,7 +18,7 @@ from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, Set, List
 
 import dmf.share
-from dmf.analysis.prim import Int, Bool, NoneType, ListType
+from dmf.analysis.prim import Int, Bool, NoneType, ListType, SuperType
 from dmf.analysis.stack import Frame, Stack, stack_bot_builder
 from dmf.analysis.value import (
     InsType,
@@ -28,6 +28,7 @@ from dmf.analysis.value import (
     builtin_object,
     SuperIns,
     analysis_heap,
+    ListIns,
 )
 from dmf.analysis.value import (
     Value,
@@ -164,8 +165,9 @@ class Analysis(Base):
             ProgramPoint, Tuple[InsType | None, str | None, str | None]
         ] = {}
         self.work_list: Deque[Flow] = deque()
-        self.analysis_list: None = None
-        self.analysis_effect_list: None = None
+        self.analyzed_program_points = None
+        self.analysis_list = None
+        self.analysis_effect_list = None
         self.extremal_value: Stack = Stack()
 
         curr_module: ModuleType = dmf.share.analysis_modules[module_name]
@@ -203,6 +205,7 @@ class Analysis(Base):
         self.analysis_effect_list = {}
         # update extremal label
         self.analysis_list[self.extremal_point] = self.extremal_value
+        self.analyzed_program_points = {self.extremal_point}
 
     def iterate(self):
         while self.work_list:
@@ -213,14 +216,19 @@ class Analysis(Base):
                 )
             )
             transferred: Stack = self.transfer(program_point1)
+
             old: Stack = self.analysis_list[program_point2]
             if not transferred <= old:
                 transferred += old
                 self.analysis_list[program_point2]: Stack = transferred
                 self.LAMBDA(program_point2)
                 added_program_points = self.DELTA(program_point2)
-                logger.debug("added flows {}".format(added_program_points))
-                self.work_list.extendleft(added_program_points)
+                if not added_program_points:
+                    logger.critical("No added flows at {}".format(program_point2))
+                else:
+                    logger.debug("added flows {}".format(added_program_points))
+                    self.analyzed_program_points.add(program_point2)
+                    self.work_list.extendleft(added_program_points)
             logger.debug(
                 "Current program point2 {} and lattice2 {}".format(
                     program_point2, self.analysis_list[program_point2]
@@ -228,14 +236,18 @@ class Analysis(Base):
             )
 
     def present(self):
-        for program_point, stack in list(self.analysis_list.items()):
-            # logger.info("Context at program point {}: {}".format(program_point, stack))
+        for program_point in self.analyzed_program_points:
+            logger.info(
+                "Context at program point {}: {}".format(
+                    program_point, self.analysis_list[program_point]
+                )
+            )
             self.analysis_effect_list[program_point] = self.transfer(program_point)
-            # logger.info(
-            #     "Effect at program point {}: {}".format(
-            #         program_point, self.analysis_effect_list[program_point]
-            #     )
-            # )
+            logger.info(
+                "Effect at program point {}: {}".format(
+                    program_point, self.analysis_effect_list[program_point]
+                )
+            )
         self.transfer(self.final_point)
         print(analysis_heap)
         # logger.warning(dmf.share.analysis_modules["static_builtins"].namespace)
@@ -307,6 +319,7 @@ class Analysis(Base):
             logger.critical(base)
         else:
             # iterate all types to find which is callable
+            additional_values = Value()
             for _, typ in value:
                 if isinstance(typ, ClsType):
                     self.lambda_class_init(program_point, typ)
@@ -314,36 +327,59 @@ class Analysis(Base):
                     self.lambda_func_call(program_point, typ)
                 elif isinstance(typ, MethodType):
                     self.lambda_method_call(program_point, typ)
-                elif isinstance(typ, SuperIns):
-                    call_lab, call_ctx = program_point
-                    return_lab = self.get_return_label(call_lab)
-                    return_stmt: ast.Name = self.get_stmt_by_label(return_lab)
-                    old = self.analysis_list[program_point]
-                    fake_return_stack = old.copy()
-                    value = Value()
-                    value.inject_type(typ)
-                    fake_return_stack.write_var(return_stmt.id, value)
-                    return_program_point = (return_lab, call_ctx)
-                    self.LAMBDA(return_program_point)
-                    added_flows = self.DELTA(return_program_point)
-                    assert len(added_flows) == 1
-                    return_next_program_point = added_flows[0][1]
-                    old_return_next_stack = self.analysis_list[
-                        return_next_program_point
-                    ]
-                    if not fake_return_stack <= old_return_next_stack:
-                        fake_return_stack += old_return_next_stack
-                        self.analysis_list[
-                            return_next_program_point
-                        ] = fake_return_stack
-                        self.LAMBDA(return_next_program_point)
-                        added_flows = self.DELTA(return_next_program_point)
-                        self.work_list.extendleft(added_flows)
                 elif isinstance(typ, ListType):
-                    pass
+                    if expr.args:
+                        arg_val = stack.compute_value_of_expr(expr.args[0])
+                        list_ins = ListIns(address, arg_val)
+                    else:
+                        list_ins = ListIns(address)
+                    self.merge_no_edge_values(list_ins, additional_values)
+                elif isinstance(typ, SuperType):
+                    pos_keyword_args = expr.args
+                    assert len(pos_keyword_args) == 2
+                    pos1_value = stack.compute_value_of_expr(pos_keyword_args[0].id)
+                    pos2_value = stack.compute_value_of_expr(pos_keyword_args[1].id)
+                    for lab1, typ1 in pos1_value:
+                        if not isinstance(typ1, ClsType):
+                            continue
+                        for lab2, typ2 in pos2_value:
+                            if not isinstance(typ2, InsType):
+                                continue
+                            super_type = SuperIns(typ1, typ2)
+                            self.merge_no_edge_values(super_type, additional_values)
                 else:
                     logger.warn(typ)
                     assert False
+
+            if additional_values:
+                self.transfer_no_edge_values(program_point, additional_values)
+
+    def merge_no_edge_values(self, typ, value: Value):
+        value.inject_type(typ)
+
+    def transfer_no_edge_values(self, call_program_point: ProgramPoint, value: Value):
+        call_lab, call_ctx = call_program_point
+        old = self.analysis_list[call_program_point]
+
+        return_lab = self.get_return_label(call_lab)
+        return_stmt: ast.Name = self.get_stmt_by_label(return_lab)
+        return_program_point = (return_lab, call_ctx)
+        self.LAMBDA(return_program_point)
+        added_flows = self.DELTA(return_program_point)
+        assert len(added_flows) == 1
+
+        return_next_program_point = added_flows[0][1]
+        old_return_next_stack = self.analysis_list[return_next_program_point]
+
+        fake_return_stack = old.copy()
+        fake_return_stack.write_var(return_stmt.id, value)
+        if not fake_return_stack <= old_return_next_stack:
+            fake_return_stack += old_return_next_stack
+            self.analysis_list[return_next_program_point] = fake_return_stack
+            self.analyzed_program_points.add(return_next_program_point)
+            self.LAMBDA(return_next_program_point)
+            added_flows = self.DELTA(return_next_program_point)
+            self.work_list.extendleft(added_flows)
 
     # deal with class initialization
     # find __init__ method

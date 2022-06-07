@@ -13,6 +13,6 @@
 #  limitations under the License.
 
 a = [1, True, None]
-b = list()
-for _ in range(5):
-    c = list()
+b = list(a)
+# for _ in range(5):
+#     c = list()
