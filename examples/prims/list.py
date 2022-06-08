@@ -13,6 +13,7 @@
 #  limitations under the License.
 
 a = [1, True, None]
-b = list(a)
-# for _ in range(5):
-#     c = list()
+b = list()
+b.append("sss")
+c = b
+c.append(1)

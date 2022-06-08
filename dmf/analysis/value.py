@@ -34,7 +34,7 @@ from dmf.log.logger import logger
 
 class FuncType:
     def __init__(self, label, name, module, code):
-        self.label = label
+        self.uuid = label
         self.name = name
         self.qualname = None
         self.module = module
@@ -147,7 +147,7 @@ class ClsType:
         bases: List,
         namespace: Namespace[Var, Value],
     ):
-        self.label = label
+        self.uuid = label
         self.name = name
         self.module = module
         self.bases = bases
@@ -189,10 +189,10 @@ class InsType:
         return self
 
     def __hash__(self):
-        return hash(str(self.addr) + str(self.cls.label))
+        return hash(str(self.addr) + str(self.cls.uuid))
 
     def __eq__(self, other: InsType):
-        return self.addr == other.addr and self.cls.label == other.cls.label
+        return self.addr == other.addr and self.cls.uuid == other.cls.uuid
 
     @property
     def addr(self):
@@ -232,7 +232,7 @@ class SuperIns:
         self.proxy_location = idx
         self.proxy_class = instance_mro[idx]
         self.proxy_instance = type2
-        self.uuid = "{}-{}".format(type1.label, type2.addr)
+        self.uuid = "{}-{}".format(type1.uuid, type2.addr)
 
     def getattr(self, field: str):
         return analysis_heap.read_field_from_class(
@@ -246,12 +246,25 @@ class SuperIns:
         return self
 
 
+class BuiltinMethodType:
+    def __init__(self, uuid, func):
+        self.uuid = uuid
+        self.func = func
+
+    def __le__(self, other: BuiltinMethodType):
+        return True
+
+    def __iadd__(self, other: BuiltinMethodType):
+        return self
+
+
 class ListIns:
     def __init__(self, uuid, elts: Value = None):
         self.uuid = uuid
         self.internal = Value()
         if elts is not None:
-            self.internal += elts
+            for lab, elt in elts:
+                self.internal.inject_type(elt)
 
     def __le__(self, other: ListIns):
         return self.internal <= other.internal
@@ -261,6 +274,47 @@ class ListIns:
 
     def __repr__(self):
         return self.internal.__repr__()
+
+    def getattr(self, attr: str):
+        func = getattr(self, attr)
+        builtin_method_uuid = f"{self.uuid}-{attr}"
+        builtin_method = BuiltinMethodType(builtin_method_uuid, func)
+        value = Value(builtin_method)
+        return "local", value
+
+    def append(self, x):
+        self.internal += x
+        return NoneType()
+
+    def extend(self, iterable):
+        self.internal += iterable
+
+    def insert(self, i, x):
+        self.append(x)
+
+    def remove(self, x):
+        assert False
+
+    def pop(self, i=None):
+        assert False
+
+    def clear(self):
+        self.internal = Value()
+
+    def index(self, x, start=None, end=None):
+        return Int()
+
+    def count(self, x):
+        return Int()
+
+    def sort(self, key=None, reverse=False):
+        pass
+
+    def reverse(self):
+        pass
+
+    def copy(self):
+        assert False
 
 
 class TOP:
@@ -273,8 +327,10 @@ VALUE_TOP = TOP()
 
 # Either VALUE_TOP or have some values
 class Value:
-    def __init__(self):
+    def __init__(self, typ=None):
         self.type_dict: Dict | VALUE_TOP = {}
+        if typ is not None:
+            self.type_dict[typ.uuid] = typ
 
     def __bool__(self):
         if isinstance(self.type_dict, dict) and self.type_dict:
@@ -318,9 +374,7 @@ class Value:
         return value
 
     def inject_type(self, typ):
-        if isinstance(typ, FuncType):
-            self.inject_func_type(typ)
-        elif isinstance(typ, ClsType):
+        if isinstance(typ, ClsType):
             self.inject_cls_type(typ)
         elif isinstance(typ, InsType):
             self.inject_ins_type(typ)
@@ -331,6 +385,8 @@ class Value:
         elif isinstance(typ, SuperIns):
             self.inject_super_ins(typ)
         elif isinstance(typ, ListIns):
+            self.type_dict[typ.uuid] = typ
+        elif isinstance(typ, BuiltinMethodType):
             self.type_dict[typ.uuid] = typ
         elif isinstance(
             typ,
@@ -345,6 +401,7 @@ class Value:
                 SetType,
                 DictType,
                 SuperType,
+                FuncType,
             ),
         ):
             self.type_dict[typ.uuid] = typ
@@ -355,13 +412,8 @@ class Value:
         lab = super_type.uuid
         self.type_dict[lab] = super_type
 
-    # to promise uniqueness, we use function label
-    def inject_func_type(self, func_type: FuncType):
-        lab = func_type.label
-        self.type_dict[lab] = func_type
-
     def inject_cls_type(self, cls_type: ClsType):
-        lab = cls_type.label
+        lab = cls_type.uuid
         self.type_dict[lab] = cls_type
 
     def inject_ins_type(self, ins_type: InsType):

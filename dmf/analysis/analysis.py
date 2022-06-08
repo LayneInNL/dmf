@@ -29,6 +29,7 @@ from dmf.analysis.value import (
     SuperIns,
     analysis_heap,
     ListIns,
+    BuiltinMethodType,
 )
 from dmf.analysis.value import (
     Value,
@@ -304,7 +305,6 @@ class Analysis(Base):
     # deal with cases such as name()
     def lambda_call_name(self, program_point: ProgramPoint, expr: ast.Call):
         assert isinstance(expr.func, ast.Name)
-        name = expr.func.id
 
         call_lab, call_ctx = program_point
         address = record(call_lab, call_ctx)
@@ -314,7 +314,7 @@ class Analysis(Base):
             # get abstract value of name
             value: Value = stack.compute_value_of_expr(expr.func, address)
         except AttributeError:
-            logger.critical("No attribute named {}".format(name))
+            logger.critical("No attribute named {}".format(expr.func.id))
         except BaseException as base:
             logger.critical(base)
         else:
@@ -347,6 +347,17 @@ class Analysis(Base):
                                 continue
                             super_type = SuperIns(typ1, typ2)
                             self.merge_no_edge_values(super_type, additional_values)
+                elif isinstance(typ, BuiltinMethodType):
+                    args = []
+                    for arg in expr.args:
+                        arg_val = stack.compute_value_of_expr(arg)
+                        args.append(arg_val)
+                    keywords = {}
+                    for keyword in expr.keywords:
+                        keyword_val = stack.compute_value_of_expr(keyword.value)
+                        keywords[keyword.arg] = keyword_val
+                    val = typ.func(*args, **keywords)
+                    self.merge_no_edge_values(val, additional_values)
                 else:
                     logger.warn(typ)
                     assert False

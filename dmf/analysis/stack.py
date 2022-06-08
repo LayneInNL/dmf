@@ -358,30 +358,7 @@ class Stack:
                     assert False
 
             for _, typ in receiver_value:
-                if isinstance(typ, InsType):
-                    try:
-                        v = analysis_heap.read_field_from_instance(typ, receiver_attr)
-                    except AttributeError:
-                        pass
-                    else:
-                        value += v
-                elif isinstance(typ, FuncType):
-                    try:
-                        attr_scope, attr_value = typ.getattr(receiver_attr)
-                        intercept(attr_scope)
-                    except AttributeError:
-                        pass
-                    else:
-                        value += attr_value
-                elif isinstance(typ, ClsType):
-                    try:
-                        attr_scope, attr_value = typ.getattr(receiver_attr)
-                        intercept(attr_scope)
-                    except AttributeError:
-                        pass
-                    else:
-                        value += attr_value
-                elif isinstance(typ, ModuleType):
+                if isinstance(typ, (InsType, FuncType, ClsType, ModuleType, ListIns)):
                     try:
                         attr_scope, attr_value = typ.getattr(receiver_attr)
                         intercept(attr_scope)
