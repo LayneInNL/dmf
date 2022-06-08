@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import ast
+from copy import deepcopy
 from typing import List
 
 import dmf.share
@@ -38,8 +39,10 @@ from dmf.analysis.value import (
     ClsType,
     ModuleType,
     SuperIns,
-    analysis_heap,
     ListIns,
+    Namespace_Local,
+    Namespace_Global,
+    Namespace_Nonlocal,
 )
 from dmf.log.logger import logger
 
@@ -50,6 +53,19 @@ class Frame:
         self.f_back: Frame | None = f_back
         self.f_globals: Namespace[Var, Value] = f_globals
         self.f_builtins: Namespace[Var, Value] = f_builtins
+
+    def __deepcopy__(self, memo):
+        copied_f_locals = deepcopy(self.f_locals, memo)
+        copied_f_back = deepcopy(self.f_back, memo)
+        copied_f_globals = deepcopy(self.f_globals, memo)
+        copied_f_builtins = deepcopy(self.f_builtins, memo)
+        frame = Frame(
+            copied_f_locals, copied_f_back, copied_f_globals, copied_f_builtins
+        )
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = frame
+        return frame
 
     # compare f_locals, f_globals and f_builtins
     # don't know how to compare f_back for now
@@ -73,15 +89,15 @@ class Frame:
         # Implement LEGB rule
         if var_name in self.f_locals:
             var_scope, var_value = self.f_locals.read_scope_and_value_by_name(var_name)
-            if var_scope == "local":
+            if var_scope == Namespace_Local:
                 return var_value
-            elif var_scope == "nonlocal":
+            elif var_scope == Namespace_Nonlocal:
                 return self.read_nonlocal_frame(var_name)
-            elif var_scope == "global":
+            elif var_scope == Namespace_Global:
                 return self.read_global_frame(var_name)
 
         # use global keyword, then assign a value to the nonexistent var
-        if scope == "global":
+        if scope == Namespace_Global:
             return self.read_global_with_default(var_name)
 
         try:
@@ -171,8 +187,8 @@ class Frame:
                     self.f_locals[var].inject_value(value)
                 else:
                     self.f_locals[var] = value
-            elif var_scope == "nonlocal":
-                new_var = Var(var_name, "local")
+            elif var_scope == Namespace_Nonlocal:
+                new_var = Var(var_name, Namespace_Local)
                 parent_frame: Frame = self.f_back
                 while (
                     parent_frame is not None
@@ -183,14 +199,14 @@ class Frame:
                             var_scope,
                             _,
                         ) = parent_frame.f_locals.read_scope_and_value_by_name(var_name)
-                        if var_scope != "local":
+                        if var_scope != Namespace_Local:
                             parent_frame = parent_frame.f_back
                         else:
                             parent_frame.f_locals[new_var] = value
                     else:
                         parent_frame = parent_frame.f_back
-            elif var_scope == "global":
-                new_var: Var = Var(var_name, "local")
+            elif var_scope == Namespace_Global:
+                new_var: Var = Var(var_name, Namespace_Local)
                 self.f_globals[new_var] = value
         else:
             var: Var = Var(var_name, scope)
@@ -201,37 +217,33 @@ class Frame:
 
 
 class Stack:
-    def __init__(self, stack: Stack = None):
+    def __init__(self):
         # if self.frames is "BOT", it's BOT
         self.frames: List[Frame] | BOT = []
-        if stack is not None:
-            self.duplicate_frames(stack)
 
-    def duplicate_frames(self, stack: Stack):
-        memo = {}
-        f_back: Frame | None = None
-        for _, f in enumerate(stack.frames):
+    def __deepcopy__(self, memo=None):
+        if memo is None:
+            memo = {}
 
-            frame = Frame()
-            frame.f_back = f_back
-            f_back = frame
-            self.frames.append(frame)
-
-            id_f_locals = id(f.f_locals)
-            if id_f_locals not in memo:
-                memo[id_f_locals] = f.f_locals.copy()
-            frame.f_locals = memo[id_f_locals]
-
-            id_f_globals = id(f.f_globals)
-            if id_f_globals not in memo:
-                memo[id_f_globals] = f.f_globals.copy()
-            frame.f_globals = memo[id_f_globals]
+        stack = Stack()
+        if self.frames == BOT:
+            stack.frames = BOT
+        else:
+            stack.frames = []
+            for f in self.frames:
+                copied_frame = deepcopy(f, memo)
+                stack.frames.append(copied_frame)
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = stack
 
         for name, module in dmf.share.analysis_modules.items():
             namespace = module.namespace
             id_namespace = id(namespace)
             if id_namespace in memo:
                 module.namespace = memo[id_namespace]
+
+        return stack
 
     def __le__(self, other: Stack):
         if self.frames == BOT:
@@ -280,21 +292,17 @@ class Stack:
     def get_top_frame_package(self):
         return self.top_frame().f_globals["__package__"]
 
-    def read_var(self, var: str, scope: str = "local"):
+    def read_var(self, var: str, scope: str = Namespace_Local):
         return self.top_frame().read_var(var, scope)
 
     def read_special_attribute(self, var: str):
         return self.top_frame().read_special_attribute(var)
 
-    def write_var(self, var: str, value: Value, scope: str = "local"):
+    def write_var(self, var: str, value: Value, scope: str = Namespace_Local):
         self.top_frame().write_var(var, value, scope)
 
     def write_special_var(self, var: str, value):
         self.top_frame().write_special_var(var, value)
-
-    def copy(self):
-        copied = Stack(self)
-        return copied
 
     def next_ns(self):
         curr_frame = self.top_frame()
@@ -354,7 +362,7 @@ class Stack:
             value: Value = Value()
 
             def intercept(scope: str):
-                if scope != "local":
+                if scope != Namespace_Local:
                     assert False
 
             for _, typ in receiver_value:
@@ -440,7 +448,11 @@ def op2dunder(operator: ast.operator):
     return magic_method
 
 
-BOT = "BOT"
+class _Bot:
+    pass
+
+
+BOT = _Bot()
 
 
 def stack_bot_builder() -> Stack:

@@ -53,6 +53,12 @@ class Int(BinOp):
             cls.instance = object.__new__(cls)
         return cls.instance
 
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
+
     def __le__(self, other):
         return True
 
@@ -71,6 +77,12 @@ class Float(BinOp):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
         return cls.instance
+
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
 
     def __le__(self, other):
         return True
@@ -91,6 +103,12 @@ class Complex(BinOp):
             cls.instance = object.__new__(cls)
         return cls.instance
 
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
+
     def __le__(self, other):
         return True
 
@@ -109,6 +127,12 @@ class Bool(BinOp):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
         return cls.instance
+
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
 
     def __le__(self, other):
         return True
@@ -129,6 +153,12 @@ class NoneType(BinOp):
             cls.instance = object.__new__(cls)
         return cls.instance
 
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
+
     def __le__(self, other):
         return True
 
@@ -147,6 +177,12 @@ class Str(BinOp):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
         return cls.instance
+
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
 
     def __le__(self, other):
         return True
@@ -167,6 +203,12 @@ class Bytes(BinOp):
             cls.instance = object.__new__(cls)
         return cls.instance
 
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
+
     def __le__(self, other):
         return True
 
@@ -185,6 +227,12 @@ class ListType:
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
         return cls.instance
+
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
 
     def __le__(self, other):
         return True
@@ -205,6 +253,12 @@ class TupleType:
             cls.instance = object.__new__(cls)
         return cls.instance
 
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
+
     def __le__(self, other):
         return True
 
@@ -223,6 +277,12 @@ class SetType:
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
         return cls.instance
+
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
 
     def __le__(self, other):
         return True
@@ -243,6 +303,12 @@ class DictType:
             cls.instance = object.__new__(cls)
         return cls.instance
 
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
+
     def __le__(self, other):
         return True
 
@@ -261,6 +327,12 @@ class SuperType:
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
         return cls.instance
+
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
 
     def __le__(self, other):
         return True

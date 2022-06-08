@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from copy import deepcopy
 from typing import List, Tuple, Dict, DefaultDict
 
 import dmf.share
@@ -30,6 +31,11 @@ from dmf.analysis.prim import (
     TupleType,
 )
 from dmf.log.logger import logger
+
+
+Namespace_Local = "local"
+Namespace_Nonlocal = "nonlocal"
+Namespace_Global = "global"
 
 
 class FuncType:
@@ -97,6 +103,7 @@ class FuncType:
 class MethodType:
     def __init__(self, instance: InsType, func: FuncType, module: str):
         self.name = None
+        self.uuid = f"{instance.uuid}-{func.uuid}"
         self.qualname = None
         self.func = func
         self.instance = instance
@@ -177,6 +184,7 @@ class ClsType:
 class InsType:
     def __init__(self, addr, cls_type: ClsType):
         self.addr = addr
+        self.uuid = f"{addr}-{cls_type.uuid}"
         self.cls = cls_type
         self.dict: Namespace[Var, Value] = Namespace()
         analysis_heap.write_ins_to_heap(self)
@@ -213,6 +221,7 @@ class InsType:
 class ModuleType:
     def __init__(self, name: str, package: str | None, file: str):
         self.name = name
+        self.uuid = name
         self.package = package
         self.file = file
         self.namespace = Namespace()
@@ -227,6 +236,7 @@ class ModuleType:
 
 class SuperIns:
     def __init__(self, type1: ClsType, type2: InsType):
+        self.uuid = f"{type1.uuid}-{type2.uuid}"
         instance_mro = type2.cls.mro
         idx = instance_mro.index(type1) + 1
         self.proxy_location = idx
@@ -261,10 +271,20 @@ class BuiltinMethodType:
 class ListIns:
     def __init__(self, uuid, elts: Value = None):
         self.uuid = uuid
-        self.internal = Value()
+        self.internal: Value = Value()
         if elts is not None:
             for lab, elt in elts:
                 self.internal.inject_type(elt)
+
+    def __deepcopy__(self, memo):
+        copied_uuid = deepcopy(self.uuid, memo)
+        copied_internal = deepcopy(self.internal, memo)
+        copied = ListIns(copied_uuid, copied_internal)
+
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = copied
+        return copied
 
     def __le__(self, other: ListIns):
         return self.internal <= other.internal
@@ -280,7 +300,7 @@ class ListIns:
         builtin_method_uuid = f"{self.uuid}-{attr}"
         builtin_method = BuiltinMethodType(builtin_method_uuid, func)
         value = Value(builtin_method)
-        return "local", value
+        return Namespace_Local, value
 
     def append(self, x):
         self.internal += x
@@ -317,18 +337,18 @@ class ListIns:
         assert False
 
 
-class TOP:
+class _TOP:
     def copy(self):
         return self
 
 
-VALUE_TOP = TOP()
+TOP = _TOP()
 
 
 # Either VALUE_TOP or have some values
 class Value:
     def __init__(self, typ=None):
-        self.type_dict: Dict | VALUE_TOP = {}
+        self.type_dict: Dict | TOP = {}
         if typ is not None:
             self.type_dict[typ.uuid] = typ
 
@@ -338,9 +358,9 @@ class Value:
         return False
 
     def __le__(self, other: Value):
-        if other.type_dict == VALUE_TOP:
+        if other.type_dict == TOP:
             return True
-        if self.type_dict == VALUE_TOP:
+        if self.type_dict == TOP:
             return False
 
         for k in self.type_dict:
@@ -351,8 +371,8 @@ class Value:
         return True
 
     def __iadd__(self, other: Value):
-        if self.type_dict == VALUE_TOP or other.type_dict == VALUE_TOP:
-            self.type_dict = VALUE_TOP
+        if self.type_dict == TOP or other.type_dict == TOP:
+            self.type_dict = TOP
             return self
 
         for k in other.type_dict:
@@ -373,22 +393,20 @@ class Value:
         value.type_dict = self.type_dict.copy()
         return value
 
+    def __deepcopy__(self, memo):
+        value = Value()
+        if self.type_dict == TOP:
+            value.type_dict = TOP
+        else:
+            value.type_dict = deepcopy(self.type_dict, memo)
+
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = value
+        return value
+
     def inject_type(self, typ):
-        if isinstance(typ, ClsType):
-            self.inject_cls_type(typ)
-        elif isinstance(typ, InsType):
-            self.inject_ins_type(typ)
-        elif isinstance(typ, MethodType):
-            self.inject_method_type(typ)
-        elif isinstance(typ, ModuleType):
-            self.inject_module_type(typ)
-        elif isinstance(typ, SuperIns):
-            self.inject_super_ins(typ)
-        elif isinstance(typ, ListIns):
-            self.type_dict[typ.uuid] = typ
-        elif isinstance(typ, BuiltinMethodType):
-            self.type_dict[typ.uuid] = typ
-        elif isinstance(
+        if isinstance(
             typ,
             (
                 Int,
@@ -402,31 +420,19 @@ class Value:
                 DictType,
                 SuperType,
                 FuncType,
+                ClsType,
+                ModuleType,
+                BuiltinMethodType,
+                InsType,
+                MethodType,
+                SuperIns,
+                ListIns,
             ),
         ):
             self.type_dict[typ.uuid] = typ
         else:
+            logger.critical(typ)
             assert False
-
-    def inject_super_ins(self, super_type: SuperIns):
-        lab = super_type.uuid
-        self.type_dict[lab] = super_type
-
-    def inject_cls_type(self, cls_type: ClsType):
-        lab = cls_type.uuid
-        self.type_dict[lab] = cls_type
-
-    def inject_ins_type(self, ins_type: InsType):
-        lab = id(ins_type)
-        self.type_dict[lab] = ins_type
-
-    def inject_method_type(self, method_type: MethodType):
-        lab = id(method_type)
-        self.type_dict[lab] = method_type
-
-    def inject_module_type(self, module_type: ModuleType):
-        lab = id(ModuleType)
-        self.type_dict[lab] = module_type
 
     def extract_cls_type(self):
         res = []
@@ -442,7 +448,7 @@ class Value:
 
 
 class Var:
-    def __init__(self, name: str, scope: str = "local"):
+    def __init__(self, name: str, scope: str = Namespace_Local):
         self.name = name
         # scope could be local, nonlocal, global
         self.scope = scope
@@ -475,13 +481,8 @@ class Var:
 
 def value_top_builder() -> Value:
     value = Value()
-    value.type_dict = VALUE_TOP
+    value.type_dict = TOP
     return value
-
-
-Namespace_Local = "local"
-Namespace_Nonlocal = "nonlocal"
-Namespace_Global = "global"
 
 
 def is_magic_attr(var: Var | str):
@@ -542,6 +543,18 @@ class Namespace(defaultdict):
                 namespace[var] = var_value
             elif isinstance(var, Var):
                 namespace[var] = var_value.copy()
+        return namespace
+
+    def __deepcopy__(self, memo):
+        namespace = Namespace()
+        for var, value in self.items():
+            copied_var = deepcopy(var, memo)
+            copied_value = deepcopy(value, memo)
+            namespace[copied_var] = copied_value
+
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = namespace
         return namespace
 
     def read_scope_and_value_by_name(self, var_name: str) -> Tuple[str, Value]:
@@ -638,7 +651,7 @@ class Heap:
             self.singletons[ins] = Namespace()
 
     def write_field_to_heap(self, ins: InsType, field: str, value: Value):
-        self.singletons[ins][Var(field, "local")] = value
+        self.singletons[ins][Var(field, Namespace_Local)] = value
 
     # function
     def read_field_from_instance(self, ins: InsType, field: str):
@@ -657,7 +670,7 @@ class Heap:
         for typ in considered_cls_mro:
             try:
                 var_scope, var_value = typ.getattr(field)
-                assert var_scope == "local"
+                assert var_scope == Namespace_Local
             except AttributeError:
                 pass
             else:
@@ -665,7 +678,7 @@ class Heap:
                 for idx, field_typ in var_value:
                     if isinstance(field_typ, FuncType):
                         method_type = MethodType(instance, field_typ, field_typ.module)
-                        new_value.inject_method_type(method_type)
+                        new_value.inject_type(method_type)
                     else:
                         new_value.type_dict[idx] = field_typ
                 return new_value
