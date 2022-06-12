@@ -384,7 +384,8 @@ class Analysis(Base):
         old_return_next_stack = self.analysis_list[return_next_program_point]
 
         fake_return_stack = deepcopy(old)
-        fake_return_stack.write_var(return_stmt.id, value)
+        if return_stmt.id != Unused_Name:
+            fake_return_stack.write_var(return_stmt.id, value)
         if not fake_return_stack <= old_return_next_stack:
             fake_return_stack += old_return_next_stack
             self.analysis_list[return_next_program_point] = fake_return_stack
