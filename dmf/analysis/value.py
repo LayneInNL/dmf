@@ -32,10 +32,315 @@ from dmf.analysis.prim import (
 )
 from dmf.log.logger import logger
 
+builtin_object = object()
+
+
+def c3(cls_obj):
+    mro = static_c3(cls_obj)
+    return mro[:-1]
+
+
+def static_c3(cls_obj):
+    if cls_obj is builtin_object:
+        return [cls_obj]
+    return [cls_obj] + static_merge([static_c3(base) for base in cls_obj.__my_bases__])
+
+
+def static_merge(mro_list):
+    if not any(mro_list):
+        return []
+    for candidate, *_ in mro_list:
+        if all(candidate not in tail for _, *tail in mro_list):
+            return [candidate] + static_merge(
+                [
+                    tail if head is candidate else [head, *tail]
+                    for head, *tail in mro_list
+                ]
+            )
+    else:
+        raise TypeError("No legal mro")
+
 
 Namespace_Local = "local"
 Namespace_Nonlocal = "nonlocal"
 Namespace_Global = "global"
+
+
+def my_type(obj):
+    return obj.__my_class__
+
+
+def my_hasattr(obj, item):
+    try:
+        obj.__getattribute__(item)
+    except AttributeError:
+        return False
+    else:
+        return True
+
+
+my_getattr_obj = object()
+
+
+def my_getattr(obj, name, default=my_getattr_obj):
+    get_attribute = find_name_in_mro(my_type(obj), "__getattribute__")
+    if get_attribute is None:
+        assert False
+    try:
+        attr_value = get_attribute(obj, name)
+    except AttributeError:
+        if default is not my_getattr_obj:
+            return default
+    else:
+        if isinstance(attr_value, Instance):
+            pass
+        return attr_value
+
+
+def my_setattr(obj, name, value):
+    obj.__setattr__(name, value)
+
+
+def find_name_in_mro(py_type, name):
+    mro = py_type.__my_mro__
+    for cls in mro:
+        if name in cls.__my_dict__:
+            val = cls.__my_dict__.read_value(name)
+            if isinstance(val, Value):
+                assert len(val) == 1
+            return val
+    return None
+
+
+def is_nondata_descriptor(value):
+    for lab, typ in value:
+        if my_hasattr(typ, "__get__"):
+            return True
+    return False
+
+
+def is_data_descriptor(value):
+    for lab, typ in value:
+        if my_hasattr(typ, "__get__"):
+            if my_hasattr(typ, "__set__") or my_hasattr(typ, "__delete__"):
+                return True
+    return False
+
+
+def is_magic_attr(var: Var | str):
+    if isinstance(var, str):
+        return True
+    else:
+        return False
+
+
+# Namespace[Var|str, Value]
+class Namespace(defaultdict):
+    def __repr__(self):
+        return dict.__repr__(self)
+
+    def __missing__(self, key):
+        self[key] = value = value_top_builder()
+        return value
+
+    # we use defaultdict, the default value of an unknown variable is TOP
+    # So we have to collect all variables
+    def __le__(self, other):
+        variables = self.keys() | other.keys()
+        for var in variables:
+            # magic method
+            if is_magic_attr(var):
+                continue
+            elif isinstance(var, Var):
+                if not self[var] <= other[var]:
+                    return False
+            else:
+                assert False
+        return True
+
+    def __iadd__(self, other):
+        variables = self.keys() | other.keys()
+        for var in variables:
+            if is_magic_attr(var):
+                continue
+            elif isinstance(var, Var):
+                self[var] += other[var]
+            else:
+                assert False
+        return self
+
+    def __contains__(self, name: str):
+        # __xxx__ and Var
+        for var in self:
+            if is_magic_attr(var):
+                if var == name:
+                    return True
+            if isinstance(var, Var):
+                if name == var.name:
+                    return True
+        return False
+
+    def __deepcopy__(self, memo):
+        namespace = Namespace()
+        for var, value in self.items():
+            copied_var = deepcopy(var, memo)
+            # print(value)
+            copied_value = deepcopy(value, memo)
+            namespace[copied_var] = copied_value
+
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = namespace
+        return namespace
+
+    def read_scope_and_value_by_name(self, var_name: str) -> Tuple[str, Value]:
+        for var, v_value in self.items():
+            if is_magic_attr(var):
+                continue
+            if var_name == var.name:
+                return var.scope, v_value
+        raise AttributeError(var_name)
+
+    def read_value(self, name):
+        for var, v_value in self.items():
+            if isinstance(var, str):
+                if name == var:
+                    return v_value
+            if isinstance(var, Var):
+                if name == var.name:
+                    return v_value
+        raise AttributeError(name)
+
+
+class Class:
+    pass
+
+
+class Object(Class):
+    @classmethod
+    def __set_cls_attr__(cls):
+        cls.__my_bases__ = [builtin_object]
+        cls.__my_mro__ = c3(cls)
+        namespace = Namespace()
+        namespace.update(cls.__dict__)
+        cls.__my_dict__ = namespace
+
+    def __init__(self):
+        pass
+
+    def __getattribute__(self, name):
+        type_of_self = my_type(self)
+        cls_value = find_name_in_mro(type_of_self, name)
+        if cls_value is not None and is_data_descriptor(cls_value):
+            return my_getattr(cls_value, "__get__")
+        if name in self.__my_dict__:
+            return self.__my_dict__.read_value(name)
+        if cls_value is not None and is_nondata_descriptor(cls_value):
+            return my_getattr(cls_value, "__get__")
+        if cls_value is not None:
+            return cls_value
+
+        raise AttributeError(name)
+
+    def __setattr__(self, name, value):
+        type_of_self = my_type(self)
+        cls_value = find_name_in_mro(type_of_self, name)
+        if cls_value is not None and is_data_descriptor(cls_value):
+            return my_getattr(cls_value, "__set__")
+        if name in self.__my_dict__:
+            return self.__my_dict__.read_value(name)
+
+
+Object.__set_cls_attr__()
+
+
+class Function(Class):
+    @classmethod
+    def __set_cls_attr__(cls):
+        cls.__my_bases__ = [Object]
+        cls.__my_mro__ = c3(cls)
+        namespace = Namespace()
+        namespace.update(cls.__dict__)
+        cls.__my_dict__ = namespace
+
+    def __init__(self, *, uuid, name, module, code):
+        self.__my_uuid__ = uuid
+        self.__my_name__ = name
+        self.__my_module__ = module
+        self.__my_code__ = code
+        namespace = Namespace()
+        namespace.update(self.__dict__)
+        self.__my_dict__.update(namespace)
+
+    def __le__(self, other: Function):
+        return self.__my_dict__ <= other.__my_dict__
+
+    def __iadd__(self, other: Function):
+        self.__my_dict__ += other.__my_dict__
+        return self
+
+
+Function.__set_cls_attr__()
+
+
+class Method(Class):
+    def __init__(self, *, instance, function):
+        self.__my_uuid__ = f"{instance.__my_uuid__}-{function.__my_uuid__}"
+        self.__my_instance__ = instance
+        self.__my_func__ = function
+
+    def __le__(self, other):
+        return self.__my_func__ <= other.__my_func__
+
+    def __iadd__(self, other):
+        self.__my_func__ += other.__my_func__
+        return self
+
+
+class CustomClass(Class):
+    def __init__(self, *, uuid, name, module, bases, namespace):
+        self.__my_uuid__ = uuid
+        self.__my_name__ = name
+        self.__my_module__ = module
+        self.__my_bases__ = bases
+        self.__my_mro__ = c3(self)
+        namespace.update(self.__dict__)
+        self.__my_dict__ = namespace
+
+    def __le__(self, other: CustomClass):
+        return self.__my_dict__ <= other.__my_dict__
+
+    def __iadd__(self, other: CustomClass):
+        self.__my_dict__ += other.__my_dict__
+        return self.__my_dict__
+
+    def __deepcopy__(self, memo):
+        uuid = deepcopy(self.__my_uuid__, memo)
+        name = deepcopy(self.__my_name__, memo)
+        module = deepcopy(self.__my_module__, memo)
+        bases = deepcopy(self.__my_bases__, memo)
+        d = deepcopy(self.__my_dict__, memo)
+        custom_class = CustomClass(
+            uuid=uuid, name=name, module=module, bases=bases, namespace=d
+        )
+        return custom_class
+
+
+class Instance:
+    def __init__(self, address, cls):
+        self.__my_address__ = address
+        self.__my_uuid__ = f"{address}-{cls.__my_uuid__}"
+        self.__my_class__ = cls
+        namespace = Namespace()
+        namespace.update(self.__dict__)
+        self.__my_dict__ = namespace
+
+    def __le__(self, other):
+        return self.__my_dict__ <= other.__my_dict__
+
+    def __iadd__(self, other):
+        self.__my_dict__ += other.__my_dict__
+        return self
 
 
 class FuncType:
@@ -60,30 +365,6 @@ class FuncType:
 
     def __repr__(self):
         return self.dict.__repr__()
-
-    @property
-    def name(self):
-        return self._name_
-
-    @name.setter
-    def name(self, name):
-        self._name_ = name
-
-    @property
-    def module(self):
-        return self._module_
-
-    @module.setter
-    def module(self, module):
-        self._module_ = module
-
-    @property
-    def code(self):
-        return self._code_
-
-    @code.setter
-    def code(self, code):
-        self._code_ = code
 
     def setattr(self, attr: str, value: Value):
         if attr in self.dict:
@@ -115,34 +396,6 @@ class MethodType:
     def __iadd__(self, other: MethodType):
         self.func += other.func
         return self
-
-    @property
-    def instance(self):
-        return self._instance
-
-    @instance.setter
-    def instance(self, instance: InsType):
-        self._instance: InsType = instance
-
-    @property
-    def func(self):
-        return self._func
-
-    @func.setter
-    def func(self, func: FuncType):
-        self._func: FuncType = func
-
-    @property
-    def code(self):
-        return self.func.code
-
-    @property
-    def module(self):
-        return self._module
-
-    @module.setter
-    def module(self, module: str):
-        self._module: str = module
 
 
 class ClsType:
@@ -357,6 +610,11 @@ class Value:
             return True
         return False
 
+    def __len__(self):
+        if self.type_dict == TOP:
+            return -1
+        return len(self.type_dict)
+
     def __le__(self, other: Value):
         if other.type_dict == TOP:
             return True
@@ -430,6 +688,12 @@ class Value:
             ),
         ):
             self.type_dict[typ.uuid] = typ
+        elif isinstance(typ, CustomClass):
+            self.type_dict[typ.__my_uuid__] = typ
+        elif isinstance(typ, Function):
+            self.type_dict[typ.__my_uuid__] = typ
+        elif isinstance(typ, Instance):
+            self.type_dict[typ.__my_uuid__] = typ
         else:
             logger.critical(typ)
             assert False
@@ -485,124 +749,11 @@ def value_top_builder() -> Value:
     return value
 
 
-def is_magic_attr(var: Var | str):
-    if isinstance(var, str):
-        return True
-    else:
-        return False
-
-
-# Namespace[Var|str, Value]
-class Namespace(defaultdict):
-    def __repr__(self):
-        return dict.__repr__(self)
-
-    def __missing__(self, key):
-        self[key] = value = value_top_builder()
-        return value
-
-    # we use defaultdict, the default value of an unknown variable is TOP
-    # So we have to collect all variables
-    def __le__(self, other: Namespace):
-        variables = self.keys() | other.keys()
-        for var in variables:
-            # magic method
-            if is_magic_attr(var):
-                continue
-            elif isinstance(var, Var):
-                if not self[var] <= other[var]:
-                    return False
-            else:
-                assert False
-        return True
-
-    def __iadd__(self, other: Namespace):
-        variables = self.keys() | other.keys()
-        for var in variables:
-            if is_magic_attr(var):
-                continue
-            elif isinstance(var, Var):
-                self[var] += other[var]
-            else:
-                assert False
-        return self
-
-    def __contains__(self, name: str):
-        # __xxx__ and Var
-        for var in self:
-            if is_magic_attr(var):
-                continue
-            if name == var.name:
-                return True
-        return False
-
-    def copy(self):
-        namespace = Namespace()
-        for var, var_value in self.items():
-            if is_magic_attr(var):
-                namespace[var] = var_value
-            elif isinstance(var, Var):
-                namespace[var] = var_value.copy()
-        return namespace
-
-    def __deepcopy__(self, memo):
-        namespace = Namespace()
-        for var, value in self.items():
-            copied_var = deepcopy(var, memo)
-            copied_value = deepcopy(value, memo)
-            namespace[copied_var] = copied_value
-
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = namespace
-        return namespace
-
-    def read_scope_and_value_by_name(self, var_name: str) -> Tuple[str, Value]:
-        for var, v_value in self.items():
-            if is_magic_attr(var):
-                continue
-            if var_name == var.name:
-                return var.scope, v_value
-        raise AttributeError(var_name)
-
-    @property
-    def module(self):
-        return self["__name__"]
-
-
 Unused_Name = "00_unused_name"
 SELF_FLAG = "self"
 INIT_FLAG = "00_init_flag"
 INIT_FLAG_VALUE = value_top_builder()
 RETURN_FLAG = "00__return__flag"
-
-# builtin_object = ClsType((), Namespace())
-# builtin_object = dmf.share.analysis_modules["static_builtins"].namespace["__object__"]
-
-builtin_object = object()
-
-
-def static_c3(class_object):
-    if class_object is builtin_object:
-        return [class_object]
-    return [class_object] + static_merge(
-        [static_c3(base) for base in class_object.bases]
-    )
-
-
-def static_merge(mro_list):
-    if not any(mro_list):
-        return []
-    for candidate, *_ in mro_list:
-        if all(candidate not in tail for _, *tail in mro_list):
-            return [candidate] + static_merge(
-                [
-                    tail if head is candidate else [head, *tail]
-                    for head, *tail in mro_list
-                ]
-            )
-    else:
-        raise TypeError("No legal mro")
 
 
 class Heap:

@@ -31,6 +31,11 @@ from dmf.analysis.value import (
     analysis_heap,
     ListIns,
     BuiltinMethodType,
+    Object,
+    CustomClass,
+    Instance,
+    my_getattr,
+    Function,
 )
 from dmf.analysis.value import (
     Value,
@@ -164,7 +169,7 @@ class Analysis(Base):
     def __init__(self, module_name):
         super().__init__()
         self.entry_info: Dict[
-            ProgramPoint, Tuple[InsType | None, str | None, str | None]
+            ProgramPoint, Tuple[Instance | None, str | None, str | None]
         ] = {}
         self.work_list: Deque[Flow] = deque()
         self.analyzed_program_points = None
@@ -322,7 +327,7 @@ class Analysis(Base):
             # iterate all types to find which is callable
             additional_values = Value()
             for _, typ in value:
-                if isinstance(typ, ClsType):
+                if isinstance(typ, CustomClass):
                     self.lambda_class_init(program_point, typ)
                 elif isinstance(typ, FuncType):
                     self.lambda_func_call(program_point, typ)
@@ -397,12 +402,14 @@ class Analysis(Base):
     # deal with class initialization
     # find __init__ method
     # then use it to create class instance
-    def lambda_class_init(self, program_point, typ: ClsType, attr: str = "__init__"):
+    def lambda_class_init(self, program_point, typ, attr: str = "__init__"):
         call_lab, call_ctx = program_point
         return_lab = self.get_return_label(call_lab)
         addr = record(call_lab, call_ctx)
-        ins_type = InsType(addr, typ)
-        init_methods: Value = analysis_heap.read_field_from_instance(ins_type, attr)
+        # ins_type = InsType(addr, typ)
+        instance = Instance(addr, typ)
+        # init_methods: Value = analysis_heap.read_field_from_instance(instance, attr)
+        init_methods: Value = my_getattr(instance, attr)
         for _, init_method in init_methods:
             if isinstance(init_method, MethodType):
                 entry_lab, exit_lab = init_method.code
@@ -414,9 +421,23 @@ class Analysis(Base):
                 )
                 self.inter_flows.add(inter_flow)
                 self.entry_info[(entry_lab, call_ctx)] = (
-                    ins_type,
+                    instance,
                     INIT_FLAG,
                     init_method.module,
+                )
+            elif isinstance(init_method, Function):
+                entry_lab, exit_lab = init_method.__my_code__
+                inter_flow = (
+                    (call_lab, call_ctx),
+                    (entry_lab, call_ctx),
+                    (exit_lab, call_ctx),
+                    (return_lab, call_ctx),
+                )
+                self.inter_flows.add(inter_flow)
+                self.entry_info[(entry_lab, call_ctx)] = (
+                    instance,
+                    INIT_FLAG,
+                    init_method.__my_module__,
                 )
             else:
                 logger.critical(init_method)
@@ -532,12 +553,14 @@ class Analysis(Base):
         elif isinstance(stmt, ast.Call):
             old: Stack = self.analysis_list[program_point]
             new: Stack = deepcopy(old)
-            func_value: Value = new.compute_value_of_expr(stmt)
+            func_value: Value = new.compute_value_of_expr(stmt.func)
 
             new.next_ns()
             for _, typ in func_value:
                 # __init__ or instance method
-                if isinstance(typ, (ClsType, MethodType, FuncType)):
+                if isinstance(
+                    typ, (ClsType, CustomClass, MethodType, FuncType, Function)
+                ):
                     args = stmt.args
                     if args:
                         for idx, arg in enumerate(args, 1):
@@ -748,14 +771,22 @@ class Analysis(Base):
                         base_types.append(cls)
                 return base_types
             else:
-                default_base = builtin_object
+                default_base = Object
                 return [default_base]
 
         value: Value = Value()
         bases = compute_bases(stmt)
         call_lab = self.get_call_label(return_lab)
-        cls_type: ClsType = ClsType(call_lab, cls_name, module, bases, frame.f_locals)
-        value.inject_type(cls_type)
+        custom_class: CustomClass = CustomClass(
+            uuid=call_lab,
+            name=cls_name,
+            module=module,
+            bases=bases,
+            namespace=frame.f_locals,
+        )
+        # cls_type: ClsType = ClsType(call_lab, cls_name, module, bases, frame.f_locals)
+        # value.inject_type(cls_type)
+        value.inject_type(custom_class)
         new_return_state.write_var(cls_name, value)
         return new_return_state
 
@@ -781,8 +812,10 @@ class Analysis(Base):
         entry_lab, exit_lab = func_cfg.start_block.bid, func_cfg.final_block.bid
 
         value = Value()
-        func_type = FuncType(lab, func_name, func_module, (entry_lab, exit_lab))
-        value.inject_type(func_type)
+        function = Function(
+            uuid=lab, name=func_name, module=func_module, code=(entry_lab, exit_lab)
+        )
+        value.inject_type(function)
 
         new.write_var(func_name, value)
         return new
