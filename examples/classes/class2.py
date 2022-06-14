@@ -25,12 +25,19 @@
 #  limitations under the License.
 
 
-class Test:
-    # pass
-    def __init__(self):
-        # self.a = 1
-        # self.b = self.a
-        pass
+# class Test:
+#     # pass
+#     def __init__(self):
+#         # self.a = 1
+#         # self.b = self.a
+#         pass
+#
+#
+# t = Test()
 
 
-t = Test()
+class Test1:
+    pass
+
+
+t1 = Test1()

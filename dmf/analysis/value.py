@@ -35,6 +35,13 @@ from dmf.log.logger import logger
 builtin_object = object()
 
 
+def _func():
+    pass
+
+
+function = type(_func)
+
+
 def c3(cls_obj):
     mro = static_c3(cls_obj)
     return mro[:-1]
@@ -43,6 +50,7 @@ def c3(cls_obj):
 def static_c3(cls_obj):
     if cls_obj is builtin_object:
         return [cls_obj]
+    print(cls_obj, type(cls_obj))
     return [cls_obj] + static_merge([static_c3(base) for base in cls_obj.__my_bases__])
 
 
@@ -87,13 +95,16 @@ def my_getattr(obj, name, default=my_getattr_obj):
     if get_attribute is None:
         assert False
     try:
-        attr_value = get_attribute(obj, name)
+        attr_value = Value()
+        for lab, typ in get_attribute:
+            if isinstance(typ, SpecialFunctionObject):
+                res = typ.__my_code__(obj, name)
+                attr_value.inject_value(res)
+
     except AttributeError:
         if default is not my_getattr_obj:
             return default
     else:
-        if isinstance(attr_value, Instance):
-            pass
         return attr_value
 
 
@@ -211,79 +222,117 @@ class Namespace(defaultdict):
                     return v_value
         raise AttributeError(name)
 
-
-class Class:
-    pass
-
-
-class Object(Class):
-    @classmethod
-    def __set_cls_attr__(cls):
-        cls.__my_bases__ = [builtin_object]
-        cls.__my_mro__ = c3(cls)
-        namespace = Namespace()
-        namespace.update(cls.__dict__)
-        cls.__my_dict__ = namespace
-
-    def __init__(self):
-        pass
-
-    def __getattribute__(self, name):
-        type_of_self = my_type(self)
-        cls_value = find_name_in_mro(type_of_self, name)
-        if cls_value is not None and is_data_descriptor(cls_value):
-            return my_getattr(cls_value, "__get__")
-        if name in self.__my_dict__:
-            return self.__my_dict__.read_value(name)
-        if cls_value is not None and is_nondata_descriptor(cls_value):
-            return my_getattr(cls_value, "__get__")
-        if cls_value is not None:
-            return cls_value
-
-        raise AttributeError(name)
-
-    def __setattr__(self, name, value):
-        type_of_self = my_type(self)
-        cls_value = find_name_in_mro(type_of_self, name)
-        if cls_value is not None and is_data_descriptor(cls_value):
-            return my_getattr(cls_value, "__set__")
-        if name in self.__my_dict__:
-            return self.__my_dict__.read_value(name)
+    def write_value(self, name, value: Value):
+        var = Var(name)
+        self[var] = value
 
 
-Object.__set_cls_attr__()
+class ObjectClass:
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+
+            def __init__(self):
+                return self
+
+            def __getattribute__(self, name):
+                type_of_self = my_type(self)
+                cls_value = find_name_in_mro(type_of_self, name)
+                if cls_value is not None and is_data_descriptor(cls_value):
+                    return my_getattr(cls_value, "__get__")
+                if name in self.__my_dict__:
+                    return self.__my_dict__.read_value(name)
+                if cls_value is not None and is_nondata_descriptor(cls_value):
+                    return my_getattr(cls_value, "__get__")
+                if cls_value is not None:
+                    return cls_value
+
+                raise AttributeError(name)
+
+            def __setattr__(self, name, value):
+                type_of_self = my_type(self)
+                cls_value = find_name_in_mro(type_of_self, name)
+                if cls_value is not None and is_data_descriptor(cls_value):
+                    return my_getattr(cls_value, "__set__")
+                if name in self.__my_dict__:
+                    return self.__my_dict__.read_value(name)
+
+            self = cls.instance
+            self.__my_uuid__ = id(self)
+            self.__my_dict__ = Namespace()
+            self.__my_bases__ = [builtin_object]
+            self.__my_mro__ = c3(self)
+            # self.__my_dict__["__my_bases__"] = [builtin_object]
+            # self.__my_dict__["__my_mro__"] = c3(ObjectClass)
+            value = Value()
+            value.inject_type(SpecialFunctionObject(function=__init__))
+            self.__my_dict__.write_value(__init__.__name__, value)
+            value = Value()
+            value.inject_type(SpecialFunctionObject(function=__getattribute__))
+            self.__my_dict__.write_value(__getattribute__.__name__, value)
+            value = Value()
+            value.inject_type(SpecialFunctionObject(function=__getattribute__))
+            self.__my_dict__.write_value(__setattr__.__name__, value)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __deepcopy__(self, memo):
+        memo[id(self)] = self
+        return self
 
 
-class Function(Class):
-    @classmethod
-    def __set_cls_attr__(cls):
-        cls.__my_bases__ = [Object]
-        cls.__my_mro__ = c3(cls)
-        namespace = Namespace()
-        namespace.update(cls.__dict__)
-        cls.__my_dict__ = namespace
+class FunctionClass:
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
 
+            def __get__(self, instance, owner):
+                pass
+
+            self = cls.instance
+            self.__my_uuid__ = id(self)
+            self.__my_bases__ = [my_object]
+            self.__my_mro__ = c3(self)
+            self.__my_dict__ = Namespace()
+            self.__my_dict__[__get__.__name__] = __get__
+        return cls.instance
+
+    def __le__(self, other: FunctionClass):
+        return True
+
+    def __iadd__(self, other: FunctionClass):
+        return self
+
+
+class FunctionObject:
     def __init__(self, *, uuid, name, module, code):
         self.__my_uuid__ = uuid
         self.__my_name__ = name
         self.__my_module__ = module
         self.__my_code__ = code
-        namespace = Namespace()
-        namespace.update(self.__dict__)
-        self.__my_dict__.update(namespace)
-
-    def __le__(self, other: Function):
-        return self.__my_dict__ <= other.__my_dict__
-
-    def __iadd__(self, other: Function):
-        self.__my_dict__ += other.__my_dict__
-        return self
+        # namespace = Namespace()
+        # namespace.update(self.__dict__)
+        # self.__my_dict__ = namespace
+        self.__my_dict__ = Namespace()
 
 
-Function.__set_cls_attr__()
+class SpecialFunctionObject:
+    def __init__(self, *, function: function):
+        self.__my_uuid__ = id(function)
+        self.__my_name__ = function.__name__
+        self.__my_code__ = function
+        self.__my_dict__ = Namespace()
+
+    def __call__(self, *args, **kwargs):
+        self.__my_code__(*args, **kwargs)
 
 
-class Method(Class):
+class MethodObject:
     def __init__(self, *, instance, function):
         self.__my_uuid__ = f"{instance.__my_uuid__}-{function.__my_uuid__}"
         self.__my_instance__ = instance
@@ -297,7 +346,24 @@ class Method(Class):
         return self
 
 
-class CustomClass(Class):
+class SpecialMethodObject:
+    def __init__(self, *, instance: Instance, function: SpecialFunctionObject):
+        self.__my_uuid__ = f"{instance.__my_uuid__}-{id(function)}"
+        self.__my_name__ = function.__my_name__
+        self.__my_instance__ = instance
+        self.__my_func__ = function
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __call__(self, *args, **kwargs):
+        return self.__my_func__(self.__my_instance__, *args, **kwargs)
+
+
+class CustomClass:
     def __init__(self, *, uuid, name, module, bases, namespace):
         self.__my_uuid__ = uuid
         self.__my_name__ = name
@@ -318,6 +384,7 @@ class CustomClass(Class):
         uuid = deepcopy(self.__my_uuid__, memo)
         name = deepcopy(self.__my_name__, memo)
         module = deepcopy(self.__my_module__, memo)
+        print(self.__my_bases__)
         bases = deepcopy(self.__my_bases__, memo)
         d = deepcopy(self.__my_dict__, memo)
         custom_class = CustomClass(
@@ -343,134 +410,6 @@ class Instance:
         return self
 
 
-class FuncType:
-    def __init__(self, label, name, module, code):
-        self.uuid = label
-        self.name = name
-        self.qualname = None
-        self.module = module
-        self.defaults = None
-        self.code = code
-        self.globals = None
-        self.dict: Namespace[Var, Value] = Namespace()
-        self.closure = None
-        self.kwdefaults = None
-
-    def __le__(self, other: FuncType):
-        return self.dict <= other.dict
-
-    def __iadd__(self, other: FuncType):
-        self.dict += other.dict
-        return self
-
-    def __repr__(self):
-        return self.dict.__repr__()
-
-    def setattr(self, attr: str, value: Value):
-        if attr in self.dict:
-            _, attr_value = self.dict.read_scope_and_value_by_name(attr)
-            attr_value.inject_value(value)
-        else:
-            var = Var(attr, Namespace_Local)
-            self.dict[var] = value
-
-    def getattr(self, name: str) -> Tuple[str, Value]:
-        return self.dict.read_scope_and_value_by_name(name)
-
-    # def __repr__(self):
-    #     return self._dict_.__repr__()
-
-
-class MethodType:
-    def __init__(self, instance: InsType, func: FuncType, module: str):
-        self.name = None
-        self.uuid = f"{instance.uuid}-{func.uuid}"
-        self.qualname = None
-        self.func = func
-        self.instance = instance
-        self.module = module
-
-    def __le__(self, other: MethodType):
-        return self.func <= other.func
-
-    def __iadd__(self, other: MethodType):
-        self.func += other.func
-        return self
-
-
-class ClsType:
-    def __init__(
-        self,
-        label: int,
-        name: str,
-        module: str,
-        bases: List,
-        namespace: Namespace[Var, Value],
-    ):
-        self.uuid = label
-        self.name = name
-        self.module = module
-        self.bases = bases
-        self.mro = static_c3(self)
-        # the last builtin_object is just a flag, remove it
-        self.mro = self.mro[:-1]
-        logger.critical("mro for class {}".format(self.mro, self.name))
-        self.dict: Namespace[Var, Value] = namespace
-
-    def __repr__(self):
-        return self.name
-
-    def __le__(self, other: ClsType):
-        return self.dict <= other.dict
-
-    def __iadd__(self, other: ClsType):
-        self.dict += other.dict
-        return self
-
-    def setattr(self, attr: str, value):
-        self.dict[Var(attr, Namespace_Local)] = value
-
-    def getattr(self, name: str) -> Tuple[str, Value]:
-        return self.dict.read_scope_and_value_by_name(name)
-
-
-class InsType:
-    def __init__(self, addr, cls_type: ClsType):
-        self.addr = addr
-        self.uuid = f"{addr}-{cls_type.uuid}"
-        self.cls = cls_type
-        self.dict: Namespace[Var, Value] = Namespace()
-        analysis_heap.write_ins_to_heap(self)
-
-    def __le__(self, other: InsType):
-        return self.dict <= other.dict
-
-    def __iadd__(self, other: InsType):
-        self.dict += other.dict
-        return self
-
-    def __hash__(self):
-        return hash(str(self.addr) + str(self.cls.uuid))
-
-    def __eq__(self, other: InsType):
-        return self.addr == other.addr and self.cls.uuid == other.cls.uuid
-
-    @property
-    def addr(self):
-        return self._addr
-
-    @addr.setter
-    def addr(self, addr):
-        self._addr = addr
-
-    def setattr(self, attr: str, value: Value):
-        var = Var(attr, Namespace_Local)
-        self.dict[var] = value
-
-    def getattr(self, name: str) -> Tuple[str, Value]:
-        return self.dict.read_scope_and_value_by_name(name)
-
-
 class ModuleType:
     def __init__(self, name: str, package: str | None, file: str):
         self.name = name
@@ -488,7 +427,7 @@ class ModuleType:
 
 
 class SuperIns:
-    def __init__(self, type1: ClsType, type2: InsType):
+    def __init__(self, type1, type2):
         self.uuid = f"{type1.uuid}-{type2.uuid}"
         instance_mro = type2.cls.mro
         idx = instance_mro.index(type1) + 1
@@ -677,33 +616,24 @@ class Value:
                 SetType,
                 DictType,
                 SuperType,
-                FuncType,
-                ClsType,
                 ModuleType,
                 BuiltinMethodType,
-                InsType,
-                MethodType,
                 SuperIns,
                 ListIns,
             ),
         ):
             self.type_dict[typ.uuid] = typ
-        elif isinstance(typ, CustomClass):
+        elif isinstance(typ, (ObjectClass, FunctionClass, CustomClass)):
             self.type_dict[typ.__my_uuid__] = typ
-        elif isinstance(typ, Function):
+        elif isinstance(typ, (FunctionObject, SpecialFunctionObject)):
+            self.type_dict[typ.__my_uuid__] = typ
+        elif isinstance(typ, (MethodObject, SpecialMethodObject)):
             self.type_dict[typ.__my_uuid__] = typ
         elif isinstance(typ, Instance):
             self.type_dict[typ.__my_uuid__] = typ
         else:
             logger.critical(typ)
             assert False
-
-    def extract_cls_type(self):
-        res = []
-        for _, typ in self.type_dict.items():
-            if isinstance(typ, ClsType):
-                res.append(typ)
-        return res
 
     def inject_value(self, value: Value):
         for lab, typ in value.type_dict.items():
@@ -719,22 +649,6 @@ class Var:
 
     def __repr__(self):
         return "({},{})".format(self.name, self.scope)
-
-    @property
-    def name(self):
-        return self._name
-
-    @name.setter
-    def name(self, name):
-        self._name = name
-
-    @property
-    def scope(self):
-        return self._scope
-
-    @scope.setter
-    def scope(self, scope):
-        self._scope = scope
 
     def __hash__(self):
         return hash(self.name)
@@ -758,7 +672,7 @@ RETURN_FLAG = "00__return__flag"
 
 class Heap:
     def __init__(self, heap: Heap = None):
-        self.singletons: DefaultDict[InsType, Namespace[Var, Value]] = defaultdict(
+        self.singletons: DefaultDict[Instance, Namespace[Var, Value]] = defaultdict(
             Namespace
         )
         if heap is not None:
@@ -795,17 +709,17 @@ class Heap:
     def __repr__(self):
         return "singleton: {}".format(self.singletons)
 
-    def write_ins_to_heap(self, ins: InsType):
+    def write_ins_to_heap(self, ins):
         if ins in self.singletons:
             pass
         else:
             self.singletons[ins] = Namespace()
 
-    def write_field_to_heap(self, ins: InsType, field: str, value: Value):
+    def write_field_to_heap(self, ins, field: str, value: Value):
         self.singletons[ins][Var(field, Namespace_Local)] = value
 
     # function
-    def read_field_from_instance(self, ins: InsType, field: str):
+    def read_field_from_instance(self, ins, field: str):
         if field in self.singletons[ins]:
             var_scope, var_value = self.singletons[ins].read_scope_and_value_by_name(
                 field
@@ -814,9 +728,9 @@ class Heap:
         else:
             return self.read_field_from_class(ins, field)
 
-    def read_field_from_class(self, instance: InsType, field: str, index=0):
-        cls_type: ClsType = instance.cls
-        cls_mro: List[ClsType] = cls_type.mro
+    def read_field_from_class(self, instance, field: str, index=0):
+        cls_type = instance.cls
+        cls_mro = cls_type.mro
         considered_cls_mro = cls_mro[index:]
         for typ in considered_cls_mro:
             try:
@@ -827,8 +741,10 @@ class Heap:
             else:
                 new_value = Value()
                 for idx, field_typ in var_value:
-                    if isinstance(field_typ, FuncType):
-                        method_type = MethodType(instance, field_typ, field_typ.module)
+                    if isinstance(field_typ, FunctionObject):
+                        method_type = MethodObject(
+                            instance, field_typ, field_typ.module
+                        )
                         new_value.inject_type(method_type)
                     else:
                         new_value.type_dict[idx] = field_typ
@@ -841,3 +757,5 @@ class Heap:
 
 
 analysis_heap = Heap()
+my_object = ObjectClass()
+my_function = FunctionClass()

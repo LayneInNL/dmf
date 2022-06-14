@@ -22,26 +22,23 @@ import dmf.share
 from dmf.analysis.prim import Int, Bool, NoneType, ListType, SuperType
 from dmf.analysis.stack import Frame, Stack, stack_bot_builder
 from dmf.analysis.value import (
-    InsType,
-    MethodType,
     Unused_Name,
     ModuleType,
-    builtin_object,
     SuperIns,
     analysis_heap,
     ListIns,
     BuiltinMethodType,
-    Object,
     CustomClass,
     Instance,
     my_getattr,
-    Function,
+    FunctionClass,
+    FunctionObject,
+    my_object,
+    SpecialFunctionObject,
 )
 from dmf.analysis.value import (
     Value,
     RETURN_FLAG,
-    FuncType,
-    ClsType,
     INIT_FLAG,
     SELF_FLAG,
     INIT_FLAG_VALUE,
@@ -410,6 +407,7 @@ class Analysis(Base):
         instance = Instance(addr, typ)
         # init_methods: Value = analysis_heap.read_field_from_instance(instance, attr)
         init_methods: Value = my_getattr(instance, attr)
+        additional_values = Value()
         for _, init_method in init_methods:
             if isinstance(init_method, MethodType):
                 entry_lab, exit_lab = init_method.code
@@ -425,7 +423,7 @@ class Analysis(Base):
                     INIT_FLAG,
                     init_method.module,
                 )
-            elif isinstance(init_method, Function):
+            elif isinstance(init_method, FunctionClass):
                 entry_lab, exit_lab = init_method.__my_code__
                 inter_flow = (
                     (call_lab, call_ctx),
@@ -439,9 +437,13 @@ class Analysis(Base):
                     INIT_FLAG,
                     init_method.__my_module__,
                 )
+            elif isinstance(init_method, SpecialFunctionObject):
+                res = init_method.__my_code__(instance)
+                self.merge_no_edge_values(res, additional_values)
             else:
                 logger.critical(init_method)
                 assert False
+        self.transfer_no_edge_values(program_point, additional_values)
 
     # unbound func call
     # func()
@@ -559,7 +561,7 @@ class Analysis(Base):
             for _, typ in func_value:
                 # __init__ or instance method
                 if isinstance(
-                    typ, (ClsType, CustomClass, MethodType, FuncType, Function)
+                    typ, (ClsType, CustomClass, MethodType, FuncType, FunctionClass)
                 ):
                     args = stmt.args
                     if args:
@@ -771,7 +773,7 @@ class Analysis(Base):
                         base_types.append(cls)
                 return base_types
             else:
-                default_base = Object
+                default_base = my_object
                 return [default_base]
 
         value: Value = Value()
@@ -812,7 +814,7 @@ class Analysis(Base):
         entry_lab, exit_lab = func_cfg.start_block.bid, func_cfg.final_block.bid
 
         value = Value()
-        function = Function(
+        function = FunctionObject(
             uuid=lab, name=func_name, module=func_module, code=(entry_lab, exit_lab)
         )
         value.inject_type(function)
