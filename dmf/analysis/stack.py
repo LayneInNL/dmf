@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import ast
-from copy import deepcopy
+from copy import deepcopy, copy
 from typing import List
 
 import dmf.share
@@ -34,9 +34,6 @@ from dmf.analysis.value import (
     Value,
     Namespace,
     Var,
-    InsType,
-    FuncType,
-    ClsType,
     ModuleType,
     SuperIns,
     ListIns,
@@ -110,11 +107,6 @@ class Frame:
         except AttributeError:
             pass
 
-        try:
-            return self.read_builtin_name(var_name)
-        except AttributeError:
-            pass
-
         raise AttributeError(var_name)
 
     # find one with (var_name, local)
@@ -144,30 +136,6 @@ class Frame:
     def read_global_frame(self, var_name: str) -> Value:
         if var_name in self.f_globals:
             var_scope, var_value = self.f_globals.read_scope_and_value_by_name(var_name)
-            if var_scope != "local":
-                raise AttributeError(var_name)
-            else:
-                return var_value
-        raise AttributeError(var_name)
-
-    def read_builtin_name(self, var_name: str) -> Value:
-        value = Value()
-        if var_name == "super":
-            super_type = SuperType()
-            value.inject_type(super_type)
-            return value
-        elif var_name == "list":
-            list_type = ListType()
-            value.inject_type(list_type)
-            return value
-        else:
-            assert False
-
-    def read_builtin_frame(self, var_name: str) -> Value:
-        if var_name in self.f_builtins:
-            var_scope, var_value = self.f_builtins.read_scope_and_value_by_name(
-                var_name
-            )
             if var_scope != "local":
                 raise AttributeError(var_name)
             else:
@@ -354,7 +322,7 @@ class Stack:
             return value
         elif isinstance(expr, ast.Name):
             old_value = self.read_var(expr.id)
-            new_value = old_value.copy()
+            new_value = copy(old_value)
             return new_value
         elif isinstance(expr, ast.Attribute):
             receiver_value: Value = self.compute_value_of_expr(expr.value)
@@ -366,7 +334,7 @@ class Stack:
                     assert False
 
             for _, typ in receiver_value:
-                if isinstance(typ, (InsType, FuncType, ClsType, ModuleType, ListIns)):
+                if isinstance(typ, (ModuleType, ListIns)):
                     try:
                         attr_scope, attr_value = typ.getattr(receiver_attr)
                         intercept(attr_scope)
@@ -399,10 +367,6 @@ class Stack:
                     else:
                         value.inject_type(res_type)
             return value
-
-        elif isinstance(expr, ast.Call):
-            old_value = self.compute_value_of_expr(expr.func, address)
-
         elif isinstance(expr, ast.List):
             elts_val = Value()
             for elt in expr.elts:

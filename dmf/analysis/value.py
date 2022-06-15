@@ -15,9 +15,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 from copy import deepcopy
-from typing import List, Tuple, Dict, DefaultDict
+from typing import Tuple, Dict, DefaultDict
 
 import dmf.share
+from dmf.analysis.c3 import builtin_object, c3
 from dmf.analysis.prim import (
     Int,
     Bool,
@@ -32,41 +33,12 @@ from dmf.analysis.prim import (
 )
 from dmf.log.logger import logger
 
-builtin_object = object()
-
 
 def _func():
     pass
 
 
 function = type(_func)
-
-
-def c3(cls_obj):
-    mro = static_c3(cls_obj)
-    return mro[:-1]
-
-
-def static_c3(cls_obj):
-    if cls_obj is builtin_object:
-        return [cls_obj]
-    print(cls_obj, type(cls_obj))
-    return [cls_obj] + static_merge([static_c3(base) for base in cls_obj.__my_bases__])
-
-
-def static_merge(mro_list):
-    if not any(mro_list):
-        return []
-    for candidate, *_ in mro_list:
-        if all(candidate not in tail for _, *tail in mro_list):
-            return [candidate] + static_merge(
-                [
-                    tail if head is candidate else [head, *tail]
-                    for head, *tail in mro_list
-                ]
-            )
-    else:
-        raise TypeError("No legal mro")
 
 
 Namespace_Local = "local"
@@ -228,7 +200,7 @@ class Namespace(defaultdict):
 
 
 class ObjectClass:
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
 
@@ -265,13 +237,13 @@ class ObjectClass:
             # self.__my_dict__["__my_bases__"] = [builtin_object]
             # self.__my_dict__["__my_mro__"] = c3(ObjectClass)
             value = Value()
-            value.inject_type(SpecialFunctionObject(function=__init__))
+            value.inject_type(SpecialFunctionObject(func=__init__))
             self.__my_dict__.write_value(__init__.__name__, value)
             value = Value()
-            value.inject_type(SpecialFunctionObject(function=__getattribute__))
+            value.inject_type(SpecialFunctionObject(func=__getattribute__))
             self.__my_dict__.write_value(__getattribute__.__name__, value)
             value = Value()
-            value.inject_type(SpecialFunctionObject(function=__getattribute__))
+            value.inject_type(SpecialFunctionObject(func=__getattribute__))
             self.__my_dict__.write_value(__setattr__.__name__, value)
         return cls.instance
 
@@ -287,7 +259,7 @@ class ObjectClass:
 
 
 class FunctionClass:
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
 
@@ -315,18 +287,26 @@ class FunctionObject:
         self.__my_name__ = name
         self.__my_module__ = module
         self.__my_code__ = code
-        # namespace = Namespace()
-        # namespace.update(self.__dict__)
-        # self.__my_dict__ = namespace
         self.__my_dict__ = Namespace()
+
+    @property
+    def code(self):
+        return self.__my_code__
 
 
 class SpecialFunctionObject:
-    def __init__(self, *, function: function):
-        self.__my_uuid__ = id(function)
-        self.__my_name__ = function.__name__
-        self.__my_code__ = function
+    def __init__(self, *, func: function):
+        self.__my_uuid__ = id(func)
+        self.__my_name__ = func.__name__
+        self.__my_code__ = func
         self.__my_dict__ = Namespace()
+
+    def __le__(self, other):
+        return self.__my_dict__ <= other.__my_dict__
+
+    def __iadd__(self, other):
+        self.__my_dict__ += other.__my_dict__
+        return self
 
     def __call__(self, *args, **kwargs):
         self.__my_code__(*args, **kwargs)
@@ -370,7 +350,6 @@ class CustomClass:
         self.__my_module__ = module
         self.__my_bases__ = bases
         self.__my_mro__ = c3(self)
-        namespace.update(self.__dict__)
         self.__my_dict__ = namespace
 
     def __le__(self, other: CustomClass):
@@ -378,13 +357,12 @@ class CustomClass:
 
     def __iadd__(self, other: CustomClass):
         self.__my_dict__ += other.__my_dict__
-        return self.__my_dict__
+        return self
 
     def __deepcopy__(self, memo):
         uuid = deepcopy(self.__my_uuid__, memo)
         name = deepcopy(self.__my_name__, memo)
         module = deepcopy(self.__my_module__, memo)
-        print(self.__my_bases__)
         bases = deepcopy(self.__my_bases__, memo)
         d = deepcopy(self.__my_dict__, memo)
         custom_class = CustomClass(
@@ -394,13 +372,11 @@ class CustomClass:
 
 
 class Instance:
-    def __init__(self, address, cls):
+    def __init__(self, *, address, cls):
         self.__my_address__ = address
         self.__my_uuid__ = f"{address}-{cls.__my_uuid__}"
         self.__my_class__ = cls
-        namespace = Namespace()
-        namespace.update(self.__dict__)
-        self.__my_dict__ = namespace
+        self.__my_dict__ = Namespace()
 
     def __le__(self, other):
         return self.__my_dict__ <= other.__my_dict__
@@ -585,7 +561,7 @@ class Value:
     def __iter__(self):
         return iter(self.type_dict.items())
 
-    def copy(self):
+    def __copy__(self):
         value = Value()
         value.type_dict = self.type_dict.copy()
         return value

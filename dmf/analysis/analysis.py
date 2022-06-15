@@ -35,6 +35,8 @@ from dmf.analysis.value import (
     FunctionObject,
     my_object,
     SpecialFunctionObject,
+    MethodObject,
+    ObjectClass,
 )
 from dmf.analysis.value import (
     Value,
@@ -61,7 +63,7 @@ def record(label: Lab, context: Ctx):
     return label
 
 
-def merge(label: Lab, heap: InsType | None, context: Ctx):
+def merge(label: Lab, heap, context: Ctx):
     return context[-1:] + (label,)
 
 
@@ -270,20 +272,19 @@ class Analysis(Base):
             self.lambda_classdef(program_point)
         # procedural call
         elif isinstance(stmt, ast.Call):
-            func: ast.expr = stmt.func
-            # x()
-            if isinstance(func, ast.Name):
-                self.lambda_call_name(program_point, stmt)
-            # x.y()
-            elif isinstance(func, ast.Attribute):
-                # attr: str = func.attr
-                # state: Stack = self.analysis_list[program_point]
-                # # get abstract value of receiver object
-                # receiver_value: Value = compute_value_of_expr(None, func.value, state)
-                logger.warning(func)
-                assert False
+            assert isinstance(stmt.func, ast.Name), stmt
+            name = stmt.func.id
+            has_info = self.lambda_name(program_point, stmt.func)
+            additional_value = Value()
+            if not has_info:
+                if name == "object":
+                    address = record(lab, ctx)
+                    instance = Instance(address=address, cls=my_object)
+                    additional_value.inject_type(instance)
+                    self.transfer_no_edge_values(program_point, additional_value)
+
         else:
-            assert False
+            assert False, stmt
 
     # deal with cases such as class xxx
     def lambda_classdef(self, program_point: ProgramPoint):
@@ -305,9 +306,11 @@ class Analysis(Base):
         )
         self.entry_info[(entry_lab, call_ctx)] = (None, None, None)
 
+        return True
+
     # deal with cases such as name()
-    def lambda_call_name(self, program_point: ProgramPoint, expr: ast.Call):
-        assert isinstance(expr.func, ast.Name)
+    def lambda_name(self, program_point: ProgramPoint, name):
+        has_info = False
 
         call_lab, call_ctx = program_point
         address = record(call_lab, call_ctx)
@@ -315,58 +318,23 @@ class Analysis(Base):
         stack: Stack = self.analysis_list[program_point]
         try:
             # get abstract value of name
-            value: Value = stack.compute_value_of_expr(expr.func, address)
-        except AttributeError:
-            logger.critical("No attribute named {}".format(expr.func.id))
-        except BaseException as base:
-            logger.critical(base)
+            value: Value = stack.compute_value_of_expr(name, address)
+        except:
+            logger.critical("No attribute named {}".format(name))
         else:
+            has_info = True
             # iterate all types to find which is callable
-            additional_values = Value()
             for _, typ in value:
                 if isinstance(typ, CustomClass):
-                    self.lambda_class_init(program_point, typ)
-                elif isinstance(typ, FuncType):
-                    self.lambda_func_call(program_point, typ)
-                elif isinstance(typ, MethodType):
-                    self.lambda_method_call(program_point, typ)
-                elif isinstance(typ, ListType):
-                    if expr.args:
-                        arg_val = stack.compute_value_of_expr(expr.args[0])
-                        list_ins = ListIns(address, arg_val)
-                    else:
-                        list_ins = ListIns(address)
-                    self.merge_no_edge_values(list_ins, additional_values)
-                elif isinstance(typ, SuperType):
-                    pos_keyword_args = expr.args
-                    assert len(pos_keyword_args) == 2
-                    pos1_value = stack.compute_value_of_expr(pos_keyword_args[0].id)
-                    pos2_value = stack.compute_value_of_expr(pos_keyword_args[1].id)
-                    for lab1, typ1 in pos1_value:
-                        if not isinstance(typ1, ClsType):
-                            continue
-                        for lab2, typ2 in pos2_value:
-                            if not isinstance(typ2, InsType):
-                                continue
-                            super_type = SuperIns(typ1, typ2)
-                            self.merge_no_edge_values(super_type, additional_values)
-                elif isinstance(typ, BuiltinMethodType):
-                    args = []
-                    for arg in expr.args:
-                        arg_val = stack.compute_value_of_expr(arg)
-                        args.append(arg_val)
-                    keywords = {}
-                    for keyword in expr.keywords:
-                        keyword_val = stack.compute_value_of_expr(keyword.value)
-                        keywords[keyword.arg] = keyword_val
-                    val = typ.func(*args, **keywords)
-                    self.merge_no_edge_values(val, additional_values)
+                    self.lambda_class(program_point, typ)
+                elif isinstance(typ, FunctionObject):
+                    self.lambda_function(program_point, typ)
+                elif isinstance(typ, MethodObject):
+                    self.lambda_method(program_point, typ)
                 else:
-                    logger.warn(typ)
-                    assert False
-
-            if additional_values:
-                self.transfer_no_edge_values(program_point, additional_values)
+                    assert False, typ
+        finally:
+            return has_info
 
     def merge_no_edge_values(self, typ, value: Value):
         value.inject_type(typ)
@@ -399,31 +367,29 @@ class Analysis(Base):
     # deal with class initialization
     # find __init__ method
     # then use it to create class instance
-    def lambda_class_init(self, program_point, typ, attr: str = "__init__"):
+    def lambda_class(self, program_point, typ):
         call_lab, call_ctx = program_point
         return_lab = self.get_return_label(call_lab)
         addr = record(call_lab, call_ctx)
-        # ins_type = InsType(addr, typ)
-        instance = Instance(addr, typ)
-        # init_methods: Value = analysis_heap.read_field_from_instance(instance, attr)
-        init_methods: Value = my_getattr(instance, attr)
+        instance = Instance(address=addr, cls=typ)
+        init_methods: Value = my_getattr(instance, "__init__")
         additional_values = Value()
         for _, init_method in init_methods:
-            if isinstance(init_method, MethodType):
-                entry_lab, exit_lab = init_method.code
-                inter_flow = (
-                    (call_lab, call_ctx),
-                    (entry_lab, call_ctx),
-                    (exit_lab, call_ctx),
-                    (return_lab, call_ctx),
-                )
-                self.inter_flows.add(inter_flow)
-                self.entry_info[(entry_lab, call_ctx)] = (
-                    instance,
-                    INIT_FLAG,
-                    init_method.module,
-                )
-            elif isinstance(init_method, FunctionClass):
+            # if isinstance(init_method, MethodType):
+            #     entry_lab, exit_lab = init_method.code
+            #     inter_flow = (
+            #         (call_lab, call_ctx),
+            #         (entry_lab, call_ctx),
+            #         (exit_lab, call_ctx),
+            #         (return_lab, call_ctx),
+            #     )
+            #     self.inter_flows.add(inter_flow)
+            #     self.entry_info[(entry_lab, call_ctx)] = (
+            #         instance,
+            #         INIT_FLAG,
+            #         init_method.module,
+            #     )
+            if isinstance(init_method, FunctionClass):
                 entry_lab, exit_lab = init_method.__my_code__
                 inter_flow = (
                     (call_lab, call_ctx),
@@ -447,7 +413,7 @@ class Analysis(Base):
 
     # unbound func call
     # func()
-    def lambda_func_call(self, program_point: ProgramPoint, typ: FuncType):
+    def lambda_function(self, program_point: ProgramPoint, typ: FunctionObject):
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = typ.code
         return_lab = self.get_return_label(call_lab)
@@ -459,9 +425,9 @@ class Analysis(Base):
             (return_lab, call_ctx),
         )
         self.inter_flows.add(inter_flow)
-        self.entry_info[(entry_lab, new_ctx)] = (None, None, typ.module)
+        self.entry_info[(entry_lab, new_ctx)] = (None, None, typ.__my_module__)
 
-    def lambda_method_call(self, program_point: ProgramPoint, typ: MethodType):
+    def lambda_method(self, program_point: ProgramPoint, typ: MethodObject):
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = typ.code
         return_lab = self.get_return_label(call_lab)
@@ -561,7 +527,7 @@ class Analysis(Base):
             for _, typ in func_value:
                 # __init__ or instance method
                 if isinstance(
-                    typ, (ClsType, CustomClass, MethodType, FuncType, FunctionClass)
+                    typ, (CustomClass, MethodObject, FunctionObject, FunctionClass)
                 ):
                     args = stmt.args
                     if args:
