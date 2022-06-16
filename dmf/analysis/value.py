@@ -50,9 +50,9 @@ def my_type(obj):
     return obj.__my_class__
 
 
-def my_hasattr(obj, item):
+def my_hasattr(obj, name):
     try:
-        obj.__getattribute__(item)
+        _ = my_getattr(obj, name)
     except AttributeError:
         return False
     else:
@@ -63,48 +63,78 @@ my_getattr_obj = object()
 
 
 def my_getattr(obj, name, default=my_getattr_obj):
-    get_attribute = find_name_in_mro(my_type(obj), "__getattribute__")
-    if get_attribute is None:
-        assert False
-    try:
-        attr_value = Value()
-        for lab, typ in get_attribute:
-            if isinstance(typ, SpecialFunctionObject):
-                res = typ.__my_code__(obj, name)
+
+    get_attribute_value: Value = find_name_in_mro(obj, "__getattribute__")
+
+    attr_value = Value()
+    for lab, typ in get_attribute_value:
+        if isinstance(typ, SpecialFunctionObject):
+            try:
+                res = typ(obj, name)
+            except AttributeError:
+                pass
+            else:
                 attr_value.inject_value(res)
 
-    except AttributeError:
+    if len(attr_value) == 0:
         if default is not my_getattr_obj:
             return default
-    else:
-        return attr_value
+        else:
+            raise AttributeError
+    return attr_value
 
 
 def my_setattr(obj, name, value):
-    obj.__setattr__(name, value)
+    set_attr: Value = find_name_in_mro(obj, "__setattr__")
+    try:
+        for lab, typ in set_attr:
+            if isinstance(typ, SpecialFunctionObject):
+                typ(obj, name, value)
+    except:
+        assert False
 
 
-def find_name_in_mro(py_type, name):
+def find_name_in_mro(obj, name):
+    py_type = my_type(obj)
     mro = py_type.__my_mro__
+
     for cls in mro:
         if name in cls.__my_dict__:
-            val = cls.__my_dict__.read_value(name)
-            if isinstance(val, Value):
-                assert len(val) == 1
-            return val
-    return None
+            value: Value = cls.__my_dict__.read_value(name)
+            return value
+
+    raise AttributeError
+
+
+def is_descriptor(value):
+    assert len(value) == 1, value
+    for lab, typ in value:
+        if (
+            isinstance(typ, (FunctionObject, SpecialFunctionObject))
+            or my_hasattr(typ, "__get__")
+            or my_hasattr(typ, "__set__")
+            or my_hasattr(typ, "__delete__")
+        ):
+            return True
+    return False
 
 
 def is_nondata_descriptor(value):
+    assert len(value) == 1, value
     for lab, typ in value:
-        if my_hasattr(typ, "__get__"):
+        if isinstance(typ, (FunctionObject, SpecialFunctionObject)) or my_hasattr(
+            typ, "__get__"
+        ):
             return True
     return False
 
 
 def is_data_descriptor(value):
+    assert len(value) == 1, value
     for lab, typ in value:
-        if my_hasattr(typ, "__get__"):
+        if isinstance(typ, (FunctionObject, SpecialFunctionObject)) or my_hasattr(
+            typ, "__get__"
+        ):
             if my_hasattr(typ, "__set__") or my_hasattr(typ, "__delete__"):
                 return True
     return False
@@ -199,6 +229,48 @@ class Namespace(defaultdict):
         self[var] = value
 
 
+class TypeClass:
+    def __new__(cls):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+
+            def __getattribute__(cls, name):
+                mro = cls.__my_mro__
+
+                for c in mro:
+                    if name in c.__my_dict__:
+                        value: Value = c.__my_dict__.read_value(name)
+                        return value
+                raise AttributeError(name)
+
+            def __setattr__(cls, name, value):
+                cls.__my_dict__.write_value(name, value)
+
+            self = cls.instance
+            self.__my_uuid__ = id(self)
+            self.__my_dict__ = Namespace()
+            self.__my_bases__ = [builtin_object]
+            self.__my_mro__ = c3(self)
+            self.__my_class__ = self
+            value = Value()
+            value.inject_type(SpecialFunctionObject(func=__getattribute__))
+            self.__my_dict__.write_value(__getattribute__.__name__, value)
+            value = Value()
+            value.inject_type(SpecialFunctionObject(func=__getattribute__))
+            self.__my_dict__.write_value(__setattr__.__name__, value)
+        return cls.instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __deepcopy__(self, memo):
+        memo[id(self)] = self
+        return self
+
+
 class ObjectClass:
     def __new__(cls):
         if not hasattr(cls, "instance"):
@@ -208,34 +280,55 @@ class ObjectClass:
                 return self
 
             def __getattribute__(self, name):
-                type_of_self = my_type(self)
-                cls_value = find_name_in_mro(type_of_self, name)
-                if cls_value is not None and is_data_descriptor(cls_value):
-                    return my_getattr(cls_value, "__get__")
-                if name in self.__my_dict__:
-                    return self.__my_dict__.read_value(name)
-                if cls_value is not None and is_nondata_descriptor(cls_value):
-                    return my_getattr(cls_value, "__get__")
-                if cls_value is not None:
-                    return cls_value
+                try:
+                    cls_value = find_name_in_mro(self, name)
+                except AttributeError:
+                    logger.debug(f"No class var {name}")
+                else:
+                    if is_data_descriptor(cls_value):
+                        data_desc = my_getattr(cls_value, "__get__")
+                        return data_desc
+                    if "__my_dict__" in self.__dict__ and name in self.__my_dict__:
+                        return self.__my_dict__.read_value(name)
+                    if is_nondata_descriptor(cls_value):
+                        res = Value()
+                        for lab, typ in cls_value:
+                            if isinstance(typ, FunctionObject):
+                                res.inject_type(
+                                    MethodObject(instance=self, function=typ)
+                                )
+                            elif isinstance(typ, SpecialFunctionObject):
+                                res.inject_type(
+                                    SpecialMethodObject(instance=self, function=typ)
+                                )
+                            else:
+                                res.inject_type(typ)
+                        return res
+                    if cls_value is not None:
+                        return cls_value
 
-                raise AttributeError(name)
+                    raise AttributeError(name)
 
             def __setattr__(self, name, value):
                 type_of_self = my_type(self)
                 cls_value = find_name_in_mro(type_of_self, name)
                 if cls_value is not None and is_data_descriptor(cls_value):
-                    return my_getattr(cls_value, "__set__")
-                if name in self.__my_dict__:
-                    return self.__my_dict__.read_value(name)
+                    data_desc = Value()
+                    for lab, typ in cls_value:
+                        tmp = my_getattr(typ, "__set__")
+                        data_desc.inject_value(tmp)
+                    return data_desc
+                if isinstance(self, Instance):
+                    analysis_heap.write_field_to_heap(self, name, value)
+                else:
+                    self.__my_dict__.write_value(name, value)
 
             self = cls.instance
             self.__my_uuid__ = id(self)
             self.__my_dict__ = Namespace()
             self.__my_bases__ = [builtin_object]
             self.__my_mro__ = c3(self)
-            # self.__my_dict__["__my_bases__"] = [builtin_object]
-            # self.__my_dict__["__my_mro__"] = c3(ObjectClass)
+            self.__my_class__ = my_typ
             value = Value()
             value.inject_type(SpecialFunctionObject(func=__init__))
             self.__my_dict__.write_value(__init__.__name__, value)
@@ -270,6 +363,7 @@ class FunctionClass:
             self.__my_uuid__ = id(self)
             self.__my_bases__ = [my_object]
             self.__my_mro__ = c3(self)
+            self.__my_class__ = my_typ
             self.__my_dict__ = Namespace()
             self.__my_dict__[__get__.__name__] = __get__
         return cls.instance
@@ -288,6 +382,14 @@ class FunctionObject:
         self.__my_module__ = module
         self.__my_code__ = code
         self.__my_dict__ = Namespace()
+        self.__my_class__ = my_function
+
+    def __le__(self, other):
+        return self.__my_dict__ <= other.__my_dict__
+
+    def __iadd__(self, other):
+        self.__my_dict__ += other.__my_dict__
+        return self
 
     @property
     def code(self):
@@ -295,7 +397,7 @@ class FunctionObject:
 
 
 class SpecialFunctionObject:
-    def __init__(self, *, func: function):
+    def __init__(self, *, func):
         self.__my_uuid__ = id(func)
         self.__my_name__ = func.__name__
         self.__my_code__ = func
@@ -309,11 +411,11 @@ class SpecialFunctionObject:
         return self
 
     def __call__(self, *args, **kwargs):
-        self.__my_code__(*args, **kwargs)
+        return self.__my_code__(*args, **kwargs)
 
 
 class MethodObject:
-    def __init__(self, *, instance, function):
+    def __init__(self, *, instance: Instance, function: FunctionObject):
         self.__my_uuid__ = f"{instance.__my_uuid__}-{function.__my_uuid__}"
         self.__my_instance__ = instance
         self.__my_func__ = function
@@ -351,6 +453,7 @@ class CustomClass:
         self.__my_bases__ = bases
         self.__my_mro__ = c3(self)
         self.__my_dict__ = namespace
+        self.__my_class__ = my_typ
 
     def __le__(self, other: CustomClass):
         return self.__my_dict__ <= other.__my_dict__
@@ -376,14 +479,20 @@ class Instance:
         self.__my_address__ = address
         self.__my_uuid__ = f"{address}-{cls.__my_uuid__}"
         self.__my_class__ = cls
-        self.__my_dict__ = Namespace()
+        analysis_heap.write_ins_to_heap(self)
 
-    def __le__(self, other):
-        return self.__my_dict__ <= other.__my_dict__
+    def __le__(self, other: Instance):
+        return analysis_heap.singletons[self] <= analysis_heap.singletons[other]
 
-    def __iadd__(self, other):
-        self.__my_dict__ += other.__my_dict__
+    def __iadd__(self, other: Instance):
+        analysis_heap.singletons[self] += analysis_heap.singletons[other]
         return self
+
+    def __hash__(self):
+        return hash(self.__my_uuid__)
+
+    def __eq__(self, other):
+        return self.__my_uuid__ == other.__my_uuid__
 
 
 class ModuleType:
@@ -685,14 +794,14 @@ class Heap:
     def __repr__(self):
         return "singleton: {}".format(self.singletons)
 
-    def write_ins_to_heap(self, ins):
-        if ins in self.singletons:
-            pass
+    def write_ins_to_heap(self, instance: Instance):
+        if instance in self.singletons:
+            logger.critical("Have same name")
         else:
-            self.singletons[ins] = Namespace()
+            self.singletons[instance] = Namespace()
 
-    def write_field_to_heap(self, ins, field: str, value: Value):
-        self.singletons[ins][Var(field, Namespace_Local)] = value
+    def write_field_to_heap(self, instance: Instance, field: str, value: Value):
+        self.singletons[instance][Var(field, Namespace_Local)] = value
 
     # function
     def read_field_from_instance(self, ins, field: str):
@@ -733,5 +842,6 @@ class Heap:
 
 
 analysis_heap = Heap()
+my_typ = TypeClass()
 my_object = ObjectClass()
 my_function = FunctionClass()

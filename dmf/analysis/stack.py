@@ -40,6 +40,10 @@ from dmf.analysis.value import (
     Namespace_Local,
     Namespace_Global,
     Namespace_Nonlocal,
+    CustomClass,
+    my_getattr,
+    Instance,
+    analysis_heap,
 )
 from dmf.log.logger import logger
 
@@ -328,29 +332,21 @@ class Stack:
             receiver_value: Value = self.compute_value_of_expr(expr.value)
             receiver_attr: str = expr.attr
             value: Value = Value()
-
-            def intercept(scope: str):
-                if scope != Namespace_Local:
-                    assert False
-
             for _, typ in receiver_value:
-                if isinstance(typ, (ModuleType, ListIns)):
+                if isinstance(typ, CustomClass):
                     try:
-                        attr_scope, attr_value = typ.getattr(receiver_attr)
-                        intercept(attr_scope)
+                        tmp = my_getattr(typ, receiver_attr)
                     except AttributeError:
                         pass
                     else:
-                        value += attr_value
-                elif isinstance(typ, SuperIns):
+                        value.inject_value(tmp)
+                elif isinstance(typ, Instance):
                     try:
-                        attr_value = typ.getattr(receiver_attr)
+                        tmp = analysis_heap.read_field_from_instance(typ, receiver_attr)
                     except AttributeError:
                         pass
                     else:
-                        value += attr_value
-                else:
-                    logger.warn(typ)
+                        value.inject_value(tmp)
             return value
         elif isinstance(expr, ast.BinOp):
             dunder_method = op2dunder(expr.op)

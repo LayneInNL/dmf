@@ -37,6 +37,7 @@ from dmf.analysis.value import (
     SpecialFunctionObject,
     MethodObject,
     ObjectClass,
+    SpecialMethodObject,
 )
 from dmf.analysis.value import (
     Value,
@@ -242,6 +243,7 @@ class Analysis(Base):
             )
 
     def present(self):
+        # self.analyzed_program_points.add(self.final_point)
         for program_point in self.analyzed_program_points:
             logger.info(
                 "Context at program point {}: {}".format(
@@ -375,22 +377,8 @@ class Analysis(Base):
         init_methods: Value = my_getattr(instance, "__init__")
         additional_values = Value()
         for _, init_method in init_methods:
-            # if isinstance(init_method, MethodType):
-            #     entry_lab, exit_lab = init_method.code
-            #     inter_flow = (
-            #         (call_lab, call_ctx),
-            #         (entry_lab, call_ctx),
-            #         (exit_lab, call_ctx),
-            #         (return_lab, call_ctx),
-            #     )
-            #     self.inter_flows.add(inter_flow)
-            #     self.entry_info[(entry_lab, call_ctx)] = (
-            #         instance,
-            #         INIT_FLAG,
-            #         init_method.module,
-            #     )
-            if isinstance(init_method, FunctionClass):
-                entry_lab, exit_lab = init_method.__my_code__
+            if isinstance(init_method, MethodObject):
+                entry_lab, exit_lab = init_method.__my_func__.__my_code__
                 inter_flow = (
                     (call_lab, call_ctx),
                     (entry_lab, call_ctx),
@@ -401,8 +389,11 @@ class Analysis(Base):
                 self.entry_info[(entry_lab, call_ctx)] = (
                     instance,
                     INIT_FLAG,
-                    init_method.__my_module__,
+                    init_method.__my_func__.__my_module__,
                 )
+            elif isinstance(init_method, SpecialMethodObject):
+                res = init_method()
+                self.merge_no_edge_values(res, additional_values)
             elif isinstance(init_method, SpecialFunctionObject):
                 res = init_method.__my_code__(instance)
                 self.merge_no_edge_values(res, additional_values)
@@ -483,12 +474,12 @@ class Analysis(Base):
             value: Value = new.read_var(lhs_name)
             field: str = target.attr
             for lab, typ in value:
-                if isinstance(typ, InsType):
+                if isinstance(typ, Instance):
                     analysis_heap.write_field_to_heap(typ, field, rhs_value)
-                elif isinstance(typ, ClsType):
-                    typ.setattr(field, rhs_value)
-                elif isinstance(typ, FuncType):
-                    typ.setattr(field, rhs_value)
+                elif isinstance(typ, CustomClass):
+                    pass
+                elif isinstance(typ, FunctionObject):
+                    pass
                 elif isinstance(typ, (Int, Bool, NoneType)):
                     pass
                 else:
