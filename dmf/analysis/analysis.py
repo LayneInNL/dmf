@@ -266,24 +266,23 @@ class Analysis(Base):
             return
 
         stmt = self.get_stmt_by_label(lab)
+
+        assert isinstance(stmt, (ast.ClassDef, ast.Call)), stmt
+
         # class
         if isinstance(stmt, ast.ClassDef):
             self.lambda_classdef(program_point)
         # procedural call
         elif isinstance(stmt, ast.Call):
             assert isinstance(stmt.func, ast.Name), stmt
-            name = stmt.func.id
             has_info = self.lambda_name(program_point, stmt.func)
             additional_value = Value()
             if not has_info:
-                if name == "object":
+                if stmt.func.id == "object":
                     address = record(lab, ctx)
                     instance = Instance(address=address, cls=my_object)
                     additional_value.inject_type(instance)
                     self.transfer_no_edge_values(program_point, additional_value)
-
-        else:
-            assert False, stmt
 
     # deal with cases such as class xxx
     def lambda_classdef(self, program_point: ProgramPoint):
@@ -304,8 +303,6 @@ class Analysis(Base):
             )
         )
         self.entry_info[(entry_lab, call_ctx)] = (None, None, None)
-
-        return True
 
     # deal with cases such as name()
     def lambda_name(self, program_point: ProgramPoint, name):
@@ -364,7 +361,7 @@ class Analysis(Base):
             self.work_list.extendleft(added_flows)
 
     # deal with class initialization
-    # find __init__ method
+    # find __new__ and __init__ method
     # then use it to create class instance
     def lambda_class(self, program_point, typ):
         call_lab, call_ctx = program_point

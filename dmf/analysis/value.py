@@ -53,6 +53,7 @@ my_getattr_obj = object()
 def my_getattr(obj, name, default=my_getattr_obj):
 
     get_attribute_value: Value = find_name_in_mro(obj, "__getattribute__")
+    assert len(get_attribute_value) == 1
 
     attr_value = Value()
     for lab, typ in get_attribute_value:
@@ -250,6 +251,9 @@ class ObjectClass:
     def __new__(cls):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+
+            def __new__(cls):
+                return InstanceWithoutAddress(cls)
 
             def __init__(self):
                 return self
@@ -452,6 +456,11 @@ class CustomClass:
             uuid=uuid, name=name, module=module, bases=bases, namespace=d
         )
         return custom_class
+
+
+class InstanceWithoutAddress:
+    def __init__(self, cls):
+        self.__my_class__ = cls
 
 
 class Instance:

@@ -27,12 +27,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument("main", help="the main file path")
 
 
-def add_builtin_module(path):
-    static_builtin_module = ModuleType(name="static_builtins", package=None, file=path)
-    static_builtin_module.namespace["__object__"] = object()
-    dmf.share.analysis_modules["static_builtins"] = static_builtin_module
-
-
 def add_main_module(path):
     analysis_main_module = ModuleType(name="__main__", package="", file=path)
     dmf.share.analysis_modules["__main__"] = analysis_main_module
@@ -53,23 +47,11 @@ if __name__ == "__main__":
     main_file_path = args.main
     if not main_file_path:
         exit()
-    # get main module absolute path
-    main_abs_path = os.path.abspath(main_file_path)
-
-    # # add builtin objects
-    # builtin_file_path = "./share/static_builtins.py"
-    # builtin_abs_path = os.path.abspath(builtin_file_path)
-    # add_builtin_module(builtin_abs_path)
 
     from dmf.analysis.analysis import Analysis
 
-    # # load cfg of static builtin module
-    # analysis = Analysis("static_builtins")
-    # analysis.compute_fixed_point()
-    # # calculate builtin module
-    # dmf.share.static_builtins = True
-    # # sleep 2 seconds
-    # time.sleep(1)
+    # get main module absolute path
+    main_abs_path = os.path.abspath(main_file_path)
 
     # module name
     main_module_name = os.path.basename(main_abs_path).rpartition(".")[0]
