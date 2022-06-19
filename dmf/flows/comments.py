@@ -7,7 +7,7 @@ import autopep8
 class CommentsCleaner:
     def __init__(self, source):
         self.source = source
-        self.remove_comments_and_docstrings()
+        # self.remove_comments_and_docstrings()
         self.format_code()
 
     def format_code(self):

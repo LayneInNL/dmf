@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import ast
+import logging
 import os
 from typing import Dict, List, Tuple, Set, Optional, Any
 
@@ -188,7 +189,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.cfg = CFG(name)
         self.curr_block = self.new_block()
         self.visit(tree)
-        self.remove_empty_blocks(self.cfg.start_block)
+        self.remove_empty_blocks(self.cfg.start_block, set())
         self.refactor_flows_and_labels()
         return self.cfg
 
@@ -199,12 +200,16 @@ class CFGVisitor(ast.NodeVisitor):
 
     def add_edge(self, frm_id: int, to_id: int, condition=None) -> BasicBlock:
         if to_id in self.cfg.blocks[frm_id].next:
-            assert False
-        self.cfg.blocks[frm_id].next.append(to_id)
+            pass
+            # assert False, f"{frm_id}, {to_id}"
+        else:
+            self.cfg.blocks[frm_id].next.append(to_id)
 
         if frm_id in self.cfg.blocks[to_id].prev:
-            assert False
-        self.cfg.blocks[to_id].prev.append(frm_id)
+            pass
+            # assert False, f"{frm_id}, {to_id}"
+        else:
+            self.cfg.blocks[to_id].prev.append(frm_id)
 
         self.cfg.edges[(frm_id, to_id)] = condition
         return self.cfg.blocks[to_id]
@@ -225,12 +230,39 @@ class CFGVisitor(ast.NodeVisitor):
         self.cfg.sub_cfgs[func_id] = func_cfg
 
     def add_ClassCFG(self, node: ast.ClassDef):
+        self.single_special_method_check(node.body, set())
+
         class_id = self.curr_block.bid
         visitor: CFGVisitor = CFGVisitor()
         class_cfg: CFG = visitor.build(node.name, ast.Module(body=node.body))
         self.cfg.sub_cfgs[class_id] = class_cfg
 
-    def remove_empty_blocks(self, block: BasicBlock, visited: Set[int] = set()) -> None:
+    def single_special_method_check(self, body: List[ast.stmt], method_set):
+        for stmt in body:
+            if isinstance(stmt, ast.FunctionDef):
+                func_name = stmt.name
+                if func_name.startswith("__") and func_name.endswith("__"):
+                    if func_name in method_set:
+                        raise NotImplementedError(
+                            "No multiple magic methods with the same name are allowed {}".format(
+                                func_name
+                            )
+                        )
+                    else:
+                        method_set.add(func_name)
+            elif isinstance(stmt, (ast.For, ast.While, ast.If)):
+                self.single_special_method_check(stmt.body, method_set)
+                self.single_special_method_check(stmt.orelse, method_set)
+            elif isinstance(stmt, ast.With):
+                self.single_special_method_check(stmt.body, method_set)
+            elif isinstance(stmt, ast.Try):
+                self.single_special_method_check(stmt.body, method_set)
+                self.single_special_method_check(stmt.orelse, method_set)
+                self.single_special_method_check(stmt.finalbody, method_set)
+            else:
+                pass
+
+    def remove_empty_blocks(self, block: BasicBlock, visited: Set[int]) -> None:
         if block.bid not in visited:
             visited.add(block.bid)
             if block.is_empty():
@@ -681,6 +713,8 @@ class CFGVisitor(ast.NodeVisitor):
     # decompose_expr(expr)-> List[expr], ast.Name
 
     def decompose_expr(self, expr: ast.expr) -> Tuple:
+        if expr is None:
+            return [], None
         seq = self.visit(expr)
         if not isinstance(seq[-1], ast.Name):
             tmp_var = temp.RandomVariableName.gen_random_name()
@@ -773,7 +807,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Set(self, node: ast.Set) -> Any:
         seq = []
-        for idx, elt in node.elts:
+        for idx, elt in enumerate(node.elts):
             seq1, node.elts[idx] = self.decompose_expr(elt)
             seq.extend(seq1)
         return seq + [node]
