@@ -45,12 +45,12 @@ def index_generator():
 
 
 class Int(BinOp):
-    uuid = index_generator()
     internal = 1
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
     def __deepcopy__(self, memo):
@@ -70,12 +70,12 @@ class Int(BinOp):
 
 
 class Float(BinOp):
-    uuid = index_generator()
     internal = 1.0
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
     def __deepcopy__(self, memo):
@@ -95,12 +95,12 @@ class Float(BinOp):
 
 
 class Complex(BinOp):
-    uuid = index_generator()
     internal = 1j
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
     def __deepcopy__(self, memo):
@@ -120,12 +120,12 @@ class Complex(BinOp):
 
 
 class Bool(BinOp):
-    uuid = index_generator()
     internal = True
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
     def __deepcopy__(self, memo):
@@ -145,12 +145,12 @@ class Bool(BinOp):
 
 
 class NoneType(BinOp):
-    uuid = index_generator()
     internal = None
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
     def __deepcopy__(self, memo):
@@ -170,12 +170,12 @@ class NoneType(BinOp):
 
 
 class Str(BinOp):
-    uuid = index_generator()
     internal = ""
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
     def __deepcopy__(self, memo):
@@ -195,12 +195,12 @@ class Str(BinOp):
 
 
 class Bytes(BinOp):
-    uuid = index_generator()
     internal = b""
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
     def __deepcopy__(self, memo):
@@ -220,12 +220,12 @@ class Bytes(BinOp):
 
 
 class ListType:
-    uuid = index_generator()
     internal = []
 
     def __new__(cls):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
     def __deepcopy__(self, memo):
@@ -245,12 +245,12 @@ class ListType:
 
 
 class TupleType:
-    uuid = index_generator()
     internal = ()
 
     def __new__(cls):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
     def __deepcopy__(self, memo):
@@ -270,12 +270,12 @@ class TupleType:
 
 
 class SetType:
-    uuid = index_generator()
     internal = set()
 
     def __new__(cls):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
     def __deepcopy__(self, memo):
@@ -295,12 +295,12 @@ class SetType:
 
 
 class DictType:
-    uuid = index_generator()
     internal = {}
 
     def __new__(cls):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
     def __deepcopy__(self, memo):
@@ -320,12 +320,12 @@ class DictType:
 
 
 class SuperType:
-    uuid = index_generator()
     internal = super
 
     def __new__(cls):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
     def __deepcopy__(self, memo):

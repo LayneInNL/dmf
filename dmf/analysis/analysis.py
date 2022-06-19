@@ -19,15 +19,13 @@ from copy import deepcopy
 from typing import Dict, Tuple, Deque, Set, List
 
 import dmf.share
-from dmf.analysis.prim import Int, Bool, NoneType, ListType, SuperType
+from dmf.analysis.prim import Int, Bool, NoneType
 from dmf.analysis.stack import Frame, Stack, stack_bot_builder
 from dmf.analysis.value import (
     Unused_Name,
     ModuleType,
     SuperIns,
     analysis_heap,
-    ListIns,
-    BuiltinMethodType,
     CustomClass,
     Instance,
     my_getattr,
@@ -36,7 +34,6 @@ from dmf.analysis.value import (
     my_object,
     SpecialFunctionObject,
     MethodObject,
-    ObjectClass,
     SpecialMethodObject,
 )
 from dmf.analysis.value import (
@@ -724,7 +721,7 @@ class Analysis(Base):
                 for base in statement.bases:
                     assert isinstance(base, ast.Name)
                     base_value: Value = new_return_state.read_var(base.id)
-                    cls_types: List[ClsType] = base_value.extract_cls_type()
+                    cls_types: List[CustomClass] = base_value.extract_cls_type()
                     assert len(cls_types) == 1
                     for cls in cls_types:
                         base_types.append(cls)

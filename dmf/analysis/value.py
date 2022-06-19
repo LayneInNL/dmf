@@ -19,18 +19,6 @@ from typing import Tuple, Dict, DefaultDict
 
 import dmf.share
 from dmf.analysis.c3 import builtin_object, c3
-from dmf.analysis.prim import (
-    Int,
-    Bool,
-    NoneType,
-    Str,
-    Bytes,
-    SuperType,
-    ListType,
-    DictType,
-    SetType,
-    TupleType,
-)
 from dmf.log.logger import logger
 
 
@@ -140,13 +128,6 @@ def is_data_descriptor(value):
     return False
 
 
-def is_magic_attr(var: Var | str):
-    if isinstance(var, str):
-        return True
-    else:
-        return False
-
-
 # Namespace[Var|str, Value]
 class Namespace(defaultdict):
     def __repr__(self):
@@ -159,33 +140,27 @@ class Namespace(defaultdict):
     # we use defaultdict, the default value of an unknown variable is TOP
     # So we have to collect all variables
     def __le__(self, other):
-        variables = self.keys() | other.keys()
+        variables = filter(
+            lambda elt: not isinstance(elt, str), self.keys() | other.keys()
+        )
+
         for var in variables:
-            # magic method
-            if is_magic_attr(var):
-                continue
-            elif isinstance(var, Var):
-                if not self[var] <= other[var]:
-                    return False
-            else:
-                assert False
+            if not self[var] <= other[var]:
+                return False
         return True
 
     def __iadd__(self, other):
-        variables = self.keys() | other.keys()
+        variables = filter(
+            lambda elt: not isinstance(elt, str), self.keys() | other.keys()
+        )
         for var in variables:
-            if is_magic_attr(var):
-                continue
-            elif isinstance(var, Var):
-                self[var] += other[var]
-            else:
-                assert False
+            self[var] += other[var]
         return self
 
     def __contains__(self, name: str):
         # __xxx__ and Var
         for var in self:
-            if is_magic_attr(var):
+            if isinstance(var, str):
                 if var == name:
                     return True
             if isinstance(var, Var):
@@ -208,7 +183,7 @@ class Namespace(defaultdict):
 
     def read_scope_and_value_by_name(self, var_name: str) -> Tuple[str, Value]:
         for var, v_value in self.items():
-            if is_magic_attr(var):
+            if isinstance(var, str):
                 continue
             if var_name == var.name:
                 return var.scope, v_value
@@ -286,6 +261,7 @@ class ObjectClass:
                     logger.debug(f"No class var {name}")
                 else:
                     if is_data_descriptor(cls_value):
+                        assert False, cls_value
                         data_desc = my_getattr(cls_value, "__get__")
                         return data_desc
                     if "__my_dict__" in self.__dict__ and name in self.__my_dict__:
@@ -293,11 +269,15 @@ class ObjectClass:
                     if is_nondata_descriptor(cls_value):
                         res = Value()
                         for lab, typ in cls_value:
-                            if isinstance(typ, FunctionObject):
+                            if isinstance(self, Instance) and isinstance(
+                                typ, FunctionObject
+                            ):
                                 res.inject_type(
                                     MethodObject(instance=self, function=typ)
                                 )
-                            elif isinstance(typ, SpecialFunctionObject):
+                            elif isinstance(self, Instance) and isinstance(
+                                typ, SpecialFunctionObject
+                            ):
                                 res.inject_type(
                                     SpecialMethodObject(instance=self, function=typ)
                                 )
@@ -533,87 +513,6 @@ class SuperIns:
         return self
 
 
-class BuiltinMethodType:
-    def __init__(self, uuid, func):
-        self.uuid = uuid
-        self.func = func
-
-    def __le__(self, other: BuiltinMethodType):
-        return True
-
-    def __iadd__(self, other: BuiltinMethodType):
-        return self
-
-
-class ListIns:
-    def __init__(self, uuid, elts: Value = None):
-        self.uuid = uuid
-        self.internal: Value = Value()
-        if elts is not None:
-            for lab, elt in elts:
-                self.internal.inject_type(elt)
-
-    def __deepcopy__(self, memo):
-        copied_uuid = deepcopy(self.uuid, memo)
-        copied_internal = deepcopy(self.internal, memo)
-        copied = ListIns(copied_uuid, copied_internal)
-
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = copied
-        return copied
-
-    def __le__(self, other: ListIns):
-        return self.internal <= other.internal
-
-    def __iadd__(self, other: ListIns):
-        self.internal += other.internal
-
-    def __repr__(self):
-        return self.internal.__repr__()
-
-    def getattr(self, attr: str):
-        func = getattr(self, attr)
-        builtin_method_uuid = f"{self.uuid}-{attr}"
-        builtin_method = BuiltinMethodType(builtin_method_uuid, func)
-        value = Value(builtin_method)
-        return Namespace_Local, value
-
-    def append(self, x):
-        self.internal += x
-        return NoneType()
-
-    def extend(self, iterable):
-        self.internal += iterable
-
-    def insert(self, i, x):
-        self.append(x)
-
-    def remove(self, x):
-        assert False
-
-    def pop(self, i=None):
-        assert False
-
-    def clear(self):
-        self.internal = Value()
-
-    def index(self, x, start=None, end=None):
-        return Int()
-
-    def count(self, x):
-        return Int()
-
-    def sort(self, key=None, reverse=False):
-        pass
-
-    def reverse(self):
-        pass
-
-    def copy(self):
-        assert False
-
-
 class _TOP:
     def copy(self):
         return self
@@ -688,33 +587,7 @@ class Value:
         return value
 
     def inject_type(self, typ):
-        if isinstance(
-            typ,
-            (
-                Int,
-                Bool,
-                NoneType,
-                Str,
-                Bytes,
-                ListType,
-                TupleType,
-                SetType,
-                DictType,
-                SuperType,
-                ModuleType,
-                BuiltinMethodType,
-                SuperIns,
-                ListIns,
-            ),
-        ):
-            self.type_dict[typ.uuid] = typ
-        elif isinstance(typ, (ObjectClass, FunctionClass, CustomClass)):
-            self.type_dict[typ.__my_uuid__] = typ
-        elif isinstance(typ, (FunctionObject, SpecialFunctionObject)):
-            self.type_dict[typ.__my_uuid__] = typ
-        elif isinstance(typ, (MethodObject, SpecialMethodObject)):
-            self.type_dict[typ.__my_uuid__] = typ
-        elif isinstance(typ, Instance):
+        if hasattr(typ, "__my_uuid__"):
             self.type_dict[typ.__my_uuid__] = typ
         else:
             logger.critical(typ)

@@ -20,8 +20,6 @@ from typing import List
 import dmf.share
 from dmf.analysis.prim import (
     BUILTIN_TYPES,
-    ListType,
-    SuperType,
     Int,
     NoneType,
     Bool,
@@ -34,9 +32,6 @@ from dmf.analysis.value import (
     Value,
     Namespace,
     Var,
-    ModuleType,
-    SuperIns,
-    ListIns,
     Namespace_Local,
     Namespace_Global,
     Namespace_Nonlocal,
@@ -362,14 +357,6 @@ class Stack:
                         pass
                     else:
                         value.inject_type(res_type)
-            return value
-        elif isinstance(expr, ast.List):
-            elts_val = Value()
-            for elt in expr.elts:
-                elt_value = self.compute_value_of_expr(elt, address)
-                elts_val += elt_value
-            list_type = ListIns(address, elts_val)
-            value.inject_type(list_type)
             return value
         else:
             logger.warn(expr)
