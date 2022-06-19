@@ -18,12 +18,26 @@ import os
 from dmf.flows import flows, comments
 
 
-def construct_CFG(file_name) -> flows.CFG:
-    with open(file_name) as handler:
+def pre_check(project_dir):
+    for (path_dir, _, file_names) in os.walk(project_dir):
+        for name in file_names:
+            path = os.path.join(path_dir, name)
+            if name.endswith(".py"):
+                logging.critical(f"Checking {path}")
+                with open(path) as handler:
+                    source = handler.read()
+                    comments_cleaner = comments.CommentsCleaner(source)
+                    visitor = flows.CFGVisitor()
+                    base_name = os.path.basename(path)
+                    visitor.build(base_name, ast.parse(comments_cleaner.source))
+
+
+def construct_CFG(file_path) -> flows.CFG:
+    with open(file_path) as handler:
         source = handler.read()
         comments_cleaner = comments.CommentsCleaner(source)
         visitor = flows.CFGVisitor()
-        base_name = os.path.basename(file_name)
+        base_name = os.path.basename(file_path)
         cfg = visitor.build(base_name, ast.parse(comments_cleaner.source))
         logging.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
         logging.debug("Refactored flows: {}".format(visitor.cfg.flows))
