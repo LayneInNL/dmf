@@ -52,35 +52,33 @@ my_getattr_obj = object()
 
 def my_getattr(obj, name, default=my_getattr_obj):
 
-    get_attribute_value: Value = find_name_in_mro(obj, "__getattribute__")
-    assert len(get_attribute_value) == 1
+    get_attribute = find_magic_method_in_mro(obj, "__getattribute__")
 
     attr_value = Value()
-    for lab, typ in get_attribute_value:
-        if isinstance(typ, SpecialFunctionObject):
-            try:
-                res = typ(obj, name)
-            except AttributeError:
-                pass
-            else:
-                attr_value.inject_value(res)
-
-    if len(attr_value) == 0:
+    try:
+        res = get_attribute(obj, name)
+    except AttributeError:
         if default is not my_getattr_obj:
             return default
-        else:
-            raise AttributeError
-    return attr_value
+        raise
+    else:
+        attr_value.inject_value(res)
+        return attr_value
 
 
 def my_setattr(obj, name, value):
-    set_attr: Value = find_name_in_mro(obj, "__setattr__")
-    try:
-        for lab, typ in set_attr:
-            if isinstance(typ, SpecialFunctionObject):
-                typ(obj, name, value)
-    except:
-        assert False
+    set_attr = find_name_in_mro(obj, "__setattr__")
+    set_attr(obj, name, value)
+
+
+def find_magic_method_in_mro(typ, name):
+    mro = typ.__my_mro__
+
+    for cls in mro:
+        if name in cls.__my_dict__:
+            return cls.__my_dict__.read_value(name)
+
+    raise AttributeError
 
 
 def find_name_in_mro(obj, name):
@@ -89,8 +87,7 @@ def find_name_in_mro(obj, name):
 
     for cls in mro:
         if name in cls.__my_dict__:
-            value: Value = cls.__my_dict__.read_value(name)
-            return value
+            return cls.__my_dict__.read_value(name)
 
     raise AttributeError
 
@@ -200,9 +197,8 @@ class Namespace(defaultdict):
                     return v_value
         raise AttributeError(name)
 
-    def write_value(self, name, value: Value):
-        var = Var(name)
-        self[var] = value
+    def write_value(self, name, value):
+        self[name] = value
 
 
 class TypeClass:
@@ -228,12 +224,12 @@ class TypeClass:
             self.__my_bases__ = [builtin_object]
             self.__my_mro__ = c3(self)
             self.__my_class__ = self
-            value = Value()
-            value.inject_type(SpecialFunctionObject(func=__getattribute__))
-            self.__my_dict__.write_value(__getattribute__.__name__, value)
-            value = Value()
-            value.inject_type(SpecialFunctionObject(func=__getattribute__))
-            self.__my_dict__.write_value(__setattr__.__name__, value)
+            self.__my_dict__.write_value(
+                __getattribute__.__name__, SpecialFunctionObject(func=__getattribute__)
+            )
+            self.__my_dict__.write_value(
+                __setattr__.__name__, SpecialFunctionObject(func=__getattribute__)
+            )
         return cls.instance
 
     def __le__(self, other):
@@ -252,27 +248,24 @@ class ObjectClass:
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
 
-            def __new__(cls):
-                return InstanceWithoutAddress(cls)
-
             def __init__(self):
                 return self
 
             def __getattribute__(self, name):
                 try:
-                    cls_value = find_name_in_mro(self, name)
+                    name_value = find_name_in_mro(self, name)
                 except AttributeError:
                     logger.debug(f"No class var {name}")
                 else:
-                    if is_data_descriptor(cls_value):
-                        assert False, cls_value
-                        data_desc = my_getattr(cls_value, "__get__")
+                    if is_data_descriptor(name_value):
+                        assert False, name_value
+                        data_desc = my_getattr(name_value, "__get__")
                         return data_desc
                     if "__my_dict__" in self.__dict__ and name in self.__my_dict__:
                         return self.__my_dict__.read_value(name)
-                    if is_nondata_descriptor(cls_value):
+                    if is_nondata_descriptor(name_value):
                         res = Value()
-                        for lab, typ in cls_value:
+                        for lab, typ in name_value:
                             if isinstance(self, Instance) and isinstance(
                                 typ, FunctionObject
                             ):
@@ -288,8 +281,8 @@ class ObjectClass:
                             else:
                                 res.inject_type(typ)
                         return res
-                    if cls_value is not None:
-                        return cls_value
+                    if name_value is not None:
+                        return name_value
 
                     raise AttributeError(name)
 
@@ -313,15 +306,16 @@ class ObjectClass:
             self.__my_bases__ = [builtin_object]
             self.__my_mro__ = c3(self)
             self.__my_class__ = my_typ
-            value = Value()
-            value.inject_type(SpecialFunctionObject(func=__init__))
-            self.__my_dict__.write_value(__init__.__name__, value)
-            value = Value()
-            value.inject_type(SpecialFunctionObject(func=__getattribute__))
-            self.__my_dict__.write_value(__getattribute__.__name__, value)
-            value = Value()
-            value.inject_type(SpecialFunctionObject(func=__getattribute__))
-            self.__my_dict__.write_value(__setattr__.__name__, value)
+            self.__my_dict__.write_value(
+                __init__.__name__, SpecialFunctionObject(func=__init__)
+            )
+            self.__my_dict__.write_value(
+                __getattribute__.__name__, SpecialFunctionObject(func=__getattribute__)
+            )
+            self.__my_dict__.write_value(
+                __setattr__.__name__, SpecialFunctionObject(func=__getattribute__)
+            )
+            self.__my_dict__.write_value("__new__", constructor)
         return cls.instance
 
     def __le__(self, other):
@@ -458,9 +452,20 @@ class CustomClass:
         return custom_class
 
 
-class InstanceWithoutAddress:
-    def __init__(self, cls):
-        self.__my_class__ = cls
+class Constructor:
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, "instance"):
+            cls.instance = object.__new__(cls)
+        return cls.instance
+
+    def __call__(self, address, cls):
+        return Instance(address=address, cls=cls)
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
 
 
 class Instance:
@@ -535,7 +540,7 @@ class Value:
     def __init__(self, typ=None):
         self.type_dict: Dict | TOP = {}
         if typ is not None:
-            self.type_dict[typ.uuid] = typ
+            self.type_dict[typ.__my_uuid__] = typ
 
     def __bool__(self):
         if isinstance(self.type_dict, dict) and self.type_dict:
@@ -723,6 +728,7 @@ class Heap:
         return copied
 
 
+constructor = Constructor()
 analysis_heap = Heap()
 my_typ = TypeClass()
 my_object = ObjectClass()
