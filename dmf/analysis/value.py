@@ -50,9 +50,9 @@ def my_hasattr(obj, name):
 my_getattr_obj = object()
 
 
-def my_getattr(obj, name, default=my_getattr_obj):
+def my_getattr(obj, name: str, default=my_getattr_obj) -> Value:
 
-    get_attribute = find_magic_method_in_mro(my_type(obj), "__getattribute__")
+    get_attribute = dunder_lookup(my_type(obj), "__getattribute__")
 
     attr_value = Value()
     try:
@@ -67,63 +67,20 @@ def my_getattr(obj, name, default=my_getattr_obj):
 
 
 def my_setattr(obj, name, value):
-    set_attr = find_name_in_mro(obj, "__setattr__")
-    set_attr(obj, name, value)
+    pass
 
 
-def find_magic_method_in_mro(typ, name):
+def dunder_lookup(typ, name: str):
+
     mro = typ.__my_mro__
 
     for cls in mro:
         if name in cls.__my_dict__:
-            return cls.__my_dict__.read_value(name)
-
+            value = cls.__my_dict__.read_value(name)
+            assert isinstance(value, Value) and len(value) == 1
+            for _, typ in value:
+                return typ
     raise AttributeError
-
-
-def find_name_in_mro(obj, name):
-    py_type = my_type(obj)
-    mro = py_type.__my_mro__
-
-    for cls in mro:
-        if name in cls.__my_dict__:
-            return cls.__my_dict__.read_value(name)
-
-    raise AttributeError
-
-
-def is_descriptor(value):
-    assert len(value) == 1, value
-    for lab, typ in value:
-        if (
-            isinstance(typ, (FunctionObject, SpecialFunctionObject))
-            or my_hasattr(typ, "__get__")
-            or my_hasattr(typ, "__set__")
-            or my_hasattr(typ, "__delete__")
-        ):
-            return True
-    return False
-
-
-def is_nondata_descriptor(value):
-    assert len(value) == 1, value
-    for lab, typ in value:
-        if isinstance(typ, (FunctionObject, SpecialFunctionObject)) or my_hasattr(
-            typ, "__get__"
-        ):
-            return True
-    return False
-
-
-def is_data_descriptor(value):
-    assert len(value) == 1, value
-    for lab, typ in value:
-        if isinstance(typ, (FunctionObject, SpecialFunctionObject)) or my_hasattr(
-            typ, "__get__"
-        ):
-            if my_hasattr(typ, "__set__") or my_hasattr(typ, "__delete__"):
-                return True
-    return False
 
 
 # Namespace[Var|str, Value]
@@ -216,7 +173,22 @@ class TypeClass:
                 raise AttributeError(name)
 
             def __setattr__(cls, name, value):
-                cls.__my_dict__.write_value(name, value)
+                type_of_self = my_type(cls)
+                cls_var: Value = my_getattr(type_of_self, name, None)
+                if cls_var is not None:
+                    data_desc = Value()
+                    assert len(cls_var) == 1, cls_var
+                    for _, typ in cls_var:
+                        if my_hasattr(typ, "__set__"):
+                            desc_get = my_getattr(typ, "__set__")
+                            data_desc.inject_value(desc_get)
+                    return data_desc
+
+                if hasattr(self, "__my_dict__"):
+                    self.__my_dict__.write_value(name, value)
+                    return None
+                else:
+                    raise NotImplementedError
 
             self = cls.instance
             self.__my_uuid__ = id(self)
@@ -252,53 +224,58 @@ class ObjectClass:
                 return self
 
             def __getattribute__(self, name):
-                try:
-                    name_value = find_name_in_mro(self, name)
-                except AttributeError:
-                    logger.debug(f"No class var {name}")
-                else:
-                    if is_data_descriptor(name_value):
-                        assert False, name_value
-                        data_desc = my_getattr(name_value, "__get__")
-                        return data_desc
-                    if "__my_dict__" in self.__dict__ and name in self.__my_dict__:
-                        return self.__my_dict__.read_value(name)
-                    if is_nondata_descriptor(name_value):
-                        res = Value()
-                        for lab, typ in name_value:
-                            if isinstance(self, Instance) and isinstance(
-                                typ, FunctionObject
-                            ):
-                                res.inject_type(
-                                    MethodObject(instance=self, function=typ)
-                                )
-                            elif isinstance(self, Instance) and isinstance(
-                                typ, SpecialFunctionObject
-                            ):
-                                res.inject_type(
-                                    SpecialMethodObject(instance=self, function=typ)
-                                )
-                            else:
-                                res.inject_type(typ)
-                        return res
-                    if name_value is not None:
-                        return name_value
+                type_of_self = my_type(self)
+                cls_var: Value = my_getattr(type_of_self, name, None)
+                if cls_var is not None:
+                    data_desc = Value()
+                    assert len(cls_var) == 1, cls_var
+                    for _, typ in cls_var:
+                        if my_hasattr(typ, "__get__") and (
+                            my_hasattr(typ, "__set__") or my_hasattr(typ, "__delete__")
+                        ):
+                            desc_get = my_getattr(typ, "__get__")
+                            data_desc.inject_value(desc_get)
+                    return data_desc
 
-                    raise AttributeError(name)
+                if hasattr(self, "__my_dict__") and name in self.__my_dict__:
+                    return self.__my_dict__.read_value(name)
+
+                if cls_var is not None:
+                    non_data_desc = Value()
+                    assert len(cls_var) == 1, cls_var
+                    for _, typ in cls_var:
+                        if my_hasattr(typ, "__get__"):
+                            desc_get = my_getattr(typ, "__get__")
+                            for _, getter in desc_get:
+                                if isinstance(getter, SpecialFunctionObject):
+                                    res = getter(typ, self)
+                                else:
+                                    res = getter
+                                non_data_desc.inject_value(res)
+                    return non_data_desc
+
+                if cls_var is not None:
+                    return cls_var
+
+                raise AttributeError(name)
 
             def __setattr__(self, name, value):
                 type_of_self = my_type(self)
-                cls_value = find_name_in_mro(type_of_self, name)
-                if cls_value is not None and is_data_descriptor(cls_value):
+                cls_var: Value = my_getattr(type_of_self, name, None)
+                if cls_var is not None:
                     data_desc = Value()
-                    for lab, typ in cls_value:
-                        tmp = my_getattr(typ, "__set__")
-                        data_desc.inject_value(tmp)
+                    assert len(cls_var) == 1, cls_var
+                    for _, typ in cls_var:
+                        if my_hasattr(typ, "__set__"):
+                            desc_get = my_getattr(typ, "__set__")
+                            data_desc.inject_value(desc_get)
                     return data_desc
-                if isinstance(self, Instance):
-                    analysis_heap.write_field_to_heap(self, name, value)
-                else:
+
+                if hasattr(self, "__my_dict__"):
                     self.__my_dict__.write_value(name, value)
+                    return None
+                else:
+                    raise NotImplementedError
 
             self = cls.instance
             self.__my_uuid__ = id(self)
@@ -307,15 +284,17 @@ class ObjectClass:
             self.__my_mro__ = c3(self)
             self.__my_class__ = my_typ
             self.__my_dict__.write_value(
-                __init__.__name__, SpecialFunctionObject(func=__init__)
+                __init__.__name__, Value(SpecialFunctionObject(func=__init__))
             )
             self.__my_dict__.write_value(
-                __getattribute__.__name__, SpecialFunctionObject(func=__getattribute__)
+                __getattribute__.__name__,
+                Value(SpecialFunctionObject(func=__getattribute__)),
             )
             self.__my_dict__.write_value(
-                __setattr__.__name__, SpecialFunctionObject(func=__getattribute__)
+                __setattr__.__name__,
+                Value(SpecialFunctionObject(func=__getattribute__)),
             )
-            self.__my_dict__.write_value("__new__", constructor)
+            self.__my_dict__.write_value("__new__", Value(constructor))
         return cls.instance
 
     def __le__(self, other):
@@ -334,8 +313,13 @@ class FunctionClass:
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
 
-            def __get__(self, instance, owner):
-                pass
+            def __get__(self, instance, owner=None):
+                if instance is None:
+                    return self
+                if isinstance(self, FunctionObject):
+                    return MethodObject(instance=instance, function=self)
+                elif isinstance(self, SpecialFunctionObject):
+                    return SpecialMethodObject(instance=instance, function=self)
 
             self = cls.instance
             self.__my_uuid__ = id(self)
@@ -343,7 +327,9 @@ class FunctionClass:
             self.__my_mro__ = c3(self)
             self.__my_class__ = my_typ
             self.__my_dict__ = Namespace()
-            self.__my_dict__[__get__.__name__] = __get__
+            self.__my_dict__.write_value(
+                __get__.__name__, Value(SpecialFunctionObject(func=__get__))
+            )
         return cls.instance
 
     def __le__(self, other: FunctionClass):
@@ -456,6 +442,7 @@ class Constructor:
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, "instance"):
             cls.instance = object.__new__(cls)
+            cls.instance.__my_uuid__ = id(cls.instance)
         return cls.instance
 
     def __call__(self, address, cls):

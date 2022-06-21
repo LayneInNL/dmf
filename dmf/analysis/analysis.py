@@ -35,7 +35,7 @@ from dmf.analysis.value import (
     SpecialFunctionObject,
     MethodObject,
     SpecialMethodObject,
-    find_magic_method_in_mro,
+    dunder_lookup,
     Constructor,
 )
 from dmf.analysis.value import (
@@ -369,14 +369,14 @@ class Analysis(Base):
         call_lab, call_ctx = program_point
         return_lab = self.get_return_label(call_lab)
         addr = record(call_lab, call_ctx)
-        new_method = find_magic_method_in_mro(typ, "__new__")
+        new_method = dunder_lookup(typ, "__new__")
         if isinstance(new_method, Constructor):
             instance = new_method(addr, typ)
         elif isinstance(new_method, FunctionObject):
             assert False
         additional_values = Value()
 
-        init_function = find_magic_method_in_mro(typ, "__init__")
+        init_function = dunder_lookup(typ, "__init__")
         if isinstance(init_function, FunctionObject):
             entry_lab, exit_lab = init_function.__my_code__
             inter_flow = (
