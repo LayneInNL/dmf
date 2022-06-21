@@ -52,7 +52,7 @@ my_getattr_obj = object()
 
 def my_getattr(obj, name, default=my_getattr_obj):
 
-    get_attribute = find_magic_method_in_mro(obj, "__getattribute__")
+    get_attribute = find_magic_method_in_mro(my_type(obj), "__getattribute__")
 
     attr_value = Value()
     try:
@@ -689,39 +689,6 @@ class Heap:
 
     def write_field_to_heap(self, instance: Instance, field: str, value: Value):
         self.singletons[instance][Var(field, Namespace_Local)] = value
-
-    # function
-    def read_field_from_instance(self, ins, field: str):
-        if field in self.singletons[ins]:
-            var_scope, var_value = self.singletons[ins].read_scope_and_value_by_name(
-                field
-            )
-            return var_value
-        else:
-            return self.read_field_from_class(ins, field)
-
-    def read_field_from_class(self, instance, field: str, index=0):
-        cls_type = instance.cls
-        cls_mro = cls_type.mro
-        considered_cls_mro = cls_mro[index:]
-        for typ in considered_cls_mro:
-            try:
-                var_scope, var_value = typ.getattr(field)
-                assert var_scope == Namespace_Local
-            except AttributeError:
-                pass
-            else:
-                new_value = Value()
-                for idx, field_typ in var_value:
-                    if isinstance(field_typ, FunctionObject):
-                        method_type = MethodObject(
-                            instance, field_typ, field_typ.module
-                        )
-                        new_value.inject_type(method_type)
-                    else:
-                        new_value.type_dict[idx] = field_typ
-                return new_value
-        return AttributeError(field)
 
     def copy(self):
         copied = Heap(self)

@@ -37,3 +37,4 @@ a = "str"
 # a.b = 1
 b = 2
 c = a * b
+x = y.z
