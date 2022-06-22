@@ -19,3 +19,5 @@ class Test:
 
 
 t = Test()
+t.x = 1
+Test.x = False

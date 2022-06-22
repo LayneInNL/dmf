@@ -37,6 +37,7 @@ from dmf.analysis.value import (
     SpecialMethodObject,
     dunder_lookup,
     Constructor,
+    my_setattr,
 )
 from dmf.analysis.value import (
     Value,
@@ -472,13 +473,9 @@ class Analysis(Base):
             field: str = target.attr
             for lab, typ in value:
                 if isinstance(typ, Instance):
-                    analysis_heap.write_field_to_heap(typ, field, rhs_value)
+                    my_setattr(typ, field, rhs_value)
                 elif isinstance(typ, CustomClass):
-                    pass
-                elif isinstance(typ, FunctionObject):
-                    pass
-                elif isinstance(typ, (Int, Bool, NoneType)):
-                    pass
+                    my_setattr(typ, field, rhs_value)
                 else:
                     assert False
         else:

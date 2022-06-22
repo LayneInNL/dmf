@@ -67,7 +67,10 @@ def my_getattr(obj, name: str, default=my_getattr_obj) -> Value:
 
 
 def my_setattr(obj, name, value):
-    pass
+    set_attr = dunder_lookup(my_type(obj), "__setattr__")
+    res = set_attr(obj, name, value)
+    if res is not None:
+        raise NotImplementedError
 
 
 def dunder_lookup(typ, name: str):
@@ -184,8 +187,8 @@ class TypeClass:
                             data_desc.inject_value(desc_get)
                     return data_desc
 
-                if hasattr(self, "__my_dict__"):
-                    self.__my_dict__.write_value(name, value)
+                if hasattr(cls, "__my_dict__"):
+                    cls.__my_dict__.write_value(name, value)
                     return None
                 else:
                     raise NotImplementedError
@@ -197,10 +200,11 @@ class TypeClass:
             self.__my_mro__ = c3(self)
             self.__my_class__ = self
             self.__my_dict__.write_value(
-                __getattribute__.__name__, SpecialFunctionObject(func=__getattribute__)
+                __getattribute__.__name__,
+                Value(SpecialFunctionObject(func=__getattribute__)),
             )
             self.__my_dict__.write_value(
-                __setattr__.__name__, SpecialFunctionObject(func=__getattribute__)
+                __setattr__.__name__, Value(SpecialFunctionObject(func=__setattr__))
             )
         return cls.instance
 
@@ -271,11 +275,8 @@ class ObjectClass:
                             data_desc.inject_value(desc_get)
                     return data_desc
 
-                if hasattr(self, "__my_dict__"):
-                    self.__my_dict__.write_value(name, value)
-                    return None
-                else:
-                    raise NotImplementedError
+                analysis_heap.write_field_to_heap(self, name, value)
+                return None
 
             self = cls.instance
             self.__my_uuid__ = id(self)
@@ -292,7 +293,7 @@ class ObjectClass:
             )
             self.__my_dict__.write_value(
                 __setattr__.__name__,
-                Value(SpecialFunctionObject(func=__getattribute__)),
+                Value(SpecialFunctionObject(func=__setattr__)),
             )
             self.__my_dict__.write_value("__new__", Value(constructor))
         return cls.instance
@@ -376,6 +377,9 @@ class SpecialFunctionObject:
 
     def __call__(self, *args, **kwargs):
         return self.__my_code__(*args, **kwargs)
+
+    def __repr__(self):
+        return self.__my_name__
 
 
 class MethodObject:
