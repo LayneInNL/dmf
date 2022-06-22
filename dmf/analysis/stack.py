@@ -28,17 +28,17 @@ from dmf.analysis.prim import (
     Float,
     Complex,
 )
+from dmf.analysis.utils import Namespace_Global, Namespace_Nonlocal, Namespace_Local
 from dmf.analysis.value import (
     Value,
     Namespace,
     Var,
-    Namespace_Local,
-    Namespace_Global,
-    Namespace_Nonlocal,
     CustomClass,
     my_getattr,
     Instance,
     analysis_heap,
+    LocalVar,
+    value_top_builder,
 )
 from dmf.log.logger import logger
 
@@ -58,9 +58,7 @@ class Frame:
         frame = Frame(
             copied_f_locals, copied_f_back, copied_f_globals, copied_f_builtins
         )
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = frame
+        memo[id(self)] = frame
         return frame
 
     # compare f_locals, f_globals and f_builtins
@@ -77,39 +75,38 @@ class Frame:
     def __repr__(self):
         return self.f_locals.__repr__()
 
-    def read_special_attribute(self, var_name: str):
-        return self.f_locals[var_name]
-
-    def read_var(self, var_name: str, scope: str = "local") -> Value:
-
+    def read_var(self, name: str) -> Value:
         # Implement LEGB rule
-        if var_name in self.f_locals:
-            var_scope, var_value = self.f_locals.read_scope_and_value_by_name(var_name)
-            if var_scope == Namespace_Local:
-                return var_value
-            elif var_scope == Namespace_Nonlocal:
-                return self.read_nonlocal_frame(var_name)
-            elif var_scope == Namespace_Global:
-                return self.read_global_frame(var_name)
-
-        # use global keyword, then assign a value to the nonexistent var
-        if scope == Namespace_Global:
-            return self.read_global_with_default(var_name)
-
         try:
-            return self.read_nonlocal_frame(var_name)
+            return self._read_local_namespace(name)
         except AttributeError:
             pass
 
         try:
-            return self.read_global_frame(var_name)
+            return self._read_nonlocal_namespace(name)
         except AttributeError:
             pass
 
-        raise AttributeError(var_name)
+        try:
+            return self._read_global_namespace(name)
+        except AttributeError:
+            pass
+
+        raise AttributeError(name)
+
+    def _read_local_namespace(self, name: str) -> Value:
+        if name in self.f_locals:
+            var = self.f_locals.read_var(name)
+            if isinstance(var, LocalVar):
+                return self.f_locals.read_value(name)
+            else:
+                val = self.f_locals.read_value(name)
+                assert isinstance(val, Namespace)
+                return val.read_value(name)
+        raise AttributeError
 
     # find one with (var_name, local)
-    def read_nonlocal_frame(self, var_name: str) -> Value:
+    def _read_nonlocal_namespace(self, name: str) -> Value:
         parent_frame: Frame = self.f_back
         while (
             # not the last frame
@@ -119,68 +116,69 @@ class Frame:
             # parent_frame.f_locals itself should not be module namespace
             and parent_frame.f_locals is not self.f_globals
         ):
-            if var_name in parent_frame.f_locals:
-                (
-                    var_scope,
-                    var_value,
-                ) = parent_frame.f_locals.read_scope_and_value_by_name(var_name)
-                if var_scope != "local":
-                    parent_frame = parent_frame.f_back
+            if name in parent_frame.f_locals:
+                var = parent_frame.f_locals.read_var(name)
+                if isinstance(var, LocalVar):
+                    return parent_frame.f_locals.read_value(name)
                 else:
-                    return var_value
+                    parent_frame = parent_frame.f_back
             else:
                 parent_frame = parent_frame.f_back
-        raise AttributeError(var_name)
+        raise AttributeError(name)
 
-    def read_global_frame(self, var_name: str) -> Value:
-        if var_name in self.f_globals:
-            var_scope, var_value = self.f_globals.read_scope_and_value_by_name(var_name)
-            if var_scope != "local":
-                raise AttributeError(var_name)
+    def _read_global_namespace(self, name: str) -> Value:
+        if name in self.f_globals:
+            var = self.f_globals.read_var(name)
+            if isinstance(var, LocalVar):
+                return self.f_globals.read_value(name)
             else:
-                return var_value
-        raise AttributeError(var_name)
+                raise AttributeError(name)
+        raise AttributeError(name)
 
-    def read_global_with_default(self, var_name: str):
-        var: Var = Var(var_name, "local")
-        return self.f_globals[var]
-
-    def write_var(self, var_name: str, value: Value, scope: str):
-        if var_name in self.f_locals:
-            var_scope, pre_value = self.f_locals.read_scope_and_value_by_name(var_name)
-            var: Var = Var(var_name, var_scope)
-            if var_scope == "local":
-                if self.f_locals is self.f_globals:
-                    self.f_locals[var].inject_value(value)
-                else:
-                    self.f_locals[var] = value
-            elif var_scope == Namespace_Nonlocal:
-                new_var = Var(var_name, Namespace_Local)
-                parent_frame: Frame = self.f_back
-                while (
-                    parent_frame is not None
-                    and parent_frame.f_globals is self.f_globals
-                ):
-                    if var_name in parent_frame.f_locals:
-                        (
-                            var_scope,
-                            _,
-                        ) = parent_frame.f_locals.read_scope_and_value_by_name(var_name)
-                        if var_scope != Namespace_Local:
-                            parent_frame = parent_frame.f_back
-                        else:
-                            parent_frame.f_locals[new_var] = value
-                    else:
-                        parent_frame = parent_frame.f_back
-            elif var_scope == Namespace_Global:
-                new_var: Var = Var(var_name, Namespace_Local)
-                self.f_globals[new_var] = value
+    def write_var(self, name: str, scope: str, value: Value):
+        if name in self.f_locals:
+            var = self.f_locals.read_var(name)
+            if isinstance(var, LocalVar):
+                self.f_locals.write_local_value(name, value)
+                # if self.f_locals is self.f_globals:
+                #     self.f_locals[var].inject_value(value)
+                # else:
+                #     self.f_locals[var] = value
+            else:
+                val = self.f_locals.read_value(name)
+                assert isinstance(val, Namespace)
+                val.write_local_value(name, value)
         else:
-            var: Var = Var(var_name, scope)
-            self.f_locals[var] = value
+            if scope == Namespace_Local:
+                self.f_locals.write_local_value(name, value)
+            elif scope == Namespace_Nonlocal:
+                namespace = self._find_nonlocal_namespace(name)
+                self.f_locals.write_nonlocal_value(name, namespace)
+            elif scope == Namespace_Global:
+                namespace = self._find_global_namespace(name)
+                self.f_locals.write_global_value(name, namespace)
 
-    def write_special_var(self, var_name: str, value):
-        self.f_locals[var_name] = value
+    def _find_nonlocal_namespace(self, name: str) -> Namespace:
+        parent_frame: Frame = self.f_back
+        while parent_frame is not None and parent_frame.f_globals is self.f_globals:
+            if name in parent_frame.f_locals:
+                (
+                    var,
+                    _,
+                ) = parent_frame.f_locals.read_var(name)
+                if isinstance(var, LocalVar):
+                    return parent_frame.f_locals
+                else:
+                    parent_frame = parent_frame.f_back
+            else:
+                parent_frame = parent_frame.f_back
+        raise AttributeError
+
+    def _find_global_namespace(self, name: str) -> Namespace:
+        if name not in self.f_globals:
+            self.f_globals.write_local_value(name, value_top_builder())
+
+        return self.f_globals
 
 
 class Stack:
@@ -200,9 +198,7 @@ class Stack:
             for f in self.frames:
                 copied_frame = deepcopy(f, memo)
                 stack.frames.append(copied_frame)
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = stack
+        memo[id(self)] = stack
 
         for name, module in dmf.share.analysis_modules.items():
             namespace = module.namespace
@@ -250,26 +246,20 @@ class Stack:
     def top_frame(self) -> Frame:
         return self.frames[-1]
 
-    def top_frame_contains(self, name):
+    def top_namespace_contains(self, name):
         return name in self.top_frame().f_locals
 
-    def get_top_frame_module(self):
-        return self.top_frame().f_globals["__name__"]
+    def read_module(self):
+        return self.top_frame().f_globals.read_value("__name__")
 
-    def get_top_frame_package(self):
-        return self.top_frame().f_globals["__package__"]
+    def read_package(self):
+        return self.top_frame().f_globals.read_value("__package__")
 
-    def read_var(self, var: str, scope: str = Namespace_Local):
-        return self.top_frame().read_var(var, scope)
+    def read_var(self, var: str):
+        return self.top_frame().read_var(var)
 
-    def read_special_attribute(self, var: str):
-        return self.top_frame().read_special_attribute(var)
-
-    def write_var(self, var: str, value: Value, scope: str = Namespace_Local):
-        self.top_frame().write_var(var, value, scope)
-
-    def write_special_var(self, var: str, value):
-        self.top_frame().write_special_var(var, value)
+    def write_var(self, var: str, scope: str, value: Value):
+        self.top_frame().write_var(var, scope, value)
 
     def next_ns(self):
         curr_frame = self.top_frame()
@@ -288,7 +278,7 @@ class Stack:
         self.push_frame(new_frame)
 
     def check_module_diff(self, new_module_name=None):
-        curr_module_name = self.get_top_frame_module()
+        curr_module_name = self.read_module()
         if curr_module_name != new_module_name:
             self.top_frame().f_globals = dmf.share.analysis_modules[
                 new_module_name
@@ -303,22 +293,17 @@ class Stack:
                 value.inject_type(Float())
             elif isinstance(expr.n, complex):
                 value.inject_type(Complex())
-            return value
         elif isinstance(expr, ast.NameConstant):
             if expr.value is None:
                 value.inject_type(NoneType())
             else:
                 value.inject_type(Bool())
-            return value
         elif isinstance(expr, (ast.Str, ast.JoinedStr)):
             value.inject_type(Str())
-            return value
         elif isinstance(expr, ast.Bytes):
             value.inject_type(Bytes())
-            return value
         elif isinstance(expr, ast.Compare):
             value.inject_type(Bool())
-            return value
         elif isinstance(expr, ast.Name):
             old_value = self.read_var(expr.id)
             new_value = copy(old_value)
@@ -361,6 +346,7 @@ class Stack:
         else:
             logger.warn(expr)
             assert False
+        return value
 
 
 def op2dunder(operator: ast.operator):

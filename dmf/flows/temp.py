@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-Unused_Name = "00_unused_name"
+Unused_Name = "UNUSED_NAME"
 
 
 class RandomVariableName:

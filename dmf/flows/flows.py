@@ -389,7 +389,7 @@ class CFGVisitor(ast.NodeVisitor):
         new_expr_sequence = self.visit(node.value)
 
         if len(new_expr_sequence) == 1:
-            if isinstance(node.value, (ast.Call, ast.Attribute)):
+            if isinstance(node.value, ast.Call):
                 add_stmt(self.curr_block, node.value)
                 return_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
                 self.add_call_return_flows(self.curr_block.bid, return_block.bid)

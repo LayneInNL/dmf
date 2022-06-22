@@ -15,10 +15,18 @@ from __future__ import annotations
 
 from collections import defaultdict
 from copy import deepcopy
-from typing import Tuple, Dict, DefaultDict
+from typing import Dict, DefaultDict
 
 import dmf.share
 from dmf.analysis.c3 import builtin_object, c3
+from dmf.analysis.utils import (
+    DunderVar,
+    LocalVar,
+    Var,
+    NonlocalVar,
+    GlobalVar,
+    Namespace_Local,
+)
 from dmf.log.logger import logger
 
 
@@ -27,11 +35,6 @@ def _func():
 
 
 function = type(_func)
-
-
-Namespace_Local = "local"
-Namespace_Nonlocal = "nonlocal"
-Namespace_Global = "global"
 
 
 def my_type(obj):
@@ -99,7 +102,7 @@ class Namespace(defaultdict):
     # So we have to collect all variables
     def __le__(self, other):
         variables = filter(
-            lambda elt: not isinstance(elt, str), self.keys() | other.keys()
+            lambda elt: not isinstance(elt, DunderVar), self.keys() | other.keys()
         )
 
         for var in variables:
@@ -109,7 +112,7 @@ class Namespace(defaultdict):
 
     def __iadd__(self, other):
         variables = filter(
-            lambda elt: not isinstance(elt, str), self.keys() | other.keys()
+            lambda elt: not isinstance(elt, DunderVar), self.keys() | other.keys()
         )
         for var in variables:
             self[var] += other[var]
@@ -118,12 +121,8 @@ class Namespace(defaultdict):
     def __contains__(self, name: str):
         # __xxx__ and Var
         for var in self:
-            if isinstance(var, str):
-                if var == name:
-                    return True
-            if isinstance(var, Var):
-                if name == var.name:
-                    return True
+            if name == var.name:
+                return True
         return False
 
     def __deepcopy__(self, memo):
@@ -134,31 +133,30 @@ class Namespace(defaultdict):
             copied_value = deepcopy(value, memo)
             namespace[copied_var] = copied_value
 
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = namespace
+        memo[id(self)] = namespace
         return namespace
 
-    def read_scope_and_value_by_name(self, var_name: str) -> Tuple[str, Value]:
-        for var, v_value in self.items():
-            if isinstance(var, str):
-                continue
-            if var_name == var.name:
-                return var.scope, v_value
-        raise AttributeError(var_name)
+    def read_var(self, name: str) -> Var:
+        for var, _ in self.items():
+            if name == var.name:
+                return var
 
-    def read_value(self, name):
-        for var, v_value in self.items():
-            if isinstance(var, str):
-                if name == var:
-                    return v_value
-            if isinstance(var, Var):
-                if name == var.name:
-                    return v_value
-        raise AttributeError(name)
+    def read_value(self, name: str) -> Value:
+        for var, val in self.items():
+            if name == var.name:
+                return val
 
-    def write_value(self, name, value):
-        self[name] = value
+    def write_local_value(self, name: str, value: Value):
+        self[LocalVar(name)] = value
+
+    def write_nonlocal_value(self, name: str, ns: Namespace):
+        self[NonlocalVar(name)] = ns
+
+    def write_global_value(self, name: str, ns: Namespace):
+        self[GlobalVar(name)] = ns
+
+    def write_dunder_value(self, name: str, value):
+        self[DunderVar(name)] = value
 
 
 class TypeClass:
@@ -188,7 +186,7 @@ class TypeClass:
                     return data_desc
 
                 if hasattr(cls, "__my_dict__"):
-                    cls.__my_dict__.write_value(name, value)
+                    cls.__my_dict__.write_local_value(name, value)
                     return None
                 else:
                     raise NotImplementedError
@@ -199,11 +197,11 @@ class TypeClass:
             self.__my_bases__ = [builtin_object]
             self.__my_mro__ = c3(self)
             self.__my_class__ = self
-            self.__my_dict__.write_value(
+            self.__my_dict__.write_local_value(
                 __getattribute__.__name__,
                 Value(SpecialFunctionObject(func=__getattribute__)),
             )
-            self.__my_dict__.write_value(
+            self.__my_dict__.write_local_value(
                 __setattr__.__name__, Value(SpecialFunctionObject(func=__setattr__))
             )
         return cls.instance
@@ -284,18 +282,18 @@ class ObjectClass:
             self.__my_bases__ = [builtin_object]
             self.__my_mro__ = c3(self)
             self.__my_class__ = my_typ
-            self.__my_dict__.write_value(
+            self.__my_dict__.write_local_value(
                 __init__.__name__, Value(SpecialFunctionObject(func=__init__))
             )
-            self.__my_dict__.write_value(
+            self.__my_dict__.write_local_value(
                 __getattribute__.__name__,
                 Value(SpecialFunctionObject(func=__getattribute__)),
             )
-            self.__my_dict__.write_value(
+            self.__my_dict__.write_local_value(
                 __setattr__.__name__,
                 Value(SpecialFunctionObject(func=__setattr__)),
             )
-            self.__my_dict__.write_value("__new__", Value(constructor))
+            self.__my_dict__.write_local_value("__new__", Value(constructor))
         return cls.instance
 
     def __le__(self, other):
@@ -328,7 +326,7 @@ class FunctionClass:
             self.__my_mro__ = c3(self)
             self.__my_class__ = my_typ
             self.__my_dict__ = Namespace()
-            self.__my_dict__.write_value(
+            self.__my_dict__.write_local_value(
                 __get__.__name__, Value(SpecialFunctionObject(func=__get__))
             )
         return cls.instance
@@ -439,6 +437,7 @@ class CustomClass:
         custom_class = CustomClass(
             uuid=uuid, name=name, module=module, bases=bases, namespace=d
         )
+        memo[id(self)] = custom_class
         return custom_class
 
 
@@ -487,13 +486,13 @@ class ModuleType:
         self.package = package
         self.file = file
         self.namespace = Namespace()
-        self.namespace["__name__"] = name
-        self.namespace["__package__"] = package
-        self.namespace["__file__"] = file
+        self.namespace.write_dunder_value("__name__", name)
+        self.namespace.write_dunder_value("__package__", package)
+        self.namespace.write_dunder_value("__file__", file)
         self.entry_label, self.exit_label = dmf.share.create_and_update_cfg(self.file)
 
-    def getattr(self, name: str) -> Tuple[str, Value]:
-        return self.namespace.read_scope_and_value_by_name(name)
+    def getattr(self, name: str) -> Value:
+        return self.namespace.read_value(name)
 
 
 class SuperIns:
@@ -516,14 +515,6 @@ class SuperIns:
 
     def __iadd__(self, other: SuperIns):
         return self
-
-
-class _TOP:
-    def copy(self):
-        return self
-
-
-TOP = _TOP()
 
 
 # Either VALUE_TOP or have some values
@@ -604,33 +595,12 @@ class Value:
                 self.type_dict[lab] = typ
 
 
-class Var:
-    def __init__(self, name: str, scope: str = Namespace_Local):
-        self.name = name
-        # scope could be local, nonlocal, global
-        self.scope = scope
-
-    def __repr__(self):
-        return "({},{})".format(self.name, self.scope)
-
-    def __hash__(self):
-        return hash(self.name)
-
-    def __eq__(self, other: Var):
-        return self.name == other.name
+TOP = "VALUE_TOP"
 
 
-def value_top_builder() -> Value:
-    value = Value()
+def value_top_builder(value=Value()) -> Value:
     value.type_dict = TOP
     return value
-
-
-Unused_Name = "00_unused_name"
-SELF_FLAG = "self"
-INIT_FLAG = "00_init_flag"
-INIT_FLAG_VALUE = value_top_builder()
-RETURN_FLAG = "00__return__flag"
 
 
 class Heap:
@@ -691,3 +661,4 @@ analysis_heap = Heap()
 my_typ = TypeClass()
 my_object = ObjectClass()
 my_function = FunctionClass()
+mock_value = Value()
