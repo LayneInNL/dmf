@@ -16,3 +16,7 @@
 class Test:
     def __init__(self):
         pass
+
+
+Test.x = 1
+a = Test.x

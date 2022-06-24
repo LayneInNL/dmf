@@ -28,8 +28,8 @@ from dmf.analysis.prim import (
     Float,
     Complex,
 )
-from dmf.analysis.utils import Namespace_Global, Namespace_Nonlocal, Namespace_Local
-from dmf.analysis.value import (
+from dmf.analysis.variables import Namespace_Global, Namespace_Nonlocal, Namespace_Local
+from dmf.analysis.namespace import (
     Value,
     Namespace,
     Var,
@@ -38,7 +38,7 @@ from dmf.analysis.value import (
     Instance,
     analysis_heap,
     LocalVar,
-    value_top_builder,
+    FunctionObject,
 )
 from dmf.log.logger import logger
 
@@ -176,7 +176,7 @@ class Frame:
 
     def _find_global_namespace(self, name: str) -> Namespace:
         if name not in self.f_globals:
-            self.f_globals.write_local_value(name, value_top_builder())
+            self.f_globals.write_local_value(name, Value(top=True))
 
         return self.f_globals
 
@@ -305,14 +305,12 @@ class Stack:
         elif isinstance(expr, ast.Compare):
             value.inject_type(Bool())
         elif isinstance(expr, ast.Name):
-            old_value = self.read_var(expr.id)
-            new_value = copy(old_value)
-            return new_value
+            return self.read_var(expr.id)
         elif isinstance(expr, ast.Attribute):
             receiver_value: Value = self.compute_value_of_expr(expr.value)
             receiver_attr: str = expr.attr
             value: Value = Value()
-            for _, typ in receiver_value:
+            for typ in receiver_value:
                 if isinstance(typ, CustomClass):
                     try:
                         tmp = my_getattr(typ, receiver_attr)
@@ -323,6 +321,13 @@ class Stack:
                 elif isinstance(typ, Instance):
                     try:
                         tmp = analysis_heap.read_field_from_instance(typ, receiver_attr)
+                    except AttributeError:
+                        pass
+                    else:
+                        value.inject_value(tmp)
+                elif isinstance(typ, FunctionObject):
+                    try:
+                        tmp = my_getattr(typ, receiver_attr)
                     except AttributeError:
                         pass
                     else:

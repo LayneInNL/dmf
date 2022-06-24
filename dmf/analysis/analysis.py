@@ -21,7 +21,8 @@ from typing import Dict, Tuple, Deque, Set, List
 import dmf.share
 from dmf.analysis.prim import NoneType
 from dmf.analysis.stack import Frame, Stack, stack_bot_builder
-from dmf.analysis.utils import (
+from dmf.analysis.value import Value
+from dmf.analysis.variables import (
     Namespace_Local,
     Namespace_Nonlocal,
     Namespace_Global,
@@ -29,7 +30,7 @@ from dmf.analysis.utils import (
     POSITION_FLAG,
     INIT_FLAG,
 )
-from dmf.analysis.value import (
+from dmf.analysis.namespace import (
     ModuleType,
     analysis_heap,
     CustomClass,
@@ -43,9 +44,6 @@ from dmf.analysis.value import (
     my_setattr,
     Namespace,
     mock_value,
-)
-from dmf.analysis.value import (
-    Value,
 )
 from dmf.flows import CFG
 from dmf.flows.flows import BasicBlock
@@ -323,13 +321,13 @@ class Analysis(Base):
         else:
             has_info = True
             # iterate all types to find which is callable
-            for _, typ in value:
+            for typ in value:
                 if isinstance(typ, CustomClass):
                     self.lambda_class(program_point, typ)
                 elif isinstance(typ, FunctionObject):
-                    self.lambda_function(program_point, typ)
+                    self._lambda_function(program_point, typ)
                 elif isinstance(typ, MethodObject):
-                    self.lambda_method(program_point, typ)
+                    self._lambda_method(program_point, typ)
                 else:
                     assert False, typ
         finally:
@@ -354,7 +352,7 @@ class Analysis(Base):
 
         fake_return_stack = deepcopy(old)
         if return_stmt.id != Unused_Name:
-            fake_return_stack.write_var(return_stmt.id, value)
+            fake_return_stack.write_var(return_stmt.id, Namespace_Local, value)
         if not fake_return_stack <= old_return_next_stack:
             fake_return_stack += old_return_next_stack
             self.analysis_list[return_next_program_point] = fake_return_stack
@@ -402,10 +400,11 @@ class Analysis(Base):
 
     # unbound func call
     # func()
-    def lambda_function(self, program_point: ProgramPoint, typ: FunctionObject):
+    def _lambda_function(self, program_point: ProgramPoint, typ: FunctionObject):
         call_lab, call_ctx = program_point
-        entry_lab, exit_lab = typ.code
+        entry_lab, exit_lab = typ.__my_code__
         return_lab = self.get_return_label(call_lab)
+
         new_ctx: Ctx = merge(call_lab, None, call_ctx)
         inter_flow = (
             (call_lab, call_ctx),
@@ -416,12 +415,12 @@ class Analysis(Base):
         self.inter_flows.add(inter_flow)
         self.entry_info[(entry_lab, new_ctx)] = (None, None, typ.__my_module__)
 
-    def lambda_method(self, program_point: ProgramPoint, typ: MethodObject):
+    def _lambda_method(self, program_point: ProgramPoint, typ: MethodObject):
         call_lab, call_ctx = program_point
-        entry_lab, exit_lab = typ.code
+        entry_lab, exit_lab = typ.__my_func__.__my_code__
         return_lab = self.get_return_label(call_lab)
 
-        instance = typ.instance
+        instance = typ.__my_instance__
         new_ctx: Ctx = merge(call_lab, instance, call_ctx)
         inter_flow = (
             (call_lab, call_ctx),
@@ -430,7 +429,7 @@ class Analysis(Base):
             (return_lab, call_ctx),
         )
         self.inter_flows.add(inter_flow)
-        self.entry_info[(entry_lab, new_ctx)] = (instance, INIT_FLAG, typ.module)
+        self.entry_info[(entry_lab, new_ctx)] = (instance, None, typ.__my_module__)
 
     def transfer(self, program_point: ProgramPoint) -> Stack:
         lab, _ = program_point
@@ -467,14 +466,14 @@ class Analysis(Base):
             lhs_name: str = target.id
             new.write_var(lhs_name, Namespace_Local, rhs_value)
         elif isinstance(target, ast.Attribute):
-            assert isinstance(target.value, ast.Name)
-            lhs_name: str = target.value.id
-            value: Value = new.read_var(lhs_name)
+            value: Value = new.compute_value_of_expr(target.value)
             field: str = target.attr
-            for lab, typ in value:
+            for typ in value:
                 if isinstance(typ, Instance):
                     my_setattr(typ, field, rhs_value)
                 elif isinstance(typ, CustomClass):
+                    my_setattr(typ, field, rhs_value)
+                elif isinstance(typ, FunctionObject):
                     my_setattr(typ, field, rhs_value)
                 else:
                     assert False
@@ -542,7 +541,9 @@ class Analysis(Base):
         # we pass instance information, module name to entry labels
         instance, init_flag, module_name = self.entry_info[program_point]
         if instance:
-            new.write_var(str(0), Namespace_Local, Value(instance))
+            value = Value()
+            value.inject_type(instance)
+            new.write_var(str(0), Namespace_Local, value)
         if init_flag:
             new.write_var(INIT_FLAG, Namespace_Local, mock_value)
         if module_name:
@@ -590,7 +591,8 @@ class Analysis(Base):
         new: Stack = deepcopy(old)
 
         if not new.top_namespace_contains(RETURN_FLAG):
-            value = Value(NoneType())
+            value = Value()
+            value.inject_type(NoneType())
             new.write_var(RETURN_FLAG, Namespace_Local, value)
 
         return new
@@ -730,7 +732,8 @@ class Analysis(Base):
         func_module: str = new.read_module()
         entry_lab, exit_lab = func_cfg.start_block.bid, func_cfg.final_block.bid
 
-        value = Value(
+        value = Value()
+        value.inject_type(
             FunctionObject(
                 uuid=lab, name=func_name, module=func_module, code=(entry_lab, exit_lab)
             )
