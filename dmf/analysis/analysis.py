@@ -44,6 +44,7 @@ from dmf.analysis.namespace import (
     my_setattr,
     Namespace,
     mock_value,
+    SpecialMethodObject,
 )
 from dmf.flows import CFG
 from dmf.flows.flows import BasicBlock
@@ -204,13 +205,11 @@ class Analysis(Base):
         # init first frame
         def init_first_frame(extremal_value, module):
             global_ns = module.namespace
-            builtins_ns = None
             extremal_value.push_frame(
                 Frame(
                     f_locals=global_ns,
                     f_back=None,
                     f_globals=global_ns,
-                    f_builtins=builtins_ns,
                 )
             )
 
@@ -297,14 +296,7 @@ class Analysis(Base):
         # procedural call
         elif isinstance(stmt, ast.Call):
             assert isinstance(stmt.func, ast.Name), stmt
-            has_info = self._lambda_name(program_point, stmt.func)
-            additional_value = Value()
-            if not has_info:
-                if stmt.func.id == "object":
-                    address = record(lab, ctx)
-                    instance = Instance(address=address, cls=my_object)
-                    additional_value.inject_type(instance)
-                    self.transfer_no_edge_values(program_point, additional_value)
+            self._lambda_name(program_point, stmt.func)
 
     # deal with cases such as class xxx
     def _lambda_classdef(self, program_point: ProgramPoint):
@@ -349,38 +341,35 @@ class Analysis(Base):
                     self._lambda_function(program_point, typ)
                 elif isinstance(typ, MethodObject):
                     self._lambda_method(program_point, typ)
+                elif isinstance(typ, SpecialMethodObject):
+                    res = typ()
+                    types = Value()
+                    types.inject_type(res)
+                    if self.is_special_init_label(call_lab):
+                        ret_lab, dummy_ret_lab = self.get_init_return_label(call_lab)
+                    else:
+                        ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
+                    call_stack = self.analysis_list[program_point]
+                    dummy_return_stack = deepcopy(call_stack)
+                    dummy_return_name: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+                    dummy_return_stack.write_var(
+                        dummy_return_name.id, Namespace_Local, types
+                    )
+                    dummy_old_return_stack = self.analysis_list[
+                        (dummy_ret_lab, call_ctx)
+                    ]
+                    if not dummy_return_stack <= dummy_old_return_stack:
+                        dummy_return_stack += dummy_old_return_stack
+                        self.analysis_list[
+                            (dummy_ret_lab, call_ctx)
+                        ] = dummy_return_stack
+                        self.LAMBDA((dummy_ret_lab, call_ctx))
+                        added_flows = self.DELTA((dummy_ret_lab, call_ctx))
+                        self.work_list.extendleft(added_flows)
                 else:
                     assert False, typ
         finally:
             return has_info
-
-    def merge_no_edge_values(self, typ, value: Value):
-        value.inject_type(typ)
-
-    def transfer_no_edge_values(self, call_program_point: ProgramPoint, value: Value):
-        call_lab, call_ctx = call_program_point
-        old = self.analysis_list[call_program_point]
-
-        return_lab = self.get_func_return_label(call_lab)
-        return_stmt: ast.Name = self.get_stmt_by_label(return_lab)
-        return_program_point = (return_lab, call_ctx)
-        self.LAMBDA(return_program_point)
-        added_flows = self.DELTA(return_program_point)
-        assert len(added_flows) == 1
-
-        return_next_program_point = added_flows[0][1]
-        old_return_next_stack = self.analysis_list[return_next_program_point]
-
-        fake_return_stack = deepcopy(old)
-        if return_stmt.id != Unused_Name:
-            fake_return_stack.write_var(return_stmt.id, Namespace_Local, value)
-        if not fake_return_stack <= old_return_next_stack:
-            fake_return_stack += old_return_next_stack
-            self.analysis_list[return_next_program_point] = fake_return_stack
-            self.analyzed_program_points.add(return_next_program_point)
-            self.LAMBDA(return_next_program_point)
-            added_flows = self.DELTA(return_next_program_point)
-            self.work_list.extendleft(added_flows)
 
     # deal with class initialization
     # find __new__ and __init__ method
@@ -393,6 +382,7 @@ class Analysis(Base):
             instance = new_method(addr, typ)
             value = Value()
             value.inject_type(instance)
+
             ret_lab, dummy_ret_lab = self.get_new_return_label(call_lab)
             call_stack = self.analysis_list[program_point]
             dummy_return_stack = deepcopy(call_stack)
@@ -407,30 +397,6 @@ class Analysis(Base):
                 self.work_list.extendleft(added_flows)
         elif isinstance(new_method, FunctionObject):
             assert False
-
-        # additional_values = Value()
-        # init_function = dunder_lookup(typ, "__init__")
-        # if isinstance(init_function, FunctionObject):
-        #     entry_lab, exit_lab = init_function.__my_code__
-        #     inter_flow = (
-        #         (call_lab, call_ctx),
-        #         (entry_lab, call_ctx),
-        #         (exit_lab, call_ctx),
-        #         (return_lab, call_ctx),
-        #     )
-        #     self.inter_flows.add(inter_flow)
-        #     self.entry_info[(entry_lab, call_ctx)] = (
-        #         instance,
-        #         INIT_FLAG,
-        #         init_function.__my_module__,
-        #     )
-        # elif isinstance(init_function, SpecialFunctionObject):
-        #     res = init_function(instance)
-        #     self.merge_no_edge_values(res, additional_values)
-        # else:
-        #     logger.critical(new_method)
-        #     assert False
-        # self.transfer_no_edge_values(program_point, additional_values)
 
     # unbound func call
     # func()

@@ -14,10 +14,21 @@
 from __future__ import annotations
 
 import ast
-from copy import deepcopy, copy
+from copy import deepcopy
 from typing import List
 
 import dmf.share
+from dmf.analysis.namespace import (
+    Value,
+    Namespace,
+    Var,
+    CustomClass,
+    my_getattr,
+    Instance,
+    LocalVar,
+    FunctionObject,
+    builtin_namespace,
+)
 from dmf.analysis.prim import (
     BUILTIN_TYPES,
     Int,
@@ -29,35 +40,22 @@ from dmf.analysis.prim import (
     Complex,
 )
 from dmf.analysis.variables import Namespace_Global, Namespace_Nonlocal, Namespace_Local
-from dmf.analysis.namespace import (
-    Value,
-    Namespace,
-    Var,
-    CustomClass,
-    my_getattr,
-    Instance,
-    analysis_heap,
-    LocalVar,
-    FunctionObject,
-)
 from dmf.log.logger import logger
 
 
 class Frame:
-    def __init__(self, f_locals=None, f_back=None, f_globals=None, f_builtins=None):
+    def __init__(self, f_locals=None, f_back=None, f_globals=None):
         self.f_locals: Namespace[Var, Value] = f_locals
         self.f_back: Frame | None = f_back
         self.f_globals: Namespace[Var, Value] = f_globals
-        self.f_builtins: Namespace[Var, Value] = f_builtins
+        self.f_builtins: Namespace[Var, Value] = builtin_namespace
 
     def __deepcopy__(self, memo):
         copied_f_locals = deepcopy(self.f_locals, memo)
         copied_f_back = deepcopy(self.f_back, memo)
         copied_f_globals = deepcopy(self.f_globals, memo)
-        copied_f_builtins = deepcopy(self.f_builtins, memo)
-        frame = Frame(
-            copied_f_locals, copied_f_back, copied_f_globals, copied_f_builtins
-        )
+        # copied_f_builtins = deepcopy(self.f_builtins, memo)
+        frame = Frame(copied_f_locals, copied_f_back, copied_f_globals)
         memo[id(self)] = frame
         return frame
 
@@ -89,6 +87,11 @@ class Frame:
 
         try:
             return self._read_global_namespace(name)
+        except AttributeError:
+            pass
+
+        try:
+            return self._read_builtin_namespace(name)
         except AttributeError:
             pass
 
@@ -131,6 +134,15 @@ class Frame:
             var = self.f_globals.read_var(name)
             if isinstance(var, LocalVar):
                 return self.f_globals.read_value(name)
+            else:
+                raise AttributeError(name)
+        raise AttributeError(name)
+
+    def _read_builtin_namespace(self, name: str) -> Value:
+        if name in self.f_builtins:
+            var = self.f_builtins.read_var(name)
+            if isinstance(var, LocalVar):
+                return self.f_builtins.read_value(name)
             else:
                 raise AttributeError(name)
         raise AttributeError(name)
@@ -267,13 +279,11 @@ class Stack:
         new_f_locals = Namespace()
         new_f_back = curr_frame
         new_f_globals = curr_frame.f_globals
-        new_f_builtins = curr_frame.f_builtins
 
         new_frame = Frame(
             f_locals=new_f_locals,
             f_back=new_f_back,
             f_globals=new_f_globals,
-            f_builtins=new_f_builtins,
         )
         self.push_frame(new_frame)
 

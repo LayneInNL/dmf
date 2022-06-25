@@ -12,9 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 class Test:
-    def __init__(self):
-        # self.x = 1
-        pass
+    # def __init__(self):
+    #     # self.x = 1
+    #     pass
+    pass
 
 
 t = Test()

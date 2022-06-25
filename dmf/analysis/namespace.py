@@ -252,6 +252,10 @@ class ObjectClass:
                             non_data_desc.inject_type(
                                 MethodObject(instance=self, function=typ)
                             )
+                        elif isinstance(typ, SpecialFunctionObject):
+                            non_data_desc.inject_type(
+                                SpecialMethodObject(instance=self, function=typ)
+                            )
                         # if my_hasattr(typ, "__get__"):
                         #     desc_get = my_getattr(typ, "__get__")
                         #     for _, getter in desc_get:
@@ -567,9 +571,15 @@ class Heap:
         return copied
 
 
+builtin_namespace = Namespace()
 constructor = Constructor()
 analysis_heap = Heap()
 my_typ = TypeClass()
 my_object = ObjectClass()
+
+v = Value()
+v.inject_type(my_object)
+builtin_namespace.write_local_value("object", v)
+
 my_function = FunctionClass()
 mock_value = Value()
