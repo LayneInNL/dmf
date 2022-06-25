@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import ast
-import logging
 import os
 from typing import Dict, List, Tuple, Set, Optional, Any
 
@@ -100,24 +99,57 @@ class CFG:
         self.edges: Dict[Tuple[int, int], Optional[ast.AST]] = {}
         self.graph: Optional[gv.dot.Digraph] = None
         self.flows: Set[Tuple[int, int]] = set()
-        self.call_return_flows: Set[Tuple[int, int]] = set()
+        self.call_return_inter_flows: Set[
+            Tuple[int, int, int, int, int, int, int]
+        ] = set()
+        self.classdef_inter_flows: Set[Tuple[int, int]] = set()
+        self.setter_inter_flows: Set[Tuple[int, int, int]] = set()
+        self.getter_inter_flows: Set[Tuple[int, int, int]] = set()
+        self.call_labels = set()
+        self.return_labels = set()
+        self.dummy_labels = set()
 
     def _traverse(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
             visited.add(block.bid)
             additional = ""
-            curr_stmt = self.blocks[block.bid].stmt[0]
-            for call_id, return_id in self.call_return_flows:
-                if call_id == block.bid:
-                    if isinstance(curr_stmt, ast.Call):
-                        additional += "Call the function"
-                    elif isinstance(curr_stmt, ast.ClassDef):
-                        additional += "Enter into the class"
-                elif return_id == block.bid:
-                    if isinstance(curr_stmt, ast.Name):
-                        additional += "Return from the function"
-                    elif isinstance(curr_stmt, ast.ClassDef):
-                        additional += "Return from the class"
+            for id1, id2 in self.classdef_inter_flows:
+                if id1 == block.bid:
+                    additional += "Enter into the class"
+                if id2 == block.bid:
+                    additional += "Return from the class"
+
+            for id1, id2, id3 in self.setter_inter_flows:
+                if id1 == block.bid:
+                    additional += "Call descriptor setter"
+                if id2 == block.bid:
+                    additional += "Return from descriptor setter"
+                if id3 == block.bid:
+                    additional += "Dummy return from descriptor setter"
+
+            for id1, id2, id3 in self.getter_inter_flows:
+                if id1 == block.bid:
+                    additional += "Call descriptor getter"
+                if id2 == block.bid:
+                    additional += "Return from descriptor getter"
+                if id3 == block.bid:
+                    additional += "Dummy return from descriptor getter"
+
+            for id1, id2, id3, id4, id5, id6, id7 in self.call_return_inter_flows:
+                if id1 == block.bid:
+                    additional += "Call label"
+                if id2 == block.bid:
+                    additional += "__new__ return label"
+                if id3 == block.bid:
+                    additional += "Dummy __new__ return label"
+                if id4 == block.bid:
+                    additional += "__init__ attribute label"
+                if id5 == block.bid:
+                    additional += "__init__ call label"
+                if id6 == block.bid:
+                    additional += "Return label"
+                if id7 == block.bid:
+                    additional += "Dummy return label"
             self.graph.node(str(block.bid), label=block.stmt_to_code() + additional)
             for next_bid in block.next:
                 self._traverse(self.blocks[next_bid], visited)
@@ -135,28 +167,6 @@ class CFG:
         self._traverse(self.start_block)
         for lab, cfg in self.sub_cfgs.items():
             self.graph.subgraph(cfg.generate(fmt, "CFG at label {}".format(lab)))
-            if hasattr(cfg, "handler_cfgs"):
-                handler_cfgs = getattr(cfg, "handler_cfgs")
-                for handler_cfg in handler_cfgs:
-                    condition = handler_cfg.condition
-                    line = astor.to_source(condition).partition("\n")[0]
-                    self.graph.subgraph(
-                        handler_cfg.generate(
-                            fmt,
-                            "{} at label {}".format(line, lab),
-                        )
-                    )
-            if hasattr(cfg, "orelse_cfg"):
-                orelse_cfg = getattr(cfg, "orelse_cfg")
-                self.graph.subgraph(
-                    orelse_cfg.generate(fmt, "orelse at label {}".format(lab))
-                )
-            if hasattr(cfg, "finalbody_cfg"):
-                orelse_cfg = getattr(cfg, "finalbody_cfg")
-                self.graph.subgraph(
-                    orelse_cfg.generate(fmt, "finalbody at label {}".format(lab))
-                )
-
         return self.graph
 
     def show(
@@ -289,7 +299,22 @@ class CFGVisitor(ast.NodeVisitor):
         for fst_id, snd_id in self.cfg.edges:
             self.cfg.flows.add((fst_id, snd_id))
 
-        self.cfg.flows -= self.cfg.call_return_flows
+        for l1, l2, dummy, init, l4, l5, dummy2 in self.cfg.call_return_inter_flows:
+            self.cfg.flows -= {(l1, l2), (l4, l5)}
+            self.cfg.call_labels.update({l1, l4})
+            self.cfg.return_labels.update({l2, l5})
+        for l1, l2 in self.cfg.classdef_inter_flows:
+            self.cfg.flows -= {(l1, l2)}
+            self.cfg.call_labels.add(l1)
+            self.cfg.return_labels.add(l2)
+        for l1, l2, dummy in self.cfg.setter_inter_flows:
+            self.cfg.flows -= {(l1, l2)}
+            self.cfg.call_labels.add(l1)
+            self.cfg.return_labels.add(l2)
+        for l1, l2, dummy in self.cfg.getter_inter_flows:
+            self.cfg.flows -= {(l1, l2)}
+            self.cfg.call_labels.add(l1)
+            self.cfg.return_labels.add(l2)
 
     def combine_conditions(self, node_list: List[ast.expr]) -> ast.expr:
         return (
@@ -358,7 +383,7 @@ class CFGVisitor(ast.NodeVisitor):
         return_block = self.new_block()
         add_stmt(return_block, node)
 
-        self.add_call_return_flows(call_block.bid, return_block.bid)
+        self.cfg.classdef_inter_flows.add((call_block.bid, return_block.bid))
         self.add_edge(call_block.bid, return_block.bid)
         self.curr_block = self.add_edge(return_block.bid, self.new_block().bid)
 
@@ -377,12 +402,13 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = self.new_block()
 
     def visit_Delete(self, node: ast.Delete) -> None:
-        add_stmt(self.curr_block, node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-
-    def add_call_return_flows(self, call_label: int, return_label: int):
-        # exit label is return label in each function.
-        self.cfg.call_return_flows.add((call_label, return_label))
+        for target in node.targets:
+            decomposed_expr_sequence = self.visit(target)
+            delete_node = ast.Delete(decomposed_expr_sequence[-1])
+            decomposed_expr_sequence = decomposed_expr_sequence[:-1]
+            self.populate_body(decomposed_expr_sequence)
+            add_stmt(self.curr_block, delete_node)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Assign(self, node: ast.Assign) -> None:
 
@@ -390,25 +416,115 @@ class CFGVisitor(ast.NodeVisitor):
 
         if len(new_expr_sequence) == 1:
             if isinstance(node.value, ast.Call):
-                add_stmt(self.curr_block, node.value)
-                return_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-                self.add_call_return_flows(self.curr_block.bid, return_block.bid)
-                self.curr_block = return_block
-                add_stmt(self.curr_block, node.targets[-1])
+                call_node = self.curr_block
+                add_stmt(call_node, node.value)
+
+                tmp_var = ast.Name(
+                    id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
+                )
+                new_node = self.add_edge(call_node.bid, self.new_block().bid)
+                add_stmt(new_node, tmp_var)
+                dummy_new_node = self.add_edge(new_node.bid, self.new_block().bid)
+                add_stmt(dummy_new_node, tmp_var)
+                self.cfg.dummy_labels.add(dummy_new_node.bid)
+
+                init_attribute_node = self.add_edge(
+                    dummy_new_node.bid, self.new_block().bid
+                )
+                init_attribute_name = ast.Name(
+                    id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
+                )
+                add_stmt(
+                    init_attribute_node,
+                    ast.Assign(
+                        targets=[init_attribute_name],
+                        value=ast.Attribute(value=tmp_var, attr="__init__"),
+                    ),
+                )
+
+                init_call_node = self.add_edge(
+                    init_attribute_node.bid, self.new_block().bid
+                )
+                init_call = ast.Call(
+                    func=init_attribute_name,
+                    args=node.value.args,
+                    keywords=node.value.keywords,
+                )
+                add_stmt(init_call_node, init_call)
+
+                tmp_var = ast.Name(
+                    id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
+                )
+                init_return_node = self.add_edge(
+                    init_call_node.bid, self.new_block().bid
+                )
+                add_stmt(init_return_node, tmp_var)
+                dummy_return_node = self.add_edge(
+                    init_return_node.bid, self.new_block().bid
+                )
+                add_stmt(dummy_return_node, tmp_var)
+                self.cfg.dummy_labels.add(dummy_return_node.bid)
+
+                self.cfg.call_return_inter_flows.add(
+                    (
+                        call_node.bid,
+                        new_node.bid,
+                        dummy_new_node.bid,
+                        init_attribute_node.bid,
+                        init_call_node.bid,
+                        init_return_node.bid,
+                        dummy_return_node.bid,
+                    )
+                )
+                node.value = tmp_var
+                self.curr_block = dummy_return_node
+            elif not isinstance(node.value, ast.Name):
+                tmp_var = ast.Name(
+                    id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
+                )
+                call_node = self.curr_block
+                add_stmt(call_node, node.value)
+                return_node = self.add_edge(call_node.bid, self.new_block().bid)
+                add_stmt(return_node, tmp_var)
+                dummy_return_node = self.add_edge(return_node.bid, self.new_block().bid)
+                add_stmt(dummy_return_node, tmp_var)
+                self.cfg.dummy_labels.add(dummy_return_node.bid)
+
+                self.cfg.getter_inter_flows.add(
+                    (call_node.bid, return_node.bid, dummy_return_node.bid)
+                )
+                node.value = tmp_var
+                self.curr_block = dummy_return_node
             else:
                 add_stmt(self.curr_block, node)
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
-            if len(node.targets) > 1:
-                expr_sequence = []
-                for idx, target in enumerate(node.targets[:-1]):
-                    expr_sequence.append(
-                        ast.Assign(targets=[target], value=node.targets[idx + 1])
+            for target in node.targets:
+                expr_sequence = self.visit(target)
+                self.populate_body(expr_sequence[:-1])
+                lhs_target = expr_sequence[-1]
+                tmp_assign = ast.Assign(targets=[lhs_target], value=node.value)
+                if not isinstance(lhs_target, ast.Name):
+                    call_node = self.curr_block
+                    add_stmt(call_node, tmp_assign)
+                    return_node = self.add_edge(call_node.bid, self.new_block().bid)
+                    add_stmt(return_node, tmp_assign)
+                    dummy_return_node = self.add_edge(
+                        return_node.bid, self.new_block().bid
                     )
-                self.populate_body(reversed(expr_sequence))
-                return
-            else:
-                return
+                    add_stmt(dummy_return_node, tmp_assign)
+                    self.cfg.dummy_labels.add(dummy_return_node.bid)
+
+                    self.cfg.setter_inter_flows.add(
+                        (call_node.bid, return_node.bid, dummy_return_node.bid)
+                    )
+                    self.curr_block = dummy_return_node
+                else:
+                    add_stmt(self.curr_block, tmp_assign)
+                self.curr_block = self.add_edge(
+                    self.curr_block.bid, self.new_block().bid
+                )
+            return
 
         new_assign = ast.Assign(targets=node.targets, value=new_expr_sequence[-1])
         new_sequence: List = new_expr_sequence[:-1] + [new_assign]

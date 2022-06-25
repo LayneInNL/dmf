@@ -11,6 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+from typing import Tuple, Set
 
 from dmf.flows import construct_CFG
 
@@ -18,23 +19,34 @@ from dmf.flows import construct_CFG
 modules = {}
 # simulate modules for static analysis
 analysis_modules = {}
+static_import_module = None
 # CFG flows
 flows = set()
-call_return_flows = set()
 blocks = {}
 sub_cfgs = {}
-
-static_import_module = None
+call_return_inter_flows: Set[Tuple[int, int, int, int, int, int, int]] = set()
+classdef_inter_flows: Set[Tuple[int, int]] = set()
+setter_inter_flows: Set[Tuple[int, int, int]] = set()
+getter_inter_flows: Set[Tuple[int, int, int]] = set()
+dummy_labels: Set[int] = set()
+call_labels: Set = set()
+return_labels: Set = set()
 
 
 def create_and_update_cfg(file_path):
     cfg = construct_CFG(file_path)
-    flows.update(cfg.flows)
-    call_return_flows.update(cfg.call_return_flows)
-    blocks.update(cfg.blocks)
-    sub_cfgs.update(cfg.sub_cfgs)
+    update_global_info(cfg)
     return cfg.start_block.bid, cfg.final_block.bid
 
 
-# static_builtins simulate builtins
-static_builtins = False
+def update_global_info(cfg):
+    flows.update(cfg.flows)
+    call_return_inter_flows.update(cfg.call_return_inter_flows)
+    classdef_inter_flows.update(cfg.classdef_inter_flows)
+    getter_inter_flows.update(cfg.getter_inter_flows)
+    setter_inter_flows.update(cfg.setter_inter_flows)
+    blocks.update(cfg.blocks)
+    sub_cfgs.update(cfg.sub_cfgs)
+    dummy_labels.update(cfg.dummy_labels)
+    call_labels.update(cfg.call_labels)
+    return_labels.update(cfg.return_labels)

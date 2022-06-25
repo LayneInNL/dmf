@@ -13,7 +13,8 @@
 #  limitations under the License.
 class Test:
     def __init__(self):
-        self.x = 1
+        # self.x = 1
+        pass
 
 
 t = Test()

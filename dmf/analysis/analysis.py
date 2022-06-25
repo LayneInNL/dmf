@@ -55,7 +55,7 @@ Ctx = Tuple
 Heap = int
 Lab = int
 Basic_Flow = Tuple[Lab, Lab]
-ProgramPoint = Tuple[Lab, Ctx]
+ProgramPoint = Tuple[int, Ctx]
 Flow = Tuple[ProgramPoint, ProgramPoint]
 Inter_Flow = Tuple[ProgramPoint, ProgramPoint, ProgramPoint, ProgramPoint]
 
@@ -71,7 +71,15 @@ def merge(label: Lab, heap, context: Ctx):
 class Base:
     def __init__(self):
         self.flows: Set[Basic_Flow] = dmf.share.flows
-        self.call_return_flows: Set[Basic_Flow] = dmf.share.call_return_flows
+
+        self.dummy_labels = dmf.share.dummy_labels
+        self.call_labels = dmf.share.call_labels
+        self.return_labels = dmf.share.return_labels
+        self.call_return_inter_flows = dmf.share.call_return_inter_flows
+        self.classdef_inter_flows = dmf.share.classdef_inter_flows
+        self.setter_inter_flows = dmf.share.setter_inter_flows
+        self.getter_inter_flows = dmf.share.getter_inter_flows
+
         self.blocks: Dict[Lab, BasicBlock] = dmf.share.blocks
         self.sub_cfgs: Dict[Lab, CFG] = dmf.share.sub_cfgs
         self.inter_flows: Set[Inter_Flow] = set()
@@ -79,9 +87,18 @@ class Base:
     def get_stmt_by_label(self, label: Lab):
         return self.blocks[label].stmt[0]
 
+    def is_dummy_label(self, label: Lab):
+        return label in self.dummy_labels
+
     def is_call_label(self, label: Lab):
-        for call_label, _ in self.call_return_flows:
-            if label == call_label:
+        return label in self.call_labels
+
+    def is_return_label(self, label: Lab):
+        return label in self.return_labels
+
+    def is_special_init_label(self, label: int):
+        for l1, l2, l3, l4, l5, l6, l7 in self.call_return_inter_flows:
+            if label == l5:
                 return True
         return False
 
@@ -97,32 +114,38 @@ class Base:
                 return True
         return False
 
-    def is_return_label(self, label):
-        for _, return_label in self.call_return_flows:
-            if label == return_label:
-                return True
-        return False
-
-    def get_call_label(self, label):
-        for call_label, return_label in self.call_return_flows:
+    def get_classdef_call_label(self, label):
+        for call_label, return_label in self.classdef_inter_flows:
             if label == return_label:
                 return call_label
+        raise KeyError
 
-    def get_call_point(self, program_point):
-        for call_point, _, _, return_point in self.inter_flows:
-            if program_point == return_point:
-                return call_point
-
-    def get_return_label(self, label):
-        for call_label, return_label in self.call_return_flows:
+    def get_classdef_return_label(self, label):
+        for call_label, return_label in self.classdef_inter_flows:
             if label == call_label:
                 return return_label
+        raise KeyError
+
+    def get_new_return_label(self, label):
+        for l1, l2, l3, l4, l5, l6, l7 in self.call_return_inter_flows:
+            if label == l1:
+                return l2, l3
+        raise KeyError
+
+    def get_init_return_label(self, label):
+        for l1, l2, l3, l4, l5, l6, l7 in self.call_return_inter_flows:
+            if label == l5:
+                return l6, l7
+        raise KeyError
+
+    def get_func_return_label(self, label):
+        for l1, l2, l3, l4, l5, l6, l7 in self.call_return_inter_flows:
+            if label == l1:
+                return l6, l7
+        raise KeyError
 
     def add_sub_cfg(self, cfg: CFG):
-        self.blocks.update(cfg.blocks)
-        self.flows.update(cfg.flows)
-        self.sub_cfgs.update(cfg.sub_cfgs)
-        self.call_return_flows.update(cfg.call_return_flows)
+        dmf.share.update_global_info(cfg)
 
     def DELTA(self, program_point: ProgramPoint):
         added = []
@@ -171,8 +194,6 @@ class Analysis(Base):
         self.entry_info: Dict = {}
         self.work_list: Deque[Flow] = deque()
         self.analyzed_program_points = None
-        self.analysis_list = None
-        self.analysis_effect_list = None
         self.extremal_value: Stack = Stack()
 
         curr_module: ModuleType = dmf.share.analysis_modules[module_name]
@@ -272,11 +293,11 @@ class Analysis(Base):
 
         # class
         if isinstance(stmt, ast.ClassDef):
-            self.lambda_classdef(program_point)
+            self._lambda_classdef(program_point)
         # procedural call
         elif isinstance(stmt, ast.Call):
             assert isinstance(stmt.func, ast.Name), stmt
-            has_info = self.lambda_name(program_point, stmt.func)
+            has_info = self._lambda_name(program_point, stmt.func)
             additional_value = Value()
             if not has_info:
                 if stmt.func.id == "object":
@@ -286,7 +307,7 @@ class Analysis(Base):
                     self.transfer_no_edge_values(program_point, additional_value)
 
     # deal with cases such as class xxx
-    def lambda_classdef(self, program_point: ProgramPoint):
+    def _lambda_classdef(self, program_point: ProgramPoint):
         call_lab, call_ctx = program_point
 
         cfg = self.sub_cfgs[call_lab]
@@ -294,7 +315,7 @@ class Analysis(Base):
         entry_lab = cfg.start_block.bid
         exit_lab = cfg.final_block.bid
 
-        return_lab = self.get_return_label(call_lab)
+        return_lab = self.get_classdef_return_label(call_lab)
         self.inter_flows.add(
             (
                 (call_lab, call_ctx),
@@ -306,7 +327,7 @@ class Analysis(Base):
         self.entry_info[(entry_lab, call_ctx)] = (None, None, None)
 
     # deal with cases such as name()
-    def lambda_name(self, program_point: ProgramPoint, name):
+    def _lambda_name(self, program_point: ProgramPoint, name):
         has_info = False
 
         call_lab, call_ctx = program_point
@@ -323,7 +344,7 @@ class Analysis(Base):
             # iterate all types to find which is callable
             for typ in value:
                 if isinstance(typ, CustomClass):
-                    self.lambda_class(program_point, typ)
+                    self._lambda_class(program_point, typ)
                 elif isinstance(typ, FunctionObject):
                     self._lambda_function(program_point, typ)
                 elif isinstance(typ, MethodObject):
@@ -340,7 +361,7 @@ class Analysis(Base):
         call_lab, call_ctx = call_program_point
         old = self.analysis_list[call_program_point]
 
-        return_lab = self.get_return_label(call_lab)
+        return_lab = self.get_func_return_label(call_lab)
         return_stmt: ast.Name = self.get_stmt_by_label(return_lab)
         return_program_point = (return_lab, call_ctx)
         self.LAMBDA(return_program_point)
@@ -364,53 +385,66 @@ class Analysis(Base):
     # deal with class initialization
     # find __new__ and __init__ method
     # then use it to create class instance
-    def lambda_class(self, program_point, typ):
+    def _lambda_class(self, program_point, typ):
         call_lab, call_ctx = program_point
-        return_lab = self.get_return_label(call_lab)
         addr = record(call_lab, call_ctx)
         new_method = dunder_lookup(typ, "__new__")
         if isinstance(new_method, Constructor):
             instance = new_method(addr, typ)
+            value = Value()
+            value.inject_type(instance)
+            ret_lab, dummy_ret_lab = self.get_new_return_label(call_lab)
+            call_stack = self.analysis_list[program_point]
+            dummy_return_stack = deepcopy(call_stack)
+            dummy_return_name: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+            dummy_return_stack.write_var(dummy_return_name.id, Namespace_Local, value)
+            dummy_old_return_stack = self.analysis_list[(dummy_ret_lab, call_ctx)]
+            if not dummy_return_stack <= dummy_old_return_stack:
+                dummy_return_stack += dummy_old_return_stack
+                self.analysis_list[(dummy_ret_lab, call_ctx)] = dummy_return_stack
+                self.LAMBDA((dummy_ret_lab, call_ctx))
+                added_flows = self.DELTA((dummy_ret_lab, call_ctx))
+                self.work_list.extendleft(added_flows)
         elif isinstance(new_method, FunctionObject):
             assert False
-        additional_values = Value()
 
-        init_function = dunder_lookup(typ, "__init__")
-        if isinstance(init_function, FunctionObject):
-            entry_lab, exit_lab = init_function.__my_code__
-            inter_flow = (
-                (call_lab, call_ctx),
-                (entry_lab, call_ctx),
-                (exit_lab, call_ctx),
-                (return_lab, call_ctx),
-            )
-            self.inter_flows.add(inter_flow)
-            self.entry_info[(entry_lab, call_ctx)] = (
-                instance,
-                INIT_FLAG,
-                init_function.__my_module__,
-            )
-        elif isinstance(init_function, SpecialFunctionObject):
-            res = init_function(instance)
-            self.merge_no_edge_values(res, additional_values)
-        else:
-            logger.critical(new_method)
-            assert False
-        self.transfer_no_edge_values(program_point, additional_values)
+        # additional_values = Value()
+        # init_function = dunder_lookup(typ, "__init__")
+        # if isinstance(init_function, FunctionObject):
+        #     entry_lab, exit_lab = init_function.__my_code__
+        #     inter_flow = (
+        #         (call_lab, call_ctx),
+        #         (entry_lab, call_ctx),
+        #         (exit_lab, call_ctx),
+        #         (return_lab, call_ctx),
+        #     )
+        #     self.inter_flows.add(inter_flow)
+        #     self.entry_info[(entry_lab, call_ctx)] = (
+        #         instance,
+        #         INIT_FLAG,
+        #         init_function.__my_module__,
+        #     )
+        # elif isinstance(init_function, SpecialFunctionObject):
+        #     res = init_function(instance)
+        #     self.merge_no_edge_values(res, additional_values)
+        # else:
+        #     logger.critical(new_method)
+        #     assert False
+        # self.transfer_no_edge_values(program_point, additional_values)
 
     # unbound func call
     # func()
     def _lambda_function(self, program_point: ProgramPoint, typ: FunctionObject):
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = typ.__my_code__
-        return_lab = self.get_return_label(call_lab)
+        ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
 
         new_ctx: Ctx = merge(call_lab, None, call_ctx)
         inter_flow = (
             (call_lab, call_ctx),
             (entry_lab, new_ctx),
             (exit_lab, new_ctx),
-            (return_lab, call_ctx),
+            (ret_lab, call_ctx),
         )
         self.inter_flows.add(inter_flow)
         self.entry_info[(entry_lab, new_ctx)] = (None, None, typ.__my_module__)
@@ -418,25 +452,36 @@ class Analysis(Base):
     def _lambda_method(self, program_point: ProgramPoint, typ: MethodObject):
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = typ.__my_func__.__my_code__
-        return_lab = self.get_return_label(call_lab)
-
         instance = typ.__my_instance__
         new_ctx: Ctx = merge(call_lab, instance, call_ctx)
+
+        if self.is_special_init_label(call_lab):
+            ret_lab, dummy_ret_lab = self.get_init_return_label(call_lab)
+            self.entry_info[(entry_lab, new_ctx)] = (
+                instance,
+                INIT_FLAG,
+                typ.__my_module__,
+            )
+        else:
+            ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
+            self.entry_info[(entry_lab, new_ctx)] = (instance, None, typ.__my_module__)
+
         inter_flow = (
             (call_lab, call_ctx),
             (entry_lab, new_ctx),
             (exit_lab, new_ctx),
-            (return_lab, call_ctx),
+            (ret_lab, call_ctx),
         )
         self.inter_flows.add(inter_flow)
-        self.entry_info[(entry_lab, new_ctx)] = (instance, None, typ.__my_module__)
 
     def transfer(self, program_point: ProgramPoint) -> Stack:
         lab, _ = program_point
         if self.analysis_list[program_point].is_bot():
             return self.analysis_list[program_point]
 
-        if self.is_call_label(lab):
+        if self.is_dummy_label(lab):
+            return self.transfer_Pass(program_point)
+        elif self.is_call_label(lab):
             return self.transfer_call(program_point)
         elif self.is_entry_point(program_point):
             return self.transfer_entry(program_point)
@@ -697,7 +742,7 @@ class Analysis(Base):
 
         value: Value = Value()
         bases = compute_bases(stmt)
-        call_lab = self.get_call_label(return_lab)
+        call_lab = self.get_classdef_call_label(return_lab)
         custom_class: CustomClass = CustomClass(
             uuid=call_lab,
             name=cls_name,

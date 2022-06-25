@@ -320,7 +320,7 @@ class Stack:
                         value.inject_value(tmp)
                 elif isinstance(typ, Instance):
                     try:
-                        tmp = analysis_heap.read_field_from_instance(typ, receiver_attr)
+                        tmp = my_getattr(typ, receiver_attr)
                     except AttributeError:
                         pass
                     else:

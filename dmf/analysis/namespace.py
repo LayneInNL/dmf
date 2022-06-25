@@ -230,16 +230,16 @@ class ObjectClass:
             def __getattribute__(self, name):
                 type_of_self = my_type(self)
                 cls_var: Value = my_getattr(type_of_self, name, None)
-                if cls_var is not None:
-                    data_desc = Value()
-                    assert len(cls_var) == 1, cls_var
-                    for _, typ in cls_var:
-                        if my_hasattr(typ, "__get__") and (
-                            my_hasattr(typ, "__set__") or my_hasattr(typ, "__delete__")
-                        ):
-                            desc_get = my_getattr(typ, "__get__")
-                            data_desc.inject_value(desc_get)
-                    return data_desc
+                # if cls_var is not None:
+                #     data_desc = Value()
+                #     assert len(cls_var) == 1, cls_var
+                #     for typ in cls_var:
+                #         if my_hasattr(typ, "__get__") and (
+                #             my_hasattr(typ, "__set__") or my_hasattr(typ, "__delete__")
+                #         ):
+                #             desc_get = my_getattr(typ, "__get__")
+                #             data_desc.inject_value(desc_get)
+                #     return data_desc
 
                 if hasattr(self, "__my_dict__") and name in self.__my_dict__:
                     return self.__my_dict__.read_value(name)
@@ -247,15 +247,19 @@ class ObjectClass:
                 if cls_var is not None:
                     non_data_desc = Value()
                     assert len(cls_var) == 1, cls_var
-                    for _, typ in cls_var:
-                        if my_hasattr(typ, "__get__"):
-                            desc_get = my_getattr(typ, "__get__")
-                            for _, getter in desc_get:
-                                if isinstance(getter, SpecialFunctionObject):
-                                    res = getter(typ, self)
-                                else:
-                                    res = getter
-                                non_data_desc.inject_value(res)
+                    for typ in cls_var:
+                        if isinstance(typ, FunctionObject):
+                            non_data_desc.inject_type(
+                                MethodObject(instance=self, function=typ)
+                            )
+                        # if my_hasattr(typ, "__get__"):
+                        #     desc_get = my_getattr(typ, "__get__")
+                        #     for _, getter in desc_get:
+                        #         if isinstance(getter, SpecialFunctionObject):
+                        #             res = getter(typ, self)
+                        #         else:
+                        #             res = getter
+                        #         non_data_desc.inject_value(res)
                     return non_data_desc
 
                 if cls_var is not None:
