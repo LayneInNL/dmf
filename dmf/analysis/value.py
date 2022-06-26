@@ -68,16 +68,15 @@ class Value:
         return iter(self.type_dict.values())
 
     def __deepcopy__(self, memo):
-        value = Value()
-        if self.type_dict == TOP:
-            value.type_dict = TOP
-        else:
-            value.type_dict = deepcopy(self.type_dict, memo)
-
         self_id = id(self)
         if self_id not in memo:
+            value = Value()
+            if self.type_dict == TOP:
+                value.type_dict = TOP
+            else:
+                value.type_dict = deepcopy(self.type_dict, memo)
             memo[self_id] = value
-        return value
+        return memo[self_id]
 
     def inject_type(self, typ):
         self.type_dict[typ.__my_uuid__] = typ

@@ -44,20 +44,25 @@ from dmf.log.logger import logger
 
 
 class Frame:
-    def __init__(self, f_locals=None, f_back=None, f_globals=None):
+    def __init__(self, *, f_locals, f_back=None, f_globals):
         self.f_locals: Namespace[Var, Value] = f_locals
         self.f_back: Frame | None = f_back
         self.f_globals: Namespace[Var, Value] = f_globals
         self.f_builtins: Namespace[Var, Value] = builtin_namespace
 
     def __deepcopy__(self, memo):
-        copied_f_locals = deepcopy(self.f_locals, memo)
-        copied_f_back = deepcopy(self.f_back, memo)
-        copied_f_globals = deepcopy(self.f_globals, memo)
-        # copied_f_builtins = deepcopy(self.f_builtins, memo)
-        frame = Frame(copied_f_locals, copied_f_back, copied_f_globals)
-        memo[id(self)] = frame
-        return frame
+        self_id = id(self)
+        if self_id not in memo:
+            copied_f_locals = deepcopy(self.f_locals, memo)
+            copied_f_back = deepcopy(self.f_back, memo)
+            copied_f_globals = deepcopy(self.f_globals, memo)
+            frame = Frame(
+                f_locals=copied_f_locals,
+                f_back=copied_f_back,
+                f_globals=copied_f_globals,
+            )
+            memo[self_id] = frame
+        return memo[self_id]
 
     # compare f_locals, f_globals and f_builtins
     # don't know how to compare f_back for now
@@ -194,31 +199,26 @@ class Frame:
 
 
 class Stack:
-    def __init__(self):
+    def __init__(self, frames=None):
         # if self.frames is "BOT", it's BOT
-        self.frames: List[Frame] | BOT = []
+        if frames is not None:
+            self.frames = frames
+        else:
+            self.frames: List[Frame] | BOT = []
 
     def __deepcopy__(self, memo=None):
         if memo is None:
             memo = {}
 
-        stack = Stack()
-        if self.frames == BOT:
-            stack.frames = BOT
-        else:
-            stack.frames = []
-            for f in self.frames:
-                copied_frame = deepcopy(f, memo)
-                stack.frames.append(copied_frame)
-        memo[id(self)] = stack
+        self_id = id(self)
+        if self_id not in memo:
+            new_frames = deepcopy(self.frames, memo)
+            stack = Stack(new_frames)
+            memo[self_id] = stack
 
         for name, module in dmf.share.analysis_modules.items():
-            namespace = module.namespace
-            id_namespace = id(namespace)
-            if id_namespace in memo:
-                module.namespace = memo[id_namespace]
-
-        return stack
+            module.namespace = deepcopy(module.namespace, memo)
+        return memo[self_id]
 
     def __le__(self, other: Stack):
         if self.frames == BOT:
@@ -396,11 +396,7 @@ def op2dunder(operator: ast.operator):
     return magic_method
 
 
-class _Bot:
-    pass
-
-
-BOT = _Bot()
+BOT = "BOT"
 
 
 def stack_bot_builder() -> Stack:

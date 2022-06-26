@@ -45,6 +45,7 @@ from dmf.analysis.namespace import (
     Namespace,
     mock_value,
     SpecialMethodObject,
+    my_getattr,
 )
 from dmf.flows import CFG
 from dmf.flows.flows import BasicBlock
@@ -125,6 +126,18 @@ class Base:
         for call_label, return_label in self.classdef_inter_flows:
             if label == call_label:
                 return return_label
+        raise KeyError
+
+    def get_getter_return_label(self, label):
+        for call_label, return_label, dummy_return_label in self.getter_inter_flows:
+            if label == call_label:
+                return return_label, dummy_return_label
+        raise KeyError
+
+    def get_setter_return_label(self, label):
+        for call_label, return_label, dummy_return_label in self.setter_inter_flows:
+            if label == call_label:
+                return return_label, dummy_return_label
         raise KeyError
 
     def get_new_return_label(self, label):
@@ -278,6 +291,20 @@ class Analysis(Base):
         print(analysis_heap)
         # logger.warning(dmf.share.analysis_modules["static_builtins"].namespace)
 
+    def compute_func_args(
+        self, stack: Stack, args: List[ast.expr], keywords: List[ast.keyword]
+    ):
+        computed_args = []
+        for arg in args:
+            val = stack.compute_value_of_expr(arg)
+            computed_args.append(val)
+
+        computed_keywords = {}
+        for keyword in keywords:
+            val = stack.compute_value_of_expr(keyword.value)
+            computed_keywords[keyword.arg] = val
+        return computed_args, computed_keywords
+
     # based on current program point, update self.IF
     def LAMBDA(self, program_point: ProgramPoint) -> None:
         lab, ctx = program_point
@@ -288,15 +315,53 @@ class Analysis(Base):
 
         stmt = self.get_stmt_by_label(lab)
 
-        assert isinstance(stmt, (ast.ClassDef, ast.Call)), stmt
+        assert isinstance(stmt, (ast.ClassDef, ast.Call, ast.Attribute)), stmt
 
         # class
         if isinstance(stmt, ast.ClassDef):
             self._lambda_classdef(program_point)
         # procedural call
         elif isinstance(stmt, ast.Call):
-            assert isinstance(stmt.func, ast.Name), stmt
             self._lambda_name(program_point, stmt.func)
+        elif isinstance(stmt, ast.Attribute):
+            stack: Stack = self.analysis_list[program_point]
+            target_value = stack.compute_value_of_expr(stmt.value)
+            dummy_value = Value()
+            for target_typ in target_value:
+                attr_value = my_getattr(target_typ, stmt.attr, None)
+                for attr_typ in attr_value:
+                    if isinstance(attr_typ, FunctionObject):
+                        self._lambda_function(program_point, attr_typ)
+                    elif isinstance(attr_typ, MethodObject):
+                        self._lambda_method(program_point, attr_typ)
+                    else:
+                        dummy_value.inject_type(attr_typ)
+
+            ret_lab, dummy_ret_lab = self.get_getter_return_label(lab)
+            dummy_ret: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+            self.push_info_to_dummy(
+                program_point, (dummy_ret_lab, ctx), dummy_ret.id, dummy_value
+            )
+
+    def push_info_to_dummy(
+        self,
+        call_program_point: ProgramPoint,
+        dummy_return_point: ProgramPoint,
+        dummy_name: str,
+        dummy_value: Value,
+    ):
+        if len(dummy_value) == 0:
+            return
+        call_stack = self.analysis_list[call_program_point]
+        dummy_call_stack = deepcopy(call_stack)
+        dummy_call_stack.write_var(dummy_name, Namespace_Local, dummy_value)
+        dummy_old_call_stack = self.analysis_list[dummy_return_point]
+        if not dummy_call_stack <= dummy_old_call_stack:
+            dummy_call_stack += dummy_old_call_stack
+            self.analysis_list[dummy_return_point] = dummy_call_stack
+            self.LAMBDA(dummy_return_point)
+            added_flows = self.DELTA(dummy_return_point)
+            self.work_list.extendleft(added_flows)
 
     # deal with cases such as class xxx
     def _lambda_classdef(self, program_point: ProgramPoint):
@@ -320,56 +385,38 @@ class Analysis(Base):
 
     # deal with cases such as name()
     def _lambda_name(self, program_point: ProgramPoint, name):
-        has_info = False
-
         call_lab, call_ctx = program_point
         address = record(call_lab, call_ctx)
 
         stack: Stack = self.analysis_list[program_point]
-        try:
-            # get abstract value of name
-            value: Value = stack.compute_value_of_expr(name, address)
-        except:
-            logger.critical("No attribute named {}".format(name))
-        else:
-            has_info = True
-            # iterate all types to find which is callable
-            for typ in value:
-                if isinstance(typ, CustomClass):
-                    self._lambda_class(program_point, typ)
-                elif isinstance(typ, FunctionObject):
-                    self._lambda_function(program_point, typ)
-                elif isinstance(typ, MethodObject):
-                    self._lambda_method(program_point, typ)
-                elif isinstance(typ, SpecialMethodObject):
-                    res = typ()
-                    types = Value()
-                    types.inject_type(res)
-                    if self.is_special_init_label(call_lab):
-                        ret_lab, dummy_ret_lab = self.get_init_return_label(call_lab)
-                    else:
-                        ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
-                    call_stack = self.analysis_list[program_point]
-                    dummy_return_stack = deepcopy(call_stack)
-                    dummy_return_name: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-                    dummy_return_stack.write_var(
-                        dummy_return_name.id, Namespace_Local, types
-                    )
-                    dummy_old_return_stack = self.analysis_list[
-                        (dummy_ret_lab, call_ctx)
-                    ]
-                    if not dummy_return_stack <= dummy_old_return_stack:
-                        dummy_return_stack += dummy_old_return_stack
-                        self.analysis_list[
-                            (dummy_ret_lab, call_ctx)
-                        ] = dummy_return_stack
-                        self.LAMBDA((dummy_ret_lab, call_ctx))
-                        added_flows = self.DELTA((dummy_ret_lab, call_ctx))
-                        self.work_list.extendleft(added_flows)
-                else:
-                    assert False, typ
-        finally:
-            return has_info
+        value: Value = stack.compute_value_of_expr(name, address)
+        dummy_value = Value()
+        # iterate all types to find which is callable
+        for typ in value:
+            if isinstance(typ, CustomClass):
+                self._lambda_class(program_point, typ)
+            elif isinstance(typ, FunctionObject):
+                self._lambda_function(program_point, typ)
+            elif isinstance(typ, MethodObject):
+                self._lambda_method(program_point, typ)
+            elif isinstance(typ, SpecialMethodObject):
+                res = typ()
+                dummy_value.inject_type(res)
+            elif isinstance(typ, Constructor):
+                addr = record(call_lab, call_ctx)
+                call_stack = self.analysis_list[program_point]
+                cls_value = call_stack.compute_value_of_expr(
+                    ast.Name(id="cls", ctx=ast.Load())
+                )
+                for c in cls_value:
+                    instance = typ(addr, c)
+                    dummy_value.inject_type(instance)
+
+        ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
+        dummy_return_name: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+        self.push_info_to_dummy(
+            program_point, (dummy_ret_lab, call_ctx), dummy_return_name.id, dummy_value
+        )
 
     # deal with class initialization
     # find __new__ and __init__ method
@@ -396,7 +443,17 @@ class Analysis(Base):
                 added_flows = self.DELTA((dummy_ret_lab, call_ctx))
                 self.work_list.extendleft(added_flows)
         elif isinstance(new_method, FunctionObject):
-            assert False
+            entry_lab, exit_lab = new_method.__my_code__
+            ret_lab, dummy_ret_lab = self.get_new_return_label(call_lab)
+            new_ctx = merge(call_lab, None, call_ctx)
+            inter_flow = (
+                (call_lab, call_ctx),
+                (entry_lab, new_ctx),
+                (exit_lab, new_ctx),
+                (ret_lab, call_ctx),
+            )
+            self.inter_flows.add(inter_flow)
+            self.entry_info[(entry_lab, new_ctx)] = (typ, None, typ.__my_module__)
 
     # unbound func call
     # func()

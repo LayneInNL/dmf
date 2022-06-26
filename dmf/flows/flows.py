@@ -478,7 +478,7 @@ class CFGVisitor(ast.NodeVisitor):
                 )
                 node.value = tmp_var
                 self.curr_block = dummy_return_node
-            elif not isinstance(node.value, ast.Name):
+            elif isinstance(node.value, ast.Attribute):
                 tmp_var = ast.Name(
                     id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
                 )
