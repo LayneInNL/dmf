@@ -81,26 +81,54 @@ class Base:
         self.classdef_inter_flows = dmf.share.classdef_inter_flows
         self.setter_inter_flows = dmf.share.setter_inter_flows
         self.getter_inter_flows = dmf.share.getter_inter_flows
+        self.special_init_flows = dmf.share.special_init_inter_flows
 
         self.blocks: Dict[Lab, BasicBlock] = dmf.share.blocks
         self.sub_cfgs: Dict[Lab, CFG] = dmf.share.sub_cfgs
         self.inter_flows: Set[Inter_Flow] = set()
 
-    def get_stmt_by_label(self, label: Lab):
+    def get_stmt_by_label(self, label: int):
         return self.blocks[label].stmt[0]
 
-    def is_dummy_label(self, label: Lab):
+    def is_dummy_label(self, label: int):
         return label in self.dummy_labels
 
-    def is_call_label(self, label: Lab):
+    def is_call_label(self, label: int):
         return label in self.call_labels
 
-    def is_return_label(self, label: Lab):
+    def is_return_label(self, label: int):
         return label in self.return_labels
 
-    def is_special_init_label(self, label: int):
-        for l1, l2, l3, l4, l5, l6, l7 in self.call_return_inter_flows:
-            if label == l5:
+    def is_normal_call_label(self, label):
+        for l1, *_ in self.call_return_inter_flows:
+            if label == l1:
+                return True
+        return False
+
+    def is_special_init_call_label(self, label: int):
+        for call, *_ in self.special_init_flows:
+            if label == call:
+                return True
+        return False
+
+    def is_getter_call_label(self, label):
+        for call, *_ in self.getter_inter_flows:
+            if label == call:
+                return True
+        return False
+
+    def is_setter_call_label(self, label):
+        for call, *_ in self.setter_inter_flows:
+            if label == call:
+                return True
+        return False
+
+    def is_classdef_call_label(self, label: int):
+        for (
+            call,
+            *_,
+        ) in self.classdef_inter_flows:
+            if label == call:
                 return True
         return False
 
@@ -146,16 +174,16 @@ class Base:
                 return l2, l3
         raise KeyError
 
-    def get_init_return_label(self, label):
+    def get_func_return_label(self, label):
         for l1, l2, l3, l4, l5, l6, l7 in self.call_return_inter_flows:
             if label == l5:
                 return l6, l7
         raise KeyError
 
-    def get_func_return_label(self, label):
-        for l1, l2, l3, l4, l5, l6, l7 in self.call_return_inter_flows:
+    def get_init_return_label(self, label):
+        for l1, l2, l3 in self.special_init_flows:
             if label == l1:
-                return l6, l7
+                return l2, l3
         raise KeyError
 
     def add_sub_cfg(self, cfg: CFG):
@@ -253,9 +281,10 @@ class Analysis(Base):
                     program_point1, self.analysis_list[program_point1]
                 )
             )
-            transferred: Stack = self.transfer(program_point1)
 
+            transferred: Stack = self.transfer(program_point1)
             old: Stack = self.analysis_list[program_point2]
+
             if not transferred <= old:
                 transferred += old
                 self.analysis_list[program_point2]: Stack = transferred
@@ -307,60 +336,78 @@ class Analysis(Base):
 
     # based on current program point, update self.IF
     def LAMBDA(self, program_point: ProgramPoint) -> None:
-        lab, ctx = program_point
+        call_lab, call_ctx = program_point
 
         # we are only interested in call labels
-        if not self.is_call_label(lab):
-            return
+        if self.is_call_label(call_lab):
 
-        stmt = self.get_stmt_by_label(lab)
+            stmt = self.get_stmt_by_label(call_lab)
+            if self.is_classdef_call_label(call_lab):
+                self._lambda_classdef(program_point)
+            elif self.is_normal_call_label(call_lab):
+                self._lambda_normal(program_point, stmt)
+            elif self.is_special_init_call_label(call_lab):
+                self._lambda_special_init(program_point)
+            elif self.is_getter_call_label(call_lab):
+                self._lambda_getter(program_point, stmt)
+            elif self.is_setter_call_label(call_lab):
+                self._lambda_setter(program_point, stmt)
 
-        assert isinstance(stmt, (ast.ClassDef, ast.Call, ast.Attribute)), stmt
+    def _lambda_getter(self, program_point, stmt: ast.Attribute):
+        assert isinstance(stmt, ast.Attribute)
 
-        # class
-        if isinstance(stmt, ast.ClassDef):
-            self._lambda_classdef(program_point)
-        # procedural call
-        elif isinstance(stmt, ast.Call):
-            self._lambda_name(program_point, stmt.func)
-        elif isinstance(stmt, ast.Attribute):
-            stack: Stack = self.analysis_list[program_point]
-            target_value = stack.compute_value_of_expr(stmt.value)
-            dummy_value = Value()
-            for target_typ in target_value:
-                attr_value = my_getattr(target_typ, stmt.attr, None)
-                for attr_typ in attr_value:
-                    if isinstance(attr_typ, FunctionObject):
-                        self._lambda_function(program_point, attr_typ)
-                    elif isinstance(attr_typ, MethodObject):
-                        self._lambda_method(program_point, attr_typ)
-                    else:
-                        dummy_value.inject_type(attr_typ)
+        call_lab, call_ctx = program_point
+        stack: Stack = self.analysis_list[program_point]
+        target_value = stack.compute_value_of_expr(stmt.value)
+        dummy_value = Value()
+        for target_typ in target_value:
+            attr_value = my_getattr(target_typ, stmt.attr, None)
+            for attr_typ in attr_value:
+                if isinstance(attr_typ, FunctionObject):
+                    self._lambda_function(program_point, attr_typ)
+                elif isinstance(attr_typ, MethodObject):
+                    self._lambda_method(program_point, attr_typ)
+                else:
+                    dummy_value.inject_type(attr_typ)
 
-            ret_lab, dummy_ret_lab = self.get_getter_return_label(lab)
-            dummy_ret: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-            self.push_info_to_dummy(
-                program_point, (dummy_ret_lab, ctx), dummy_ret.id, dummy_value
-            )
+        ret_lab, dummy_ret_lab = self.get_getter_return_label(call_lab)
+        dummy_ret: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+        dummy_stack = deepcopy(stack)
+        dummy_stack.write_var(dummy_ret.id, Namespace_Local, dummy_value)
+        self.push_info_to_dummy(dummy_stack, (dummy_ret_lab, call_ctx))
+
+    def _lambda_setter(self, program_point, stmt: ast.Assign):
+        assert isinstance(stmt, ast.Assign)
+        assert len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Attribute)
+        attribute: ast.Attribute = stmt.targets[0]
+        attr: str = stmt.targets[0].attr
+
+        call_lab, call_ctx = program_point
+        stack: Stack = self.analysis_list[program_point]
+        dummy_stack = deepcopy(stack)
+        lhs_value = dummy_stack.compute_value_of_expr(attribute.value)
+        rhs_value = dummy_stack.compute_value_of_expr(stmt.value)
+        for target_typ in lhs_value:
+            attr_value = my_setattr(target_typ, attr, rhs_value)
+            for attr_typ in attr_value:
+                if isinstance(attr_typ, FunctionObject):
+                    self._lambda_function(program_point, attr_typ)
+                elif isinstance(attr_typ, MethodObject):
+                    self._lambda_method(program_point, attr_typ)
+        _, dummy_ret_lab = self.get_setter_return_label(call_lab)
+        self.push_info_to_dummy(dummy_stack, (dummy_ret_lab, call_ctx))
 
     def push_info_to_dummy(
         self,
-        call_program_point: ProgramPoint,
-        dummy_return_point: ProgramPoint,
-        dummy_name: str,
-        dummy_value: Value,
+        dummy_stack,
+        dummy_point: ProgramPoint,
     ):
-        if len(dummy_value) == 0:
-            return
-        call_stack = self.analysis_list[call_program_point]
-        dummy_call_stack = deepcopy(call_stack)
-        dummy_call_stack.write_var(dummy_name, Namespace_Local, dummy_value)
-        dummy_old_call_stack = self.analysis_list[dummy_return_point]
-        if not dummy_call_stack <= dummy_old_call_stack:
-            dummy_call_stack += dummy_old_call_stack
-            self.analysis_list[dummy_return_point] = dummy_call_stack
-            self.LAMBDA(dummy_return_point)
-            added_flows = self.DELTA(dummy_return_point)
+        dummy_old_call_stack = self.analysis_list[dummy_point]
+        if not dummy_stack <= dummy_old_call_stack:
+            dummy_stack += dummy_old_call_stack
+            self.analysis_list[dummy_point] = dummy_stack
+            self.LAMBDA(dummy_point)
+            added_flows = self.DELTA(dummy_point)
             self.work_list.extendleft(added_flows)
 
     # deal with cases such as class xxx
@@ -384,12 +431,12 @@ class Analysis(Base):
         self.entry_info[(entry_lab, call_ctx)] = (None, None, None)
 
     # deal with cases such as name()
-    def _lambda_name(self, program_point: ProgramPoint, name):
+    def _lambda_normal(self, program_point: ProgramPoint, call: ast.Call):
         call_lab, call_ctx = program_point
         address = record(call_lab, call_ctx)
 
         stack: Stack = self.analysis_list[program_point]
-        value: Value = stack.compute_value_of_expr(name, address)
+        value: Value = stack.compute_value_of_expr(call.func, address)
         dummy_value = Value()
         # iterate all types to find which is callable
         for typ in value:
@@ -478,7 +525,7 @@ class Analysis(Base):
         instance = typ.__my_instance__
         new_ctx: Ctx = merge(call_lab, instance, call_ctx)
 
-        if self.is_special_init_label(call_lab):
+        if self.is_special_init_call_label(call_lab):
             ret_lab, dummy_ret_lab = self.get_init_return_label(call_lab)
             self.entry_info[(entry_lab, new_ctx)] = (
                 instance,

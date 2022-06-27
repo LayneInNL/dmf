@@ -71,9 +71,8 @@ def my_getattr(obj, name: str, default=my_getattr_obj) -> Value:
 
 def my_setattr(obj, name, value):
     set_attr = dunder_lookup(my_type(obj), "__setattr__")
-    res = set_attr(obj, name, value)
-    if res is not None:
-        raise NotImplementedError
+    set_attr(obj, name, value)
+    return []
 
 
 def dunder_lookup(typ, name: str):

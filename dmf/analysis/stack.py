@@ -400,6 +400,5 @@ BOT = "BOT"
 
 
 def stack_bot_builder() -> Stack:
-    bot = Stack()
-    bot.frames = BOT
+    bot = Stack(frames=BOT)
     return bot

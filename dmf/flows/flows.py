@@ -98,16 +98,20 @@ class CFG:
         self.blocks: Dict[int, BasicBlock] = {}
         self.edges: Dict[Tuple[int, int], Optional[ast.AST]] = {}
         self.graph: Optional[gv.dot.Digraph] = None
+
         self.flows: Set[Tuple[int, int]] = set()
+
         self.call_return_inter_flows: Set[
             Tuple[int, int, int, int, int, int, int]
         ] = set()
         self.classdef_inter_flows: Set[Tuple[int, int]] = set()
         self.setter_inter_flows: Set[Tuple[int, int, int]] = set()
         self.getter_inter_flows: Set[Tuple[int, int, int]] = set()
-        self.call_labels = set()
-        self.return_labels = set()
-        self.dummy_labels = set()
+        self.special_init_inter_flows: Set[Tuple[int, int, int]] = set()
+
+        self.call_labels: Set[int] = set()
+        self.return_labels: Set[int] = set()
+        self.dummy_labels: Set[int] = set()
 
     def _traverse(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
@@ -475,6 +479,9 @@ class CFGVisitor(ast.NodeVisitor):
                         init_return_node.bid,
                         dummy_return_node.bid,
                     )
+                )
+                self.cfg.special_init_inter_flows.add(
+                    (init_call_node.bid, init_return_node.bid, dummy_return_node.bid)
                 )
                 node.value = tmp_var
                 self.curr_block = dummy_return_node
