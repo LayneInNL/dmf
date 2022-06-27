@@ -87,3 +87,15 @@ class Value:
                 self.type_dict[lab] = typ
             else:
                 self.type_dict[lab] += typ
+
+
+def create_value_with_type(typ) -> Value:
+    value = Value()
+    value.inject_type(typ)
+    return value
+
+
+def create_value_with_value(val) -> Value:
+    value = Value()
+    value.inject_value(val)
+    return value
