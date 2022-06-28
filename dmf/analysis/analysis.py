@@ -101,6 +101,10 @@ class Base:
     def is_dummy_label(self, label: int):
         return label in self.dummy_labels
 
+    def is_dummy_point(self, program_point: ProgramPoint):
+        label, _ = program_point
+        return self.is_dummy_label(label)
+
     def is_call_label(self, label: int):
         return label in self.call_labels
 
@@ -387,6 +391,43 @@ class Analysis(Base):
             elif self.is_setter_call_point(program_point):
                 self._lambda_setter(program_point)
 
+    def _lambda_constructor(self, program_point: ProgramPoint, typ: Constructor):
+        assert False
+        call_lab, call_ctx = program_point
+        old_stack = self.analysis_list[program_point]
+        new_stack = deepcopy(old_stack)
+
+        dummy_value = Value()
+        addr = record(call_lab, call_ctx)
+        cls_value = new_stack.compute_value_of_expr(ast.Name(id="cls", ctx=ast.Load()))
+        for c in cls_value:
+            instance = typ(addr, c)
+            dummy_value.inject_type(instance)
+        _, dummy_ret_lab = self.get_func_return_label(call_lab)
+        dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+        new_stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
+        self.push_info_to_dummy(new_stack, (dummy_ret_lab, call_ctx))
+
+    def _lambda_special_method(
+        self, program_point: ProgramPoint, typ: SpecialMethodObject
+    ):
+        call_lab, call_ctx = program_point
+        call_stmt = self.get_stmt_by_point(program_point)
+        old_stack = self.analysis_list[program_point]
+        new_stack = deepcopy(old_stack)
+
+        dummy_value = Value()
+        args, keywords = self.compute_func_args(
+            new_stack, call_stmt.args, call_stmt.keywords
+        )
+        res = typ(*args, **keywords)
+        dummy_value.inject_type(res)
+
+        _, dummy_ret_lab = self.get_func_return_label(call_lab)
+        dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+        new_stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
+        self.push_info_to_dummy(new_stack, (dummy_ret_lab, call_ctx))
+
     def _lambda_special_init(self, program_point: ProgramPoint):
         call_lab, call_ctx = program_point
         call_stmt: ast.Call = self.get_stmt_by_label(call_lab)
@@ -395,22 +436,22 @@ class Analysis(Base):
         old_stack: Stack = self.analysis_list[program_point]
         new_stack: Stack = deepcopy(old_stack)
 
-        call_func_value = old_stack.compute_value_of_expr(call_stmt.func)
+        value: Value = old_stack.compute_value_of_expr(call_stmt.func)
         dummy_value = Value()
-        for call_func_type in call_func_value:
-            if isinstance(call_func_type, SpecialMethodObject):
-                res = call_func_type()
+        ret_lab, dummy_ret_lab = self.get_init_return_label(call_lab)
+        for val in value:
+            if isinstance(val, SpecialMethodObject):
+                res = val()
                 dummy_value.inject_type(res)
-            elif isinstance(call_func_type, MethodObject):
-                entry_lab, exit_lab = call_func_type.__my_func__.__my_code__
-                instance = call_func_type.__my_instance__
-                new_ctx: Ctx = merge(call_lab, instance, call_ctx)
+            elif isinstance(val, MethodObject):
+                entry_lab, exit_lab = val.__my_func__.__my_code__
+                instance = val.__my_instance__
+                new_ctx: Ctx = merge(call_lab, instance.__my_address__, call_ctx)
 
-                ret_lab, _ = self.get_init_return_label(call_lab)
                 self.entry_info[(entry_lab, new_ctx)] = (
                     instance,
                     INIT_FLAG,
-                    call_func_type.__my_module__,
+                    val.__my_module__,
                 )
 
                 inter_flow = (
@@ -420,7 +461,6 @@ class Analysis(Base):
                     (ret_lab, call_ctx),
                 )
                 self.inter_flows.add(inter_flow)
-        _, dummy_ret_lab = self.get_init_return_label(call_lab)
         dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
         self.push_info_to_dummy(new_stack, (dummy_ret_lab, call_ctx))
@@ -430,23 +470,24 @@ class Analysis(Base):
         assert isinstance(call_stmt, ast.Attribute), call_stmt
 
         call_lab, call_ctx = program_point
-        stack: Stack = self.analysis_list[program_point]
-        target_value = stack.compute_value_of_expr(call_stmt.value)
-        dummy_value = Value()
-        for target_typ in target_value:
-            attr_value = my_getattr(target_typ, call_stmt.attr, None)
-            for attr_typ in attr_value:
-                if isinstance(attr_typ, DescriptorGetMethod):
-                    call_lab, call_ctx = program_point
-                    entry_lab, exit_lab = attr_typ.__my_func__.__my_code__
-                    instance = attr_typ.__my_instance__
-                    new_ctx: Ctx = merge(call_lab, instance, call_ctx)
+        old_stack: Stack = self.analysis_list[program_point]
 
-                    ret_lab, dummy_ret_lab = self.get_getter_return_label(call_lab)
+        value = old_stack.compute_value_of_expr(call_stmt.value)
+        dummy_value = Value()
+        ret_lab, dummy_ret_lab = self.get_getter_return_label(call_lab)
+        for val in value:
+            attr_value = my_getattr(val, call_stmt.attr, [])
+            for attr_val in attr_value:
+                if isinstance(attr_val, DescriptorGetMethod):
+                    call_lab, call_ctx = program_point
+                    entry_lab, exit_lab = attr_val.__my_func__.__my_code__
+                    instance = attr_val.__my_instance__
+                    new_ctx: Ctx = merge(call_lab, instance.__my_address__, call_ctx)
+
                     self.entry_info[(entry_lab, new_ctx)] = (
                         instance,
                         None,
-                        attr_typ.__my_module__,
+                        attr_val.__my_module__,
                     )
 
                     inter_flow = (
@@ -457,12 +498,11 @@ class Analysis(Base):
                     )
                     self.inter_flows.add(inter_flow)
                 else:
-                    dummy_value.inject_type(attr_typ)
+                    dummy_value.inject_type(attr_val)
 
-        ret_lab, dummy_ret_lab = self.get_getter_return_label(call_lab)
-        dummy_ret: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-        dummy_stack = deepcopy(stack)
-        dummy_stack.write_var(dummy_ret.id, Namespace_Local, dummy_value)
+        dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+        dummy_stack = deepcopy(old_stack)
+        dummy_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
         self.push_info_to_dummy(dummy_stack, (dummy_ret_lab, call_ctx))
 
     def _lambda_setter(self, program_point):
@@ -476,36 +516,34 @@ class Analysis(Base):
         attr: str = call_stmt.targets[0].attr
 
         call_lab, call_ctx = program_point
-        stack: Stack = self.analysis_list[program_point]
-        dummy_stack = deepcopy(stack)
-        lhs_value = dummy_stack.compute_value_of_expr(attribute.value)
-        rhs_value = dummy_stack.compute_value_of_expr(call_stmt.value)
-        for target_typ in lhs_value:
-            attr_value = my_setattr(target_typ, attr, rhs_value)
-            if attr_value is not None:
-                for attr_typ in attr_value:
-                    if isinstance(attr_typ, DescriptorSetMethod):
-                        call_lab, call_ctx = program_point
-                        entry_lab, exit_lab = attr_typ.__my_func__.__my_code__
-                        instance = attr_typ.__my_instance__
-                        new_ctx: Ctx = merge(call_lab, instance, call_ctx)
+        old_stack: Stack = self.analysis_list[program_point]
+        dummy_stack: Stack = deepcopy(old_stack)
 
-                        ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
-                        self.entry_info[(entry_lab, new_ctx)] = (
-                            instance,
-                            None,
-                            attr_typ.__my_module__,
-                        )
+        ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
+        attr_value = dummy_stack.compute_value_of_expr(attribute.value)
+        expr_value = dummy_stack.compute_value_of_expr(call_stmt.value)
+        for attr_type in attr_value:
+            attr_value = my_setattr(attr_type, attr, expr_value, [])
+            for attr_typ in attr_value:
+                if isinstance(attr_typ, DescriptorSetMethod):
+                    entry_lab, exit_lab = attr_typ.__my_func__.__my_code__
+                    instance = attr_typ.__my_instance__
+                    new_ctx: Ctx = merge(call_lab, instance.__my_address__, call_ctx)
 
-                        inter_flow = (
-                            (call_lab, call_ctx),
-                            (entry_lab, new_ctx),
-                            (exit_lab, new_ctx),
-                            (ret_lab, call_ctx),
-                        )
-                        self.inter_flows.add(inter_flow)
+                    self.entry_info[(entry_lab, new_ctx)] = (
+                        instance,
+                        None,
+                        attr_typ.__my_module__,
+                    )
 
-        _, dummy_ret_lab = self.get_setter_return_label(call_lab)
+                    inter_flow = (
+                        (call_lab, call_ctx),
+                        (entry_lab, new_ctx),
+                        (exit_lab, new_ctx),
+                        (ret_lab, call_ctx),
+                    )
+                    self.inter_flows.add(inter_flow)
+
         self.push_info_to_dummy(dummy_stack, (dummy_ret_lab, call_ctx))
 
     def push_info_to_dummy(
@@ -562,29 +600,9 @@ class Analysis(Base):
             elif isinstance(typ, MethodObject):
                 self._lambda_method(program_point, typ)
             elif isinstance(typ, SpecialMethodObject):
-                dummy_value = Value()
-                res = typ()
-                dummy_value.inject_type(res)
-                new_stack: Stack = deepcopy(old_stack)
-                _, dummy_ret_lab = self.get_func_return_label(call_lab)
-                dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-                new_stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
-                self.push_info_to_dummy(new_stack, (dummy_ret_lab, call_ctx))
+                self._lambda_special_method(program_point, typ)
             elif isinstance(typ, Constructor):
-                dummy_value = Value()
-                addr = record(call_lab, call_ctx)
-                call_stack = self.analysis_list[program_point]
-                cls_value = call_stack.compute_value_of_expr(
-                    ast.Name(id="cls", ctx=ast.Load())
-                )
-                for c in cls_value:
-                    instance = typ(addr, c)
-                    dummy_value.inject_type(instance)
-                new_stack: Stack = deepcopy(old_stack)
-                _, dummy_ret_lab = self.get_func_return_label(call_lab)
-                dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-                new_stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
-                self.push_info_to_dummy(new_stack, (dummy_ret_lab, call_ctx))
+                self._lambda_constructor(program_point, typ)
 
     # deal with class initialization
     # find __new__ and __init__ method
@@ -628,7 +646,7 @@ class Analysis(Base):
     def _lambda_function(self, program_point: ProgramPoint, typ: FunctionObject):
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = typ.__my_code__
-        ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
+        ret_lab, _ = self.get_func_return_label(call_lab)
 
         new_ctx: Ctx = merge(call_lab, None, call_ctx)
         inter_flow = (
@@ -644,18 +662,10 @@ class Analysis(Base):
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = typ.__my_func__.__my_code__
         instance = typ.__my_instance__
-        new_ctx: Ctx = merge(call_lab, instance, call_ctx)
+        new_ctx: Ctx = merge(call_lab, instance.__my_address__, call_ctx)
 
-        if self.is_special_init_call_label(call_lab):
-            ret_lab, dummy_ret_lab = self.get_init_return_label(call_lab)
-            self.entry_info[(entry_lab, new_ctx)] = (
-                instance,
-                INIT_FLAG,
-                typ.__my_module__,
-            )
-        else:
-            ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
-            self.entry_info[(entry_lab, new_ctx)] = (instance, None, typ.__my_module__)
+        ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
+        self.entry_info[(entry_lab, new_ctx)] = (instance, None, typ.__my_module__)
 
         inter_flow = (
             (call_lab, call_ctx),
@@ -666,25 +676,23 @@ class Analysis(Base):
         self.inter_flows.add(inter_flow)
 
     def transfer(self, program_point: ProgramPoint) -> Stack:
-        lab, _ = program_point
         if self.analysis_list[program_point].is_bot():
             return self.analysis_list[program_point]
 
-        if self.is_dummy_label(lab):
+        if self.is_dummy_point(program_point):
             return self.transfer_Pass(program_point)
-        elif self.is_call_label(lab):
+        elif self.is_call_point(program_point):
             return self.transfer_call(program_point)
         elif self.is_entry_point(program_point):
             return self.transfer_entry(program_point)
         elif self.is_exit_point(program_point):
             return self.transfer_exit(program_point)
-        elif self.is_return_label(lab):
+        elif self.is_return_point(program_point):
             return self.transfer_return(program_point)
         return self.do_transfer(program_point)
 
     def do_transfer(self, program_point: ProgramPoint) -> Stack:
-        label, _ = program_point
-        stmt: ast.stmt = self.get_stmt_by_label(label)
+        stmt: ast.stmt = self.get_stmt_by_point(program_point)
         stmt_name: str = stmt.__class__.__name__
         handler = getattr(self, "transfer_" + stmt_name)
         return handler(program_point)
@@ -693,29 +701,16 @@ class Analysis(Base):
         label, context = program_point
         stmt: ast.Assign = self.get_stmt_by_label(label)
 
-        old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        old_stack: Stack = self.analysis_list[program_point]
+        new_stack: Stack = deepcopy(old_stack)
 
-        rhs_value: Value = new.compute_value_of_expr(stmt.value, program_point)
+        rhs_value: Value = new_stack.compute_value_of_expr(stmt.value, program_point)
         target: ast.expr = stmt.targets[0]
         if isinstance(target, ast.Name):
-            lhs_name: str = target.id
-            new.write_var(lhs_name, Namespace_Local, rhs_value)
-        elif isinstance(target, ast.Attribute):
-            value: Value = new.compute_value_of_expr(target.value)
-            field: str = target.attr
-            for typ in value:
-                if isinstance(typ, Instance):
-                    my_setattr(typ, field, rhs_value)
-                elif isinstance(typ, CustomClass):
-                    my_setattr(typ, field, rhs_value)
-                elif isinstance(typ, FunctionObject):
-                    my_setattr(typ, field, rhs_value)
-                else:
-                    assert False
+            new_stack.write_var(target.id, Namespace_Local, rhs_value)
         else:
             assert False
-        return new
+        return new_stack
 
     def transfer_AugAssign(self, program_point: ProgramPoint):
         label, context = program_point
@@ -813,7 +808,6 @@ class Analysis(Base):
         attribute: ast.Attribute = call_stmt.targets[0]
         attr: str = call_stmt.targets[0].attr
 
-        call_lab, call_ctx = program_point
         old_stack: Stack = self.analysis_list[program_point]
         new_stack = deepcopy(old_stack)
         lhs_value = new_stack.compute_value_of_expr(attribute.value)

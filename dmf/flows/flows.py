@@ -502,8 +502,8 @@ class CFGVisitor(ast.NodeVisitor):
                 )
                 node.value = tmp_var
                 self.curr_block = dummy_return_node
-            else:
-                add_stmt(self.curr_block, node)
+            # else:
+            #     add_stmt(self.curr_block, node)
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
             for target in node.targets:
@@ -1239,7 +1239,10 @@ class CFGVisitor(ast.NodeVisitor):
         return seq + [node]
 
     def visit_Subscript(self, node) -> Any:
-        return self.visit_Attribute(node)
+        expr_sequence = self.visit(node.value)
+        node.value = expr_sequence[-1]
+
+        return expr_sequence[:-1] + [node]
 
     def visit_Starred(self, node) -> Any:
         return self.visit_Attribute(node)

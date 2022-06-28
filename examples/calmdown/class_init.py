@@ -13,14 +13,15 @@
 #  limitations under the License.
 
 
-class Desc:
-    def __get__(self, instance, owner):
-        return instance
+# class Desc:
+#     def __get__(self, instance, owner):
+#         return instance
 
 
 class Test:
-    d = Desc()
+    # d = Desc()
+    pass
 
 
 t = Test()
-x = t.d
+# x = t.d
