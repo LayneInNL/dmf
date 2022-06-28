@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from copy import deepcopy
+from types import MethodType
 from typing import DefaultDict
 
 import dmf.share
@@ -126,7 +127,8 @@ class Namespace(defaultdict):
     # So we have to collect all variables
     def __le__(self, other):
         variables = filter(
-            lambda elt: not isinstance(elt, DunderVar), self.keys() | other.keys()
+            lambda elt: not isinstance(elt, DunderVar) and elt.name != "POSITION_FLAG",
+            self.keys() | other.keys(),
         )
 
         for var in variables:
@@ -136,7 +138,8 @@ class Namespace(defaultdict):
 
     def __iadd__(self, other):
         variables = filter(
-            lambda elt: not isinstance(elt, DunderVar), self.keys() | other.keys()
+            lambda elt: not isinstance(elt, DunderVar) and elt.name != "POSITION_FLAG",
+            self.keys() | other.keys(),
         )
         for var in variables:
             self[var] += other[var]
@@ -288,23 +291,42 @@ class ObjectClass:
                 if class_variable is not None:
                     descr_get = Value()
                     for class_type in class_variable:
-                        getters = my_getattr(class_type, "__get__")
-                        for getter in getters:
-                            if isinstance(getter, FunctionObject):
-                                descr_get.inject_type(
-                                    DescriptorGetMethod(
-                                        instance=class_type,
-                                        function=getter,
-                                        desc_instance=self,
-                                        desc_owner=my_type(self),
+                        if isinstance(class_type, FunctionObject):
+                            descr_get.inject_type(
+                                MethodObject(instance=self, function=class_type)
+                            )
+                        elif isinstance(class_type, SpecialFunctionObject):
+                            descr_get.inject_type(
+                                SpecialMethodObject(instance=self, function=class_type)
+                            )
+                        else:
+                            getters = my_getattr(class_type, "__get__")
+                            for getter in getters:
+                                if isinstance(getter, FunctionObject):
+                                    descr_get.inject_type(
+                                        DescriptorGetMethod(
+                                            instance=class_type,
+                                            function=getter,
+                                            desc_instance=self,
+                                            desc_owner=my_type(self),
+                                        )
                                     )
-                                )
-                            elif isinstance(getter, SpecialFunctionObject):
-                                descr_get.inject_type(
-                                    SpecialMethodObject(
-                                        instance=class_type, function=getter
+                                elif isinstance(getter, SpecialFunctionObject):
+                                    descr_get.inject_type(
+                                        SpecialMethodObject(
+                                            instance=class_type, function=getter
+                                        )
                                     )
-                                )
+                                elif isinstance(getter, MethodObject):
+                                    descr_get.inject_type(
+                                        DescriptorGetMethod(
+                                            instance=getter.__my_instance__,
+                                            function=getter.__my_func__,
+                                            desc_instance=self,
+                                            desc_owner=my_type(self),
+                                        )
+                                    )
+
                     if len(descr_get) > 0:
                         return descr_get
 
@@ -662,6 +684,9 @@ class CustomClass:
             memo[self_id] = custom_class
         return memo[self_id]
 
+    def __repr__(self):
+        return self.__my_dict__.__repr__()
+
 
 class Constructor:
     def __new__(cls, *args, **kwargs):
@@ -795,7 +820,8 @@ class Heap:
 
     def write_ins_to_heap(self, instance: Instance):
         if instance in self.singletons:
-            logger.critical("Have same name")
+            # logger.critical("Have same name")
+            pass
         else:
             self.singletons[instance] = Namespace()
 

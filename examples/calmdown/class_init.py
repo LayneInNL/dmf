@@ -11,11 +11,16 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+
+
+class Desc:
+    def __get__(self, instance, owner):
+        return instance
+
+
 class Test:
-    # def __init__(self):
-    #     # self.x = 1
-    #     pass
-    pass
+    d = Desc()
 
 
 t = Test()
+x = t.d
