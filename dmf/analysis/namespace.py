@@ -13,15 +13,15 @@
 #  limitations under the License.
 from __future__ import annotations
 
+import types
 from collections import defaultdict
-from copy import deepcopy
-from types import MethodType
+from copy import deepcopy, copy
 from typing import DefaultDict
 
 import dmf.share
 from dmf.analysis.c3 import builtin_object, c3
-from dmf.analysis.prim import NoneType
-from dmf.analysis.value import Value
+from dmf.analysis.prim import NoneType, Int
+from dmf.analysis.value import Value, create_value_with_type
 from dmf.analysis.variables import (
     DunderVar,
     LocalVar,
@@ -29,7 +29,6 @@ from dmf.analysis.variables import (
     NonlocalVar,
     GlobalVar,
 )
-from dmf.log.logger import logger
 
 
 def _func():
@@ -191,8 +190,10 @@ def _sanity_check(value: Value):
 
 
 class TypeClass:
+    instance = None
+
     def __new__(cls):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
 
             def __getattribute__(cls, name):
@@ -242,13 +243,13 @@ class TypeClass:
             self.__my_mro__ = c3(self)
             self.__my_class__ = self
             func = SpecialFunctionObject(func=__getattribute__)
-            value = Value()
-            value.inject_type(func)
-            self.__my_dict__.write_local_value(__getattribute__.__name__, value)
+            self.__my_dict__.write_local_value(
+                __getattribute__.__name__, create_value_with_type(func)
+            )
             func = SpecialFunctionObject(func=__setattr__)
-            value = Value()
-            value.inject_type(func)
-            self.__my_dict__.write_local_value(__setattr__.__name__, value)
+            self.__my_dict__.write_local_value(
+                __setattr__.__name__, create_value_with_type(func)
+            )
         return cls.instance
 
     def __le__(self, other):
@@ -265,8 +266,10 @@ class TypeClass:
 
 
 class ObjectClass:
+    instance = None
+
     def __new__(cls):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
 
             def __init__(self):
@@ -374,21 +377,21 @@ class ObjectClass:
             self.__my_bases__ = [builtin_object]
             self.__my_mro__ = c3(self)
             self.__my_class__ = my_typ
-            value = Value()
             func = SpecialFunctionObject(func=__init__)
-            value.inject_type(func)
-            self.__my_dict__.write_local_value(__init__.__name__, value)
-            value = Value()
+            self.__my_dict__.write_local_value(
+                __init__.__name__, create_value_with_type(func)
+            )
             func = SpecialFunctionObject(func=__getattribute__)
-            value.inject_type(func)
-            self.__my_dict__.write_local_value(__getattribute__.__name__, value)
-            value = Value()
+            self.__my_dict__.write_local_value(
+                __getattribute__.__name__, create_value_with_type(func)
+            )
             func = SpecialFunctionObject(func=__setattr__)
-            value.inject_type(func)
-            self.__my_dict__.write_local_value(__setattr__.__name__, value)
-            value = Value()
-            value.inject_type(constructor)
-            self.__my_dict__.write_local_value("__new__", value)
+            self.__my_dict__.write_local_value(
+                __setattr__.__name__, create_value_with_type(func)
+            )
+            self.__my_dict__.write_local_value(
+                "__new__", create_value_with_type(constructor)
+            )
         return cls.instance
 
     def __le__(self, other):
@@ -405,8 +408,10 @@ class ObjectClass:
 
 
 class FunctionClass:
+    instance = None
+
     def __new__(cls):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             self = cls.instance
             self.__my_uuid__ = id(self)
@@ -689,8 +694,10 @@ class CustomClass:
 
 
 class Constructor:
+    instance = None
+
     def __new__(cls, *args, **kwargs):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = id(cls.instance)
         return cls.instance
@@ -739,6 +746,171 @@ class Instance:
 
     def __eq__(self, other):
         return self.__my_uuid__ == other.__my_uuid__
+
+
+class BuiltinList:
+    instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls.instance is None:
+            cls.instance = object.__new__(cls)
+
+            def append(self, x: Value):
+                self.internal.inject_value(x)
+                return NoneType()
+
+            def extend(self, iterable):
+                self.internal.inject_value(iterable)
+                return NoneType()
+
+            def remove(self, x):
+                return NoneType()
+
+            def pop(self, i=None):
+                return copy(self.internal)
+
+            def clear(self):
+                self.internal = Value()
+
+            def index(self, start=None, end=None):
+                return Int()
+
+            def count(self, x):
+                return Int()
+
+            def sort(self, key=None, reverse=False):
+                return NoneType()
+
+            def reverse(self):
+                return NoneType()
+
+            def copy(self):
+                internal = copy(self.internal)
+                return BuiltinListObject(internal)
+
+            cls.instance.__my_uuid__ = id(cls.instance)
+            cls.instance.__my_bases__ = [my_object]
+            cls.instance.__my_mro__ = c3(cls.instance)
+
+            local_functions = filter(
+                lambda value: isinstance(value, types.FunctionType),
+                locals().values(),
+            )
+
+            cls.instance.__my_dict__ = Namespace()
+            for function in local_functions:
+                cls.instance.__my_dict__.write_local_value(
+                    function.__name__,
+                    create_value_with_type(SpecialFunctionObject(func=function)),
+                )
+
+        return cls.instance
+
+    def __call__(self, iterable: Value = None):
+        return BuiltinListObject(iterable)
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
+
+
+class BuiltinListObject:
+    def __init__(self, iterable: Value = None):
+        self.__my_class__ = my_list
+        if iterable is None:
+            self.internal = Value()
+        else:
+            self.internal = copy(iterable)
+
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            iterable = deepcopy(self.internal, memo)
+            uuid = deepcopy(self.__my_uuid__, memo)
+            l = BuiltinListObject(iterable)
+            l.__my_uuid__ = uuid
+            memo[self_id] = l
+        return memo[self_id]
+
+    def __repr__(self):
+        return self.internal.__repr__()
+
+
+class BuiltinTuple:
+    instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls.instance is None:
+            cls.instance = object.__new__(cls)
+
+            def index(self, start=None, end=None):
+                return Int()
+
+            def count(self, x):
+                return Int()
+
+            cls.instance.__my_uuid__ = id(cls.instance)
+            cls.instance.__my_bases__ = [my_object]
+            cls.instance.__my_mro__ = c3(cls.instance)
+
+            local_functions = filter(
+                lambda value: isinstance(value, types.FunctionType),
+                locals().values(),
+            )
+
+            cls.instance.__my_dict__ = Namespace()
+            for function in local_functions:
+                cls.instance.__my_dict__.write_local_value(
+                    function.__name__,
+                    create_value_with_type(SpecialFunctionObject(func=function)),
+                )
+
+        return cls.instance
+
+    def __call__(self, iterable: Value = None):
+        return BuiltinTupleObject(iterable)
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            memo[self_id] = self
+        return memo[self_id]
+
+
+class BuiltinTupleObject:
+    def __init__(self, iterable: Value = None):
+        self.__my_class__ = my_list
+        if iterable is None:
+            self.internal = Value()
+        else:
+            self.internal = copy(iterable)
+
+    def __deepcopy__(self, memo):
+        self_id = id(self)
+        if self_id not in memo:
+            iterable = deepcopy(self.internal, memo)
+            uuid = deepcopy(self.__my_uuid__, memo)
+            l = BuiltinTupleObject(iterable)
+            l.__my_uuid__ = uuid
+            memo[self_id] = l
+        return memo[self_id]
+
+    def __repr__(self):
+        return self.internal.__repr__()
 
 
 class ModuleType:
@@ -838,10 +1010,15 @@ constructor = Constructor()
 analysis_heap = Heap()
 my_typ = TypeClass()
 my_object = ObjectClass()
+my_list = BuiltinList()
+my_tuple = BuiltinTuple()
 
-v = Value()
-v.inject_type(my_object)
+v = create_value_with_type(my_object)
 builtin_namespace.write_local_value("object", v)
+v = create_value_with_type(my_list)
+builtin_namespace.write_local_value("list", v)
+v = create_value_with_type(my_tuple)
+builtin_namespace.write_local_value("tuple", v)
 
 my_function = FunctionClass()
 mock_value = Value()

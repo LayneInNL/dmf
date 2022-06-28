@@ -24,4 +24,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-x = a[1]
+# x = list()
+# x.append(1)
+# x.append(False)
+# x.remove(2)
+# x.extend(None)
+
+y = tuple()
