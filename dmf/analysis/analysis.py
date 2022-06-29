@@ -519,11 +519,11 @@ class Analysis(Base):
 
         call_lab, call_ctx = program_point
 
-        ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
+        ret_lab, dummy_ret_lab = self.get_setter_return_label(call_lab)
         attr_value = new_stack.compute_value_of_expr(attribute.value)
         expr_value = new_stack.compute_value_of_expr(call_stmt.value)
         for attr_type in attr_value:
-            attr_value = my_setattr(attr_type, attr, expr_value, [])
+            attr_value = my_setattr(attr_type, attr, expr_value)
             for attr_typ in attr_value:
                 if isinstance(attr_typ, DescriptorSetMethod):
                     entry_lab, exit_lab = attr_typ.__my_func__.__my_code__

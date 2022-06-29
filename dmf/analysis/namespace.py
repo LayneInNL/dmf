@@ -29,13 +29,6 @@ from dmf.analysis.variables import (
 )
 
 
-def _func():
-    pass
-
-
-function = type(_func)
-
-
 def my_type(obj):
     return obj.__my_class__
 
@@ -85,19 +78,6 @@ def _pytype_lookup(_type, _name):
     return None
 
 
-def _all_have(value: Value, _name):
-    res = []
-    for typ in value:
-        curr_res = my_hasattr(typ, _name)
-        res.append(curr_res)
-    if all(res):
-        return True
-    elif any(res):
-        raise NotImplementedError
-    else:
-        return False
-
-
 def dunder_lookup(typ, name: str):
 
     mro = typ.__my_mro__
@@ -111,68 +91,109 @@ def dunder_lookup(typ, name: str):
     raise AttributeError
 
 
-class TypeClass:
-    instance = None
+class Singleton(type):
+    _instances = {}
 
-    def __new__(cls):
-        if cls.instance is None:
-            cls.instance = object.__new__(cls)
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            instance = super(Singleton, cls).__call__(*args, **kwargs)
+            cls._instances[cls] = instance
+        return cls._instances[cls]
 
-            def __getattribute__(cls, name):
-                # https://github.com/python/cpython/blob/main/Objects/typeobject.c#L4057
-                # ignore meta type now
 
-                type_of_self = self
-                class_variable: Value = _pytype_lookup(type_of_self, name)
+class Base:
+    def __init__(self):
+        setattr(self, "__my_dict__", Namespace())
 
-                if class_variable is not None:
-                    descr_get = Value()
-                    for class_type in class_variable:
-                        getters = my_getattr(class_type, "__get__")
-                        for getter in getters:
-                            if isinstance(getter, FunctionObject):
-                                descr_get.inject_type(
-                                    DescriptorGetMethod(
-                                        instance=class_type,
-                                        function=getter,
-                                        desc_instance=NoneType(),
-                                        desc_owner=self,
-                                    )
+
+class TypeClass(Base, metaclass=Singleton):
+    # instance = None
+
+    def __custom__(self):
+        def __getattribute__(self, name):
+            # https://github.com/python/cpython/blob/main/Objects/typeobject.c#L4057
+            # ignore meta type now
+
+            type_of_self = self
+            class_variable: Value = _pytype_lookup(type_of_self, name)
+
+            if class_variable is not None:
+                descr_get = Value()
+                for class_type in class_variable:
+                    getters = my_getattr(class_type, "__get__")
+                    for getter in getters:
+                        if isinstance(getter, FunctionObject):
+                            descr_get.inject_type(
+                                DescriptorGetMethod(
+                                    instance=class_type,
+                                    function=getter,
+                                    desc_instance=NoneType(),
+                                    desc_owner=self,
                                 )
-                            elif isinstance(getter, SpecialFunctionObject):
-                                descr_get.inject_type(
-                                    SpecialMethodObject(
-                                        instance=class_type, function=getter
-                                    )
+                            )
+                        elif isinstance(getter, SpecialFunctionObject):
+                            descr_get.inject_type(
+                                SpecialMethodObject(
+                                    instance=class_type, function=getter
                                 )
-                    if len(descr_get) > 0:
-                        return descr_get
+                            )
+                if len(descr_get) > 0:
+                    return descr_get
 
-                if hasattr(self, "__my_dict__") and name in self.__my_dict__:
-                    return self.__my_dict__.read_value(name)
+            if hasattr(self, "__my_dict__") and name in self.__my_dict__:
+                return self.__my_dict__.read_value(name)
 
-                raise AttributeError(name)
+            raise AttributeError(name)
 
-            def __setattr__(cls, name, value):
-                # https://github.com/python/cpython/blob/main/Objects/typeobject.c#L4144
+        def __setattr__(self, name, value):
+            # https://github.com/python/cpython/blob/main/Objects/typeobject.c#L4144
 
-                return ObjectClass.__setattr__(cls, name, value)
+            type_of_self = my_type(self)
+            class_variable: Value = _pytype_lookup(type_of_self, name)
+            if class_variable is not None:
+                descr_set = Value()
+                for class_type in class_variable:
+                    setters = my_getattr(class_type, "__set__")
+                    for setter in setters:
+                        if isinstance(setter, FunctionObject):
+                            descr_set.inject_type(
+                                DescriptorSetMethod(
+                                    instance=class_type,
+                                    function=setter,
+                                    desc_instance=name,
+                                    desc_value=value,
+                                )
+                            )
+                        elif isinstance(setter, SpecialFunctionObject):
+                            descr_set.inject_type(
+                                SpecialMethodObject(
+                                    instance=class_type, function=setter
+                                )
+                            )
+                    descr_set.inject_value(setters)
+                if len(descr_set) > 0:
+                    return descr_set
 
-            self = cls.instance
-            self.__my_uuid__ = id(self)
-            self.__my_dict__ = Namespace()
-            self.__my_bases__ = [builtin_object]
-            self.__my_mro__ = c3(self)
-            self.__my_class__ = self
-            func = SpecialFunctionObject(func=__getattribute__)
-            self.__my_dict__.write_local_value(
-                __getattribute__.__name__, create_value_with_type(func)
-            )
-            func = SpecialFunctionObject(func=__setattr__)
-            self.__my_dict__.write_local_value(
-                __setattr__.__name__, create_value_with_type(func)
-            )
-        return cls.instance
+            if hasattr(self, "__my_dict__"):
+                self.__my_dict__.write_local_value(name, value)
+            return []
+
+        func = SpecialFunctionObject(func=__getattribute__)
+        self.__my_dict__.write_local_value(
+            __getattribute__.__name__, create_value_with_type(func)
+        )
+        func = SpecialFunctionObject(func=__setattr__)
+        self.__my_dict__.write_local_value(
+            __setattr__.__name__, create_value_with_type(func)
+        )
+
+    def __init__(self):
+        super().__init__()
+        self.__my_uuid__ = id(self)
+        self.__my_bases__ = [builtin_object]
+        self.__my_mro__ = c3(self)
+        self.__my_class__ = self
+        self.__custom__()
 
     def __le__(self, other):
         return True
@@ -293,28 +314,29 @@ class ObjectClass:
                     self.__my_dict__.write_local_value(name, value)
                 return None
 
-            self = cls.instance
-            self.__my_uuid__ = id(self)
-            self.__my_dict__ = Namespace()
-            self.__my_bases__ = [builtin_object]
-            self.__my_mro__ = c3(self)
-            self.__my_class__ = my_typ
+            cls.instance.__my_dict__ = Namespace()
             func = SpecialFunctionObject(func=__init__)
-            self.__my_dict__.write_local_value(
+            cls.instance.__my_dict__.write_local_value(
                 __init__.__name__, create_value_with_type(func)
             )
             func = SpecialFunctionObject(func=__getattribute__)
-            self.__my_dict__.write_local_value(
+            cls.instance.__my_dict__.write_local_value(
                 __getattribute__.__name__, create_value_with_type(func)
             )
             func = SpecialFunctionObject(func=__setattr__)
-            self.__my_dict__.write_local_value(
+            cls.instance.__my_dict__.write_local_value(
                 __setattr__.__name__, create_value_with_type(func)
             )
-            self.__my_dict__.write_local_value(
+            cls.instance.__my_dict__.write_local_value(
                 "__new__", create_value_with_type(constructor)
             )
         return cls.instance
+
+    def __init__(self):
+        self.__my_uuid__ = id(self)
+        self.__my_bases__ = [builtin_object]
+        self.__my_mro__ = c3(self)
+        self.__my_class__ = my_typ
 
     def __le__(self, other):
         return True
@@ -597,19 +619,19 @@ class CustomClass:
         self.__my_dict__ += other.__my_dict__
         return self
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            uuid = deepcopy(self.__my_uuid__, memo)
-            name = deepcopy(self.__my_name__, memo)
-            module = deepcopy(self.__my_module__, memo)
-            bases = deepcopy(self.__my_bases__, memo)
-            d = deepcopy(self.__my_dict__, memo)
-            custom_class = CustomClass(
-                uuid=uuid, name=name, module=module, bases=bases, namespace=d
-            )
-            memo[self_id] = custom_class
-        return memo[self_id]
+    # def __deepcopy__(self, memo):
+    #     self_id = id(self)
+    #     if self_id not in memo:
+    #         uuid = deepcopy(self.__my_uuid__, memo)
+    #         name = deepcopy(self.__my_name__, memo)
+    #         module = deepcopy(self.__my_module__, memo)
+    #         bases = deepcopy(self.__my_bases__, memo)
+    #         d = deepcopy(self.__my_dict__, memo)
+    #         custom_class = CustomClass(
+    #             uuid=uuid, name=name, module=module, bases=bases, namespace=d
+    #         )
+    #         memo[self_id] = custom_class
+    #     return memo[self_id]
 
     def __repr__(self):
         return self.__my_dict__.__repr__()
@@ -779,10 +801,6 @@ class BuiltinTuple:
             def count(self, x):
                 return Int()
 
-            cls.instance.__my_uuid__ = id(cls.instance)
-            cls.instance.__my_bases__ = [my_object]
-            cls.instance.__my_mro__ = c3(cls.instance)
-
             local_functions = filter(
                 lambda value: isinstance(value, types.FunctionType),
                 locals().values(),
@@ -796,6 +814,11 @@ class BuiltinTuple:
                 )
 
         return cls.instance
+
+    def __init__(self):
+        self.instance.__my_uuid__ = id(self.instance)
+        self.instance.__my_bases__ = [my_object]
+        self.instance.__my_mro__ = c3(self.instance)
 
     def __call__(self, iterable: Value = None):
         return BuiltinTupleObject(iterable)

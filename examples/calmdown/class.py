@@ -18,5 +18,6 @@ class Test:
         pass
 
 
-Test.x = 1
-a = Test.x
+a = Test()
+a.x = 1
+b = a.x
