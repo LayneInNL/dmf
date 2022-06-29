@@ -11,6 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+
 from __future__ import annotations
 
 import ast
@@ -54,20 +55,6 @@ class Frame:
         self.f_back: Frame | None = f_back
         self.f_globals: Namespace[Var, Value] = f_globals
         self.f_builtins: Namespace[Var, Value] = builtin_namespace
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            copied_f_locals = deepcopy(self.f_locals, memo)
-            copied_f_back = deepcopy(self.f_back, memo)
-            copied_f_globals = deepcopy(self.f_globals, memo)
-            frame = Frame(
-                f_locals=copied_f_locals,
-                f_back=copied_f_back,
-                f_globals=copied_f_globals,
-            )
-            memo[self_id] = frame
-        return memo[self_id]
 
     # compare f_locals, f_globals and f_builtins
     # don't know how to compare f_back for now
@@ -212,20 +199,6 @@ class Stack:
             self.frames = frames
         else:
             self.frames: List[Frame] | BOT = []
-
-    def __deepcopy__(self, memo=None):
-        if memo is None:
-            memo = {}
-
-        self_id = id(self)
-        if self_id not in memo:
-            new_frames = deepcopy(self.frames, memo)
-            stack = Stack(new_frames)
-            memo[self_id] = stack
-
-        for name, module in dmf.share.analysis_modules.items():
-            module.namespace = deepcopy(module.namespace, memo)
-        return memo[self_id]
 
     def __le__(self, other: Stack):
         if self.frames == BOT:
@@ -409,3 +382,11 @@ BOT = "BOT"
 def stack_bot_builder() -> Stack:
     bot = Stack(frames=BOT)
     return bot
+
+
+def deepcopy_stack(stack: Stack) -> Stack:
+    memo = {}
+    new_stack = deepcopy(stack, memo)
+    for name, module in dmf.share.analysis_modules.items():
+        module.namespace = deepcopy(module.namespace, memo)
+    return new_stack

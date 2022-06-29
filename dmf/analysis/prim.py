@@ -59,12 +59,6 @@ class Int(BinOp):
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
-
     def __le__(self, other):
         return True
 
@@ -84,12 +78,6 @@ class Float(BinOp):
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
 
     def __le__(self, other):
         return True
@@ -111,12 +99,6 @@ class Complex(BinOp):
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
-
     def __le__(self, other):
         return True
 
@@ -136,12 +118,6 @@ class Bool(BinOp):
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
 
     def __le__(self, other):
         return True
@@ -163,12 +139,6 @@ class NoneType(BinOp):
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
-
     def __le__(self, other):
         return True
 
@@ -188,12 +158,6 @@ class Str(BinOp):
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
 
     def __le__(self, other):
         return True
@@ -215,12 +179,6 @@ class Bytes(BinOp):
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
-
     def __le__(self, other):
         return True
 
@@ -240,12 +198,6 @@ class ListType:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
 
     def __le__(self, other):
         return True
@@ -267,12 +219,6 @@ class TupleType:
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
-
     def __le__(self, other):
         return True
 
@@ -292,12 +238,6 @@ class SetType:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
 
     def __le__(self, other):
         return True
@@ -319,12 +259,6 @@ class DictType:
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
-
     def __le__(self, other):
         return True
 
@@ -344,12 +278,6 @@ class SuperType:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
 
     def __le__(self, other):
         return True

@@ -11,7 +11,6 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-builtin_object = object()
 
 
 def c3(cls_obj):
@@ -20,7 +19,7 @@ def c3(cls_obj):
 
 
 def static_c3(cls_obj):
-    if cls_obj is builtin_object:
+    if type(cls_obj) == object:
         return [cls_obj]
     return [cls_obj] + static_merge([static_c3(base) for base in cls_obj.__my_bases__])
 

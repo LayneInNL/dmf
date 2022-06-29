@@ -11,11 +11,11 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+
 from __future__ import annotations
 
 import ast
 from collections import defaultdict, deque
-from copy import deepcopy
 from typing import Dict, Tuple, Deque, Set, List
 
 import dmf.share
@@ -39,7 +39,7 @@ from dmf.analysis.namespace import (
     BuiltinTuple,
 )
 from dmf.analysis.prim import NoneType
-from dmf.analysis.stack import Frame, Stack, stack_bot_builder
+from dmf.analysis.stack import Frame, Stack, stack_bot_builder, deepcopy_stack
 from dmf.analysis.value import Value, create_value_with_type
 from dmf.analysis.variables import (
     Namespace_Local,
@@ -378,7 +378,7 @@ class Analysis(Base):
     # based on current program point, update self.IF
     def LAMBDA(self, program_point: ProgramPoint) -> None:
         old_stack: Stack = self.analysis_list[program_point]
-        new_stack: Stack = deepcopy(old_stack)
+        new_stack: Stack = deepcopy_stack(old_stack)
         # we are only interested in call labels
         if self.is_call_point(program_point):
             if self.is_classdef_call_point(program_point):
@@ -653,7 +653,7 @@ class Analysis(Base):
             value.inject_type(instance)
 
             ret_lab, dummy_ret_lab = self.get_new_return_label(call_lab)
-            new_stack = deepcopy(old_stack)
+            new_stack = deepcopy_stack(old_stack)
             dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
             new_stack.write_var(dummy_stmt.id, Namespace_Local, value)
             self.push_info_to_dummy(new_stack, (dummy_ret_lab, call_ctx))
@@ -743,7 +743,7 @@ class Analysis(Base):
         stmt: ast.Assign = self.get_stmt_by_label(label)
 
         old_stack: Stack = self.analysis_list[program_point]
-        new_stack: Stack = deepcopy(old_stack)
+        new_stack: Stack = deepcopy_stack(old_stack)
 
         rhs_value: Value = new_stack.compute_value_of_expr(stmt.value, program_point)
         target: ast.expr = stmt.targets[0]
@@ -758,7 +758,7 @@ class Analysis(Base):
         stmt: ast.AugAssign = self.get_stmt_by_label(label)
 
         old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        new: Stack = deepcopy_stack(old)
 
         lhs_value: Value = new.compute_value_of_expr(stmt.target)
         rhs_value: Value = new.compute_value_of_expr(stmt.value)
@@ -781,7 +781,7 @@ class Analysis(Base):
 
     def _transfer_call_classdef(self, program_point: ProgramPoint):
         old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        new: Stack = deepcopy_stack(old)
         new.next_ns()
         return new
 
@@ -791,7 +791,7 @@ class Analysis(Base):
         assert isinstance(call_stmt, ast.Call), call_stmt
 
         old_stack: Stack = self.analysis_list[program_point]
-        new_stack: Stack = deepcopy(old_stack)
+        new_stack: Stack = deepcopy_stack(old_stack)
         new_stack.next_ns()
 
         args = call_stmt.args
@@ -814,7 +814,7 @@ class Analysis(Base):
         assert isinstance(call_stmt, ast.Attribute), call_stmt
 
         old_stack: Stack = self.analysis_list[program_point]
-        new_stack = deepcopy(old_stack)
+        new_stack = deepcopy_stack(old_stack)
         new_stack.next_ns()
 
         target_value = old_stack.compute_value_of_expr(call_stmt.value)
@@ -850,7 +850,7 @@ class Analysis(Base):
         attr: str = call_stmt.targets[0].attr
 
         old_stack: Stack = self.analysis_list[program_point]
-        new_stack = deepcopy(old_stack)
+        new_stack = deepcopy_stack(old_stack)
         lhs_value = new_stack.compute_value_of_expr(attribute.value)
         rhs_value = new_stack.compute_value_of_expr(call_stmt.value)
         for target_typ in lhs_value:
@@ -873,7 +873,7 @@ class Analysis(Base):
         entry_lab, entry_ctx = program_point
         stmt = self.get_stmt_by_label(entry_lab)
         old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        new: Stack = deepcopy_stack(old)
 
         # is self.self_info[program_point] is not None, it means
         # this is a class method call
@@ -927,7 +927,7 @@ class Analysis(Base):
 
     def transfer_exit(self, program_point: ProgramPoint):
         old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        new: Stack = deepcopy_stack(old)
 
         if not new.top_namespace_contains(RETURN_FLAG):
             value = Value()
@@ -949,7 +949,7 @@ class Analysis(Base):
 
     def transfer_return_name(self, program_point: ProgramPoint, stmt: ast.Name):
         old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        new: Stack = deepcopy_stack(old)
         return_value: Value = new.read_var(RETURN_FLAG)
         new.pop_frame()
 
@@ -966,7 +966,7 @@ class Analysis(Base):
     def transfer_Import(self, program_point: ProgramPoint):
         lab, ctx = program_point
         old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        new: Stack = deepcopy_stack(old)
         stmt: ast.Import = self.get_stmt_by_label(lab)
         module_name = stmt.names[0].name
         as_name = stmt.names[0].asname
@@ -980,7 +980,7 @@ class Analysis(Base):
     def transfer_ImportFrom(self, program_point: ProgramPoint):
         lab, ctx = program_point
         old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        new: Stack = deepcopy_stack(old)
         stmt: ast.ImportFrom = self.get_stmt_by_label(lab)
 
         module_name = "" if stmt.module is None else stmt.module
@@ -1010,7 +1010,7 @@ class Analysis(Base):
         # return state
         return_state: Stack = self.analysis_list[program_point]
 
-        new_return_state: Stack = deepcopy(return_state)
+        new_return_state: Stack = deepcopy_stack(return_state)
         new_return_state.pop_frame()
 
         # class name
@@ -1055,7 +1055,7 @@ class Analysis(Base):
         self.add_sub_cfg(func_cfg)
 
         old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        new: Stack = deepcopy_stack(old)
 
         func_name: str = stmt.name
         args: ast.arguments = stmt.args
@@ -1083,7 +1083,7 @@ class Analysis(Base):
 
     def transfer_Pass(self, program_point: ProgramPoint) -> Stack:
         old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        new: Stack = deepcopy_stack(old)
         return new
 
     def transfer_If(self, program_point: ProgramPoint) -> Stack:
@@ -1097,7 +1097,7 @@ class Analysis(Base):
         stmt: ast.Return = self.get_stmt_by_label(lab)
 
         old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        new: Stack = deepcopy_stack(old)
 
         assert isinstance(stmt.value, ast.Name)
         name: str = stmt.value.id
@@ -1110,7 +1110,7 @@ class Analysis(Base):
         stmt = self.get_stmt_by_label(lab)
 
         old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        new: Stack = deepcopy_stack(old)
 
         name = stmt.names[0]
         new.write_var(name, Namespace_Global, None)
@@ -1122,7 +1122,7 @@ class Analysis(Base):
         stmt = self.get_stmt_by_label(lab)
 
         old: Stack = self.analysis_list[program_point]
-        new: Stack = deepcopy(old)
+        new: Stack = deepcopy_stack(old)
 
         name = stmt.names[0]
         new.write_var(name, Namespace_Nonlocal, None)

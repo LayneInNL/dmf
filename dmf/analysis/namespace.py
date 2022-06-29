@@ -11,15 +11,16 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+
 from __future__ import annotations
 
 import types
 from collections import defaultdict
-from copy import deepcopy, copy
+from copy import copy
 from typing import DefaultDict
 
 import dmf.share
-from dmf.analysis.c3 import builtin_object, c3
+from dmf.analysis.c3 import c3
 from dmf.analysis.prim import NoneType, Int
 from dmf.analysis.symboltable import Namespace
 from dmf.analysis.value import Value, create_value_with_type
@@ -190,7 +191,7 @@ class TypeClass(Base, metaclass=Singleton):
     def __init__(self):
         super().__init__()
         self.__my_uuid__ = id(self)
-        self.__my_bases__ = [builtin_object]
+        self.__my_bases__ = [object()]
         self.__my_mro__ = c3(self)
         self.__my_class__ = self
         self.__custom__()
@@ -200,12 +201,6 @@ class TypeClass(Base, metaclass=Singleton):
 
     def __iadd__(self, other):
         return self
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
 
 
 class ObjectClass:
@@ -334,7 +329,7 @@ class ObjectClass:
 
     def __init__(self):
         self.__my_uuid__ = id(self)
-        self.__my_bases__ = [builtin_object]
+        self.__my_bases__ = [object()]
         self.__my_mro__ = c3(self)
         self.__my_class__ = my_typ
 
@@ -343,12 +338,6 @@ class ObjectClass:
 
     def __iadd__(self, other):
         return self
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
 
 
 class FunctionClass:
@@ -371,12 +360,6 @@ class FunctionClass:
     def __iadd__(self, other: FunctionClass):
         return self
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
-
 
 class FunctionObject:
     def __init__(self, uuid, name, module, code, namespace=None):
@@ -396,21 +379,6 @@ class FunctionObject:
     def __iadd__(self, other):
         self.__my_dict__ += other.__my_dict__
         return self
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            new_uuid = deepcopy(self.__my_uuid__, memo)
-            new_name = deepcopy(self.__my_name__, memo)
-            new_module = deepcopy(self.__my_module__, memo)
-            new_code = deepcopy(self.__my_code__, memo)
-            new_namespace = deepcopy(self.__my_dict__, memo)
-            new_function_object = FunctionObject(
-                new_uuid, new_name, new_module, new_code, new_namespace
-            )
-            memo[self_id] = new_function_object
-
-        return memo[self_id]
 
 
 class DescriptorGetFunction:
@@ -432,21 +400,6 @@ class DescriptorGetFunction:
         self.__my_dict__ += other.__my_dict__
         return self
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            new_uuid = deepcopy(self.__my_uuid__, memo)
-            new_name = deepcopy(self.__my_name__, memo)
-            new_module = deepcopy(self.__my_module__, memo)
-            new_code = deepcopy(self.__my_code__, memo)
-            new_namespace = deepcopy(self.__my_dict__, memo)
-            new_function_object = FunctionObject(
-                new_uuid, new_name, new_module, new_code, new_namespace
-            )
-            memo[self_id] = new_function_object
-
-        return memo[self_id]
-
 
 class SpecialFunctionObject:
     def __init__(self, *, func, namespace=None):
@@ -464,17 +417,6 @@ class SpecialFunctionObject:
     def __iadd__(self, other):
         self.__my_dict__ += other.__my_dict__
         return self
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            new_func = deepcopy(self.__my_code__, memo)
-            new_namespace = deepcopy(self.__my_dict__, memo)
-            new_special_function_object = SpecialFunctionObject(
-                func=new_func, namespace=new_namespace
-            )
-            memo[self_id] = new_special_function_object
-        return memo[self_id]
 
     def __call__(self, *args, **kwargs):
         return self.__my_code__(*args, **kwargs)
@@ -496,17 +438,6 @@ class MethodObject:
     def __iadd__(self, other):
         self.__my_func__ += other.__my_func__
         return self
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            new_instance = deepcopy(self.__my_instance__, memo)
-            new_function = deepcopy(self.__my_func__, memo)
-            new_method_object = MethodObject(
-                instance=new_instance, function=new_function
-            )
-            memo[self_id] = new_method_object
-        return memo[self_id]
 
 
 class DescriptorGetMethod:
@@ -532,17 +463,6 @@ class DescriptorGetMethod:
         self.__my_func__ += other.__my_func__
         return self
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            new_instance = deepcopy(self.__my_instance__, memo)
-            new_function = deepcopy(self.__my_func__, memo)
-            new_method_object = MethodObject(
-                instance=new_instance, function=new_function
-            )
-            memo[self_id] = new_method_object
-        return memo[self_id]
-
 
 class DescriptorSetMethod:
     def __init__(
@@ -562,17 +482,6 @@ class DescriptorSetMethod:
         self.__my_func__ += other.__my_func__
         return self
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            new_instance = deepcopy(self.__my_instance__, memo)
-            new_function = deepcopy(self.__my_func__, memo)
-            new_method_object = MethodObject(
-                instance=new_instance, function=new_function
-            )
-            memo[self_id] = new_method_object
-        return memo[self_id]
-
 
 class SpecialMethodObject:
     def __init__(self, *, instance: Instance, function: SpecialFunctionObject):
@@ -586,17 +495,6 @@ class SpecialMethodObject:
 
     def __iadd__(self, other):
         return self
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            new_instance = deepcopy(self.__my_instance__, memo)
-            new_function = deepcopy(self.__my_func__, memo)
-            new_special_method_object = SpecialMethodObject(
-                instance=new_instance, function=new_function
-            )
-            memo[self_id] = new_special_method_object
-        return memo[self_id]
 
     def __call__(self, *args, **kwargs):
         return self.__my_func__(self.__my_instance__, *args, **kwargs)
@@ -618,20 +516,6 @@ class CustomClass:
     def __iadd__(self, other: CustomClass):
         self.__my_dict__ += other.__my_dict__
         return self
-
-    # def __deepcopy__(self, memo):
-    #     self_id = id(self)
-    #     if self_id not in memo:
-    #         uuid = deepcopy(self.__my_uuid__, memo)
-    #         name = deepcopy(self.__my_name__, memo)
-    #         module = deepcopy(self.__my_module__, memo)
-    #         bases = deepcopy(self.__my_bases__, memo)
-    #         d = deepcopy(self.__my_dict__, memo)
-    #         custom_class = CustomClass(
-    #             uuid=uuid, name=name, module=module, bases=bases, namespace=d
-    #         )
-    #         memo[self_id] = custom_class
-    #     return memo[self_id]
 
     def __repr__(self):
         return self.__my_dict__.__repr__()
@@ -655,12 +539,6 @@ class Constructor:
     def __iadd__(self, other):
         return self
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
-
 
 class Instance:
     def __init__(self, *, address, cls):
@@ -675,15 +553,6 @@ class Instance:
     def __iadd__(self, other: Instance):
         analysis_heap.singletons[self] += analysis_heap.singletons[other]
         return self
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            new_address = deepcopy(self.__my_address__, memo)
-            new_cls = deepcopy(self.__my_class__, memo)
-            new_instance = Instance(address=new_address, cls=new_cls)
-            memo[self_id] = new_instance
-        return memo[self_id]
 
     def __hash__(self):
         return hash(self.__my_uuid__)
@@ -759,12 +628,6 @@ class BuiltinList:
     def __iadd__(self, other):
         return self
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
-
 
 class BuiltinListObject:
     def __init__(self, iterable: Value = None):
@@ -773,16 +636,6 @@ class BuiltinListObject:
             self.internal = Value()
         else:
             self.internal = copy(iterable)
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            iterable = deepcopy(self.internal, memo)
-            uuid = deepcopy(self.__my_uuid__, memo)
-            l = BuiltinListObject(iterable)
-            l.__my_uuid__ = uuid
-            memo[self_id] = l
-        return memo[self_id]
 
     def __repr__(self):
         return self.internal.__repr__()
@@ -829,12 +682,6 @@ class BuiltinTuple:
     def __iadd__(self, other):
         return self
 
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            memo[self_id] = self
-        return memo[self_id]
-
 
 class BuiltinTupleObject:
     def __init__(self, iterable: Value = None):
@@ -843,16 +690,6 @@ class BuiltinTupleObject:
             self.internal = Value()
         else:
             self.internal = copy(iterable)
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            iterable = deepcopy(self.internal, memo)
-            uuid = deepcopy(self.__my_uuid__, memo)
-            l = BuiltinTupleObject(iterable)
-            l.__my_uuid__ = uuid
-            memo[self_id] = l
-        return memo[self_id]
 
     def __repr__(self):
         return self.internal.__repr__()
