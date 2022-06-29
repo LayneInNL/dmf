@@ -34,21 +34,27 @@ class BinOp:
                 assert False
 
 
-index = -1
+def _index_generator():
+    index = -1
+
+    def generate_next_one():
+        nonlocal index
+        temp = index
+        index -= 1
+        return temp
+
+    return generate_next_one
 
 
-def index_generator():
-    global index
-    temp = index
-    index -= 1
-    return temp
+index_generator = _index_generator()
 
 
 class Int(BinOp):
     internal = 1
+    instance = None
 
     def __new__(cls, *args, **kwargs):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
@@ -71,9 +77,10 @@ class Int(BinOp):
 
 class Float(BinOp):
     internal = 1.0
+    instance = None
 
     def __new__(cls, *args, **kwargs):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
@@ -96,9 +103,10 @@ class Float(BinOp):
 
 class Complex(BinOp):
     internal = 1j
+    instance = None
 
     def __new__(cls, *args, **kwargs):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
@@ -121,9 +129,10 @@ class Complex(BinOp):
 
 class Bool(BinOp):
     internal = True
+    instance = None
 
     def __new__(cls, *args, **kwargs):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
@@ -146,9 +155,10 @@ class Bool(BinOp):
 
 class NoneType(BinOp):
     internal = None
+    instance = None
 
     def __new__(cls, *args, **kwargs):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
@@ -171,9 +181,10 @@ class NoneType(BinOp):
 
 class Str(BinOp):
     internal = ""
+    instance = None
 
     def __new__(cls, *args, **kwargs):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
@@ -196,9 +207,10 @@ class Str(BinOp):
 
 class Bytes(BinOp):
     internal = b""
+    instance = None
 
     def __new__(cls, *args, **kwargs):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
@@ -221,9 +233,10 @@ class Bytes(BinOp):
 
 class ListType:
     internal = []
+    instance = None
 
     def __new__(cls):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
@@ -246,9 +259,10 @@ class ListType:
 
 class TupleType:
     internal = ()
+    instance = None
 
     def __new__(cls):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
@@ -271,9 +285,10 @@ class TupleType:
 
 class SetType:
     internal = set()
+    instance = None
 
     def __new__(cls):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
@@ -296,9 +311,10 @@ class SetType:
 
 class DictType:
     internal = {}
+    instance = None
 
     def __new__(cls):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance
@@ -321,9 +337,10 @@ class DictType:
 
 class SuperType:
     internal = super
+    instance = None
 
     def __new__(cls):
-        if not hasattr(cls, "instance"):
+        if cls.instance is None:
             cls.instance = object.__new__(cls)
             cls.instance.__my_uuid__ = index_generator()
         return cls.instance

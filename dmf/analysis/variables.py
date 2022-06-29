@@ -17,9 +17,8 @@ from __future__ import annotations
 Namespace_Local = "local"
 Namespace_Nonlocal = "nonlocal"
 Namespace_Global = "global"
+Namespace_Helper = "helper"
 POSITION_FLAG = "POSITION_FLAG"
-UNUSED_FLAG = "UNUSED_FLAG"
-SELF_FLAG = "SELF_FLAG"
 INIT_FLAG = "INIT_FLAG"
 RETURN_FLAG = "RETURN_FLAG"
 
@@ -59,9 +58,9 @@ class GlobalVar(Var):
         return f"({self.name}, {Namespace_Global})"
 
 
-class DunderVar(Var):
+class HelperVar(Var):
     def __init__(self, name: str):
         super().__init__(name)
 
     def __repr__(self):
-        return f"({self.name}, dunder attribute or method)"
+        return f"({self.name}, helper)"

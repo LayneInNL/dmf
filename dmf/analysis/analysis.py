@@ -19,6 +19,25 @@ from copy import deepcopy
 from typing import Dict, Tuple, Deque, Set, List
 
 import dmf.share
+from dmf.analysis.namespace import (
+    ModuleType,
+    analysis_heap,
+    CustomClass,
+    FunctionObject,
+    my_object,
+    MethodObject,
+    dunder_lookup,
+    Constructor,
+    my_setattr,
+    Namespace,
+    mock_value,
+    SpecialMethodObject,
+    my_getattr,
+    DescriptorGetMethod,
+    DescriptorSetMethod,
+    BuiltinList,
+    BuiltinTuple,
+)
 from dmf.analysis.prim import NoneType
 from dmf.analysis.stack import Frame, Stack, stack_bot_builder
 from dmf.analysis.value import Value, create_value_with_type
@@ -29,29 +48,7 @@ from dmf.analysis.variables import (
     RETURN_FLAG,
     POSITION_FLAG,
     INIT_FLAG,
-)
-from dmf.analysis.namespace import (
-    ModuleType,
-    analysis_heap,
-    CustomClass,
-    Instance,
-    FunctionObject,
-    my_object,
-    SpecialFunctionObject,
-    MethodObject,
-    dunder_lookup,
-    Constructor,
-    my_setattr,
-    Namespace,
-    mock_value,
-    SpecialMethodObject,
-    my_getattr,
-    DescriptorGetFunction,
-    DescriptorGetMethod,
-    my_type,
-    DescriptorSetMethod,
-    BuiltinList,
-    BuiltinTuple,
+    Namespace_Helper,
 )
 from dmf.flows import CFG
 from dmf.flows.flows import BasicBlock
@@ -802,7 +799,7 @@ class Analysis(Base):
         for idx, arg in enumerate(args, 1):
             arg_value = new_stack.compute_value_of_expr(arg)
             new_stack.write_var(str(idx), Namespace_Local, arg_value)
-        new_stack.write_var(POSITION_FLAG, Namespace_Local, idx)
+        new_stack.write_var(POSITION_FLAG, Namespace_Helper, idx)
 
         keywords = call_stmt.keywords
         for keyword in keywords:
@@ -832,7 +829,7 @@ class Analysis(Base):
                     owner = attr_typ.desc_owner
                     owner_value = create_value_with_type(owner)
                     new_stack.write_var("2", Namespace_Local, owner_value)
-                    new_stack.write_var(POSITION_FLAG, Namespace_Local, 2)
+                    new_stack.write_var(POSITION_FLAG, Namespace_Helper, 2)
                 else:
                     ret_value.inject_type(attr_typ)
 
@@ -867,7 +864,7 @@ class Analysis(Base):
                         desc_value = attr_typ.desc_value
                         setter_value = create_value_with_type(desc_value)
                         new_stack.write_var("2", Namespace_Local, setter_value)
-                        new_stack.write_var(POSITION_FLAG, Namespace_Local, 2)
+                        new_stack.write_var(POSITION_FLAG, Namespace_Helper, 2)
 
         return new_stack
 
@@ -887,7 +884,7 @@ class Analysis(Base):
             value.inject_type(instance)
             new.write_var(str(0), Namespace_Local, value)
         if init_flag:
-            new.write_var(INIT_FLAG, Namespace_Local, mock_value)
+            new.write_var(INIT_FLAG, Namespace_Helper, mock_value)
         if module_name:
             new.check_module_diff(module_name)
 

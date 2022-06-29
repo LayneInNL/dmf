@@ -39,7 +39,12 @@ from dmf.analysis.prim import (
     Float,
     Complex,
 )
-from dmf.analysis.variables import Namespace_Global, Namespace_Nonlocal, Namespace_Local
+from dmf.analysis.variables import (
+    Namespace_Global,
+    Namespace_Nonlocal,
+    Namespace_Local,
+    Namespace_Helper,
+)
 from dmf.log.logger import logger
 
 
@@ -174,6 +179,8 @@ class Frame:
             elif scope == Namespace_Global:
                 namespace = self._find_global_namespace(name)
                 self.f_locals.write_global_value(name, namespace)
+            elif scope == Namespace_Helper:
+                self.f_locals.write_helper_value(name, value)
 
     def _find_nonlocal_namespace(self, name: str) -> Namespace:
         parent_frame: Frame = self.f_back

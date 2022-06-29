@@ -21,13 +21,11 @@ from typing import DefaultDict
 import dmf.share
 from dmf.analysis.c3 import builtin_object, c3
 from dmf.analysis.prim import NoneType, Int
+from dmf.analysis.symboltable import Namespace
 from dmf.analysis.value import Value, create_value_with_type
 from dmf.analysis.variables import (
-    DunderVar,
     LocalVar,
     Var,
-    NonlocalVar,
-    GlobalVar,
 )
 
 
@@ -111,82 +109,6 @@ def dunder_lookup(typ, name: str):
             for typ in value:
                 return typ
     raise AttributeError
-
-
-# Namespace[Var|str, Value]
-class Namespace(defaultdict):
-    def __repr__(self):
-        return dict.__repr__(self)
-
-    def __missing__(self, key):
-        self[key] = value = Value(top=True)
-        return value
-
-    # we use defaultdict, the default value of an unknown variable is TOP
-    # So we have to collect all variables
-    def __le__(self, other):
-        variables = filter(
-            lambda elt: not isinstance(elt, DunderVar) and elt.name != "POSITION_FLAG",
-            self.keys() | other.keys(),
-        )
-
-        for var in variables:
-            if not self[var] <= other[var]:
-                return False
-        return True
-
-    def __iadd__(self, other):
-        variables = filter(
-            lambda elt: not isinstance(elt, DunderVar) and elt.name != "POSITION_FLAG",
-            self.keys() | other.keys(),
-        )
-        for var in variables:
-            self[var] += other[var]
-        return self
-
-    def __contains__(self, name: str):
-        # __xxx__ and Var
-        for var in self:
-            if name == var.name:
-                return True
-        return False
-
-    def __deepcopy__(self, memo):
-        namespace = Namespace()
-        for var, value in self.items():
-            copied_var = deepcopy(var, memo)
-            # print(value)
-            copied_value = deepcopy(value, memo)
-            namespace[copied_var] = copied_value
-
-        memo[id(self)] = namespace
-        return namespace
-
-    def read_var(self, name: str) -> Var:
-        for var, _ in self.items():
-            if name == var.name:
-                return var
-
-    def read_value(self, name: str) -> Value:
-        for var, val in self.items():
-            if name == var.name:
-                return val
-
-    def write_local_value(self, name: str, value: Value):
-        self[LocalVar(name)] = value
-
-    def write_nonlocal_value(self, name: str, ns: Namespace):
-        self[NonlocalVar(name)] = ns
-
-    def write_global_value(self, name: str, ns: Namespace):
-        self[GlobalVar(name)] = ns
-
-    def write_dunder_value(self, name: str, value):
-        self[DunderVar(name)] = value
-
-
-def _sanity_check(value: Value):
-    pass
 
 
 class TypeClass:
@@ -920,9 +842,9 @@ class ModuleType:
         self.package = package
         self.file = file
         self.namespace = Namespace()
-        self.namespace.write_dunder_value("__name__", name)
-        self.namespace.write_dunder_value("__package__", package)
-        self.namespace.write_dunder_value("__file__", file)
+        self.namespace.write_helper_value("__name__", name)
+        self.namespace.write_helper_value("__package__", package)
+        self.namespace.write_helper_value("__file__", file)
         self.entry_label, self.exit_label = dmf.share.create_and_update_cfg(self.file)
 
     def getattr(self, name: str) -> Value:
