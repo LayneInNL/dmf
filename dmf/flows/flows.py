@@ -351,6 +351,8 @@ class CFGVisitor(ast.NodeVisitor):
         self.add_edge(self.curr_block.bid, self.cfg.final_block.bid)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        decorator_list = node.decorator_list
+        node.decorator_list = []
 
         # deal with node.arguments
         seq = self.visit_arguments(node.args)
@@ -359,6 +361,16 @@ class CFGVisitor(ast.NodeVisitor):
         add_stmt(self.curr_block, node)
         self.add_FuncCFG(node)
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
+        self.visit_DecoratorList(node, decorator_list)
+
+    def visit_DecoratorList(self, node: ast.FunctionDef | ast.ClassDef, decorator_list):
+        stmt_sequence = []
+        targets = [ast.Name(id=node.name)]
+        for decorator in reversed(decorator_list):
+            make_decorator = ast.Call(func=decorator, args=targets, keywords=[])
+            stmt_sequence.append(ast.Assign(targets=targets, value=make_decorator))
+        self.populate_body(stmt_sequence)
 
     def visit_arguments(self, node: ast.arguments) -> Any:
         seq = []
@@ -378,18 +390,20 @@ class CFGVisitor(ast.NodeVisitor):
         return seq
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        # add_stmt(self.curr_block, node)
+        decorator_list = node.decorator_list
+        node.decorator_list = []
+
         call_block = self.curr_block
         add_stmt(call_block, node)
 
         self.add_ClassCFG(node)
 
-        return_block = self.new_block()
+        return_block = self.add_edge(call_block.bid, self.new_block().bid)
         add_stmt(return_block, node)
 
         self.cfg.classdef_inter_flows.add((call_block.bid, return_block.bid))
-        self.add_edge(call_block.bid, return_block.bid)
         self.curr_block = self.add_edge(return_block.bid, self.new_block().bid)
+        self.visit_DecoratorList(node, decorator_list)
 
     def visit_Return(self, node: ast.Return) -> None:
         if node.value is None:
