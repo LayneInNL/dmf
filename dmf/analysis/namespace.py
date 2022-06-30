@@ -125,11 +125,11 @@ class TypeClass(Base, metaclass=Singleton):
                     for getter in getters:
                         if isinstance(getter, FunctionObject):
                             descr_get.inject_type(
-                                DescriptorGetMethod(
+                                MethodObject(
                                     instance=class_type,
                                     function=getter,
-                                    desc_instance=NoneType(),
-                                    desc_owner=self,
+                                    descr_instance=NoneType(),
+                                    descr_owner=self,
                                 )
                             )
                         elif isinstance(getter, SpecialFunctionObject):
@@ -158,11 +158,11 @@ class TypeClass(Base, metaclass=Singleton):
                     for setter in setters:
                         if isinstance(setter, FunctionObject):
                             descr_set.inject_type(
-                                DescriptorSetMethod(
+                                MethodObject(
                                     instance=class_type,
                                     function=setter,
-                                    desc_instance=name,
-                                    desc_value=value,
+                                    descr_instance=self,
+                                    descr_value=value,
                                 )
                             )
                         elif isinstance(setter, SpecialFunctionObject):
@@ -426,54 +426,22 @@ class SpecialFunctionObject:
 
 
 class MethodObject:
-    def __init__(self, *, instance: Instance, function: FunctionObject):
-        self.__my_uuid__ = f"{instance.__my_uuid__}-{function.__my_uuid__}"
-        self.__my_instance__ = instance
-        self.__my_func__ = function
-        self.__my_module__ = function.__my_module__
-
-    def __le__(self, other):
-        return self.__my_func__ <= other.__my_func__
-
-    def __iadd__(self, other):
-        self.__my_func__ += other.__my_func__
-        return self
-
-
-class DescriptorGetMethod:
     def __init__(
         self,
         *,
         instance: Instance,
         function: FunctionObject,
-        desc_instance,
-        desc_owner,
+        descr_instance=None,
+        descr_owner=None,
+        descr_value=None,
     ):
         self.__my_uuid__ = f"{instance.__my_uuid__}-{function.__my_uuid__}"
         self.__my_instance__ = instance
         self.__my_func__ = function
         self.__my_module__ = function.__my_module__
-        self.desc_instance = desc_instance
-        self.desc_owner = desc_owner
-
-    def __le__(self, other):
-        return self.__my_func__ <= other.__my_func__
-
-    def __iadd__(self, other):
-        self.__my_func__ += other.__my_func__
-        return self
-
-
-class DescriptorSetMethod:
-    def __init__(
-        self, *, instance: Instance, function: FunctionObject, desc_instance, desc_value
-    ):
-        self.__my_uuid__ = f"{instance.__my_uuid__}-{function.__my_uuid__}"
-        self.__my_instance__ = instance
-        self.__my_func__ = function
-        self.__my_module__ = function.__my_module__
-        self.desc_instance = desc_instance
-        self.desc_value = desc_value
+        self.descriptor_instance = descr_instance
+        self.descriptor_owner = descr_owner
+        self.descriptor_value = descr_value
 
     def __le__(self, other):
         return self.__my_func__ <= other.__my_func__
@@ -484,11 +452,22 @@ class DescriptorSetMethod:
 
 
 class SpecialMethodObject:
-    def __init__(self, *, instance: Instance, function: SpecialFunctionObject):
+    def __init__(
+        self,
+        *,
+        instance: Instance,
+        function: SpecialFunctionObject,
+        descr_instance=None,
+        descr_owner=None,
+        descr_value=None,
+    ):
         self.__my_uuid__ = f"{instance.__my_uuid__}-{id(function)}"
         self.__my_name__ = function.__my_name__
         self.__my_instance__ = instance
         self.__my_func__ = function
+        self.descriptor_instance = descr_instance
+        self.descriptor_owner = descr_owner
+        self.descriptor_value = descr_value
 
     def __le__(self, other):
         return True

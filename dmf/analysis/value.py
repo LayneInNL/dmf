@@ -14,8 +14,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
-
 TOP = "VALUE_TOP"
 
 
@@ -66,22 +64,6 @@ class Value:
 
     def __iter__(self):
         return iter(self.type_dict.values())
-
-    def __copy__(self):
-        value = Value()
-        value.type_dict = self.type_dict.copy()
-        return value
-
-    def __deepcopy__(self, memo):
-        self_id = id(self)
-        if self_id not in memo:
-            value = Value()
-            if self.type_dict == TOP:
-                value.type_dict = TOP
-            else:
-                value.type_dict = deepcopy(self.type_dict, memo)
-            memo[self_id] = value
-        return memo[self_id]
 
     def inject_type(self, typ):
         self.type_dict[typ.__my_uuid__] = typ
