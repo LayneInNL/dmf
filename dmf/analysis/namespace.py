@@ -21,7 +21,7 @@ from typing import DefaultDict
 
 import dmf.share
 from dmf.analysis.c3 import c3
-from dmf.analysis.prim import NoneType, Int
+from dmf.analysis.prim import NoneType, Int, Bool
 from dmf.analysis.symboltable import Namespace
 from dmf.analysis.value import Value, create_value_with_type
 from dmf.analysis.variables import (
@@ -95,11 +95,24 @@ def dunder_lookup(typ, name: str):
 class Singleton(type):
     _instances = {}
 
+    @classmethod
+    def __prepare__(metacls, name, bases):
+        return {"__my_dict__": Namespace(), "__my_uuid__": None, "__my_bases__": None}
+
+    def __new__(cls, *args, **kwargs):
+        print(cls)
+
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instances:
             instance = super(Singleton, cls).__call__(*args, **kwargs)
             cls._instances[cls] = instance
         return cls._instances[cls]
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
 
 
 class Base:
@@ -245,11 +258,11 @@ class ObjectClass:
                             for getter in getters:
                                 if isinstance(getter, FunctionObject):
                                     descr_get.inject_type(
-                                        DescriptorGetMethod(
+                                        MethodObject(
                                             instance=class_type,
                                             function=getter,
-                                            desc_instance=self,
-                                            desc_owner=my_type(self),
+                                            descr_instance=self,
+                                            descr_owner=my_type(self),
                                         )
                                     )
                                 elif isinstance(getter, SpecialFunctionObject):
@@ -260,11 +273,11 @@ class ObjectClass:
                                     )
                                 elif isinstance(getter, MethodObject):
                                     descr_get.inject_type(
-                                        DescriptorGetMethod(
+                                        MethodObject(
                                             instance=getter.__my_instance__,
                                             function=getter.__my_func__,
-                                            desc_instance=self,
-                                            desc_owner=my_type(self),
+                                            descr_instance=self,
+                                            descr_owner=my_type(self),
                                         )
                                     )
 
@@ -286,11 +299,11 @@ class ObjectClass:
                         for setter in setters:
                             if isinstance(setter, FunctionObject):
                                 descr_set.inject_type(
-                                    DescriptorSetMethod(
+                                    MethodObject(
                                         instance=class_type,
                                         function=setter,
-                                        desc_instance=name,
-                                        desc_value=value,
+                                        descr_instance=name,
+                                        descr_value=value,
                                     )
                                 )
                             elif isinstance(setter, SpecialFunctionObject):
@@ -563,6 +576,7 @@ class BuiltinList:
 
             def clear(self):
                 self.internal = Value()
+                return NoneType()
 
             def index(self, start=None, end=None):
                 return Int()
@@ -663,6 +677,107 @@ class BuiltinTuple:
 
 
 class BuiltinTupleObject:
+    def __init__(self, iterable: Value = None):
+        self.__my_class__ = my_list
+        if iterable is None:
+            self.internal = Value()
+        else:
+            self.internal = copy(iterable)
+
+    def __repr__(self):
+        return self.internal.__repr__()
+
+
+class BuiltinSet:
+    instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls.instance is None:
+            cls.instance = object.__new__(cls)
+
+            def add(self, x: Value):
+                self.internal.inject_value(x)
+                return NoneType()
+
+            def clear(self):
+                self.internal = Value()
+                return NoneType()
+
+            def copy(self):
+                internal = copy(self.internal)
+                return BuiltinSetObject(internal)
+
+            def difference(self, another):
+                assert False
+
+            def difference_update(self, another):
+                assert False
+
+            def discard(self, elem):
+                return NoneType()
+
+            def intersection(self, another):
+                assert False
+
+            def intersection_update(self, another):
+                assert False
+
+            def isdisjoint(self, another):
+                return Bool()
+
+            def issubset(self, another):
+                return Bool()
+
+            def issuperset(self, another):
+                return Bool()
+
+            def pop(self, i=None):
+                return copy(self.internal)
+
+            def remove(self, elem):
+                return NoneType()
+
+            def symmetric_difference(self, another):
+                assert False
+
+            def symmetric_difference_update(self, another):
+                assert False
+
+            def union(self, another):
+                assert False
+
+            def update(self, another):
+                assert False
+
+            cls.instance.__my_uuid__ = id(cls.instance)
+            cls.instance.__my_bases__ = [my_object]
+            cls.instance.__my_mro__ = c3(cls.instance)
+
+            local_functions = filter(
+                lambda value: isinstance(value, types.FunctionType),
+                locals().values(),
+            )
+
+            cls.instance.__my_dict__ = Namespace()
+            for function in local_functions:
+                cls.instance.__my_dict__.write_local_value(
+                    function.__name__,
+                    create_value_with_type(SpecialFunctionObject(func=function)),
+                )
+
+        return cls.instance
+
+    def __call__(self, iterable: Value = None):
+        return BuiltinListObject(iterable)
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+
+class BuiltinSetObject:
     def __init__(self, iterable: Value = None):
         self.__my_class__ = my_list
         if iterable is None:
