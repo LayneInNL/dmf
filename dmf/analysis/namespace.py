@@ -92,21 +92,20 @@ def dunder_lookup(typ, name: str):
     raise AttributeError
 
 
-class Singleton(type):
-    _instances = {}
+class SingletonClass(type):
+    _class_objects_dict = {}
 
-    @classmethod
-    def __prepare__(metacls, name, bases):
-        return {"__my_dict__": Namespace(), "__my_uuid__": None, "__my_bases__": None}
+    def __new__(mcs, _name, _bases, _namespace, **kwargs):
+        if _name not in mcs._class_objects_dict:
+            class_object = super().__new__(mcs, _name, _bases, _namespace, **kwargs)
+            mcs._class_objects_dict[_name] = class_object
+        return mcs._class_objects_dict[_name]
 
-    def __new__(cls, *args, **kwargs):
-        print(cls)
-
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            instance = super(Singleton, cls).__call__(*args, **kwargs)
-            cls._instances[cls] = instance
-        return cls._instances[cls]
+    # def __call__(cls, *args, **kwargs):
+    #     if cls not in cls._instances:
+    #         instance = super(SingletonClass, cls).__call__(*args, **kwargs)
+    #         cls._instances[cls] = instance
+    #     return cls._instances[cls]
 
     def __le__(self, other):
         return True
@@ -115,25 +114,99 @@ class Singleton(type):
         return self
 
 
-class Base:
-    def __init__(self):
-        setattr(self, "__my_dict__", Namespace())
+class TypeClass:
+    def __getattribute__(self, name):
+        # https://github.com/python/cpython/blob/main/Objects/typeobject.c#L4057
+        # ignore meta type now
+
+        type_of_self = self
+        class_variable: Value = _pytype_lookup(type_of_self, name)
+
+        if class_variable is not None:
+            descr_get = Value()
+            for class_type in class_variable:
+                getters = my_getattr(class_type, "__get__")
+                for getter in getters:
+                    if isinstance(getter, FunctionObject):
+                        descr_get.inject_type(
+                            MethodObject(
+                                instance=class_type,
+                                function=getter,
+                                descr_instance=NoneType(),
+                                descr_owner=self,
+                            )
+                        )
+                    elif isinstance(getter, SpecialFunctionObject):
+                        descr_get.inject_type(
+                            SpecialMethodObject(instance=class_type, function=getter)
+                        )
+            if len(descr_get) > 0:
+                return descr_get
+
+        if hasattr(self, "__my_dict__") and name in self.__my_dict__:
+            return self.__my_dict__.read_value(name)
+
+        raise AttributeError(name)
+
+    def __setattr__(self, name, value):
+        type_of_self = my_type(self)
+        class_variable: Value = _pytype_lookup(type_of_self, name)
+        if class_variable is not None:
+            descr_set = Value()
+            for class_type in class_variable:
+                setters = my_getattr(class_type, "__set__")
+                for setter in setters:
+                    if isinstance(setter, FunctionObject):
+                        descr_set.inject_type(
+                            MethodObject(
+                                instance=class_type,
+                                function=setter,
+                                descr_instance=self,
+                                descr_value=value,
+                            )
+                        )
+                    elif isinstance(setter, SpecialFunctionObject):
+                        descr_set.inject_type(
+                            SpecialMethodObject(instance=class_type, function=setter)
+                        )
+                descr_set.inject_value(setters)
+            if len(descr_set) > 0:
+                return descr_set
+
+        if hasattr(self, "__my_dict__"):
+            self.__my_dict__.write_local_value(name, value)
+        return []
 
 
-class TypeClass(Base, metaclass=Singleton):
-    # instance = None
+class ObjectClass:
+    def __getattribute__(self, name):
+        type_of_self = my_type(self)
+        class_variable: Value = _pytype_lookup(type_of_self, name)
 
-    def __custom__(self):
-        def __getattribute__(self, name):
-            # https://github.com/python/cpython/blob/main/Objects/typeobject.c#L4057
-            # ignore meta type now
+        if class_variable is not None:
+            descr_get = Value()
+            for class_type in class_variable:
+                if my_hasattr(class_type, "__set__"):
+                    getters = my_getattr(class_type, "__get__")
+                    descr_get.inject_value(getters)
+            if len(descr_get) > 0:
+                return descr_get
 
-            type_of_self = self
-            class_variable: Value = _pytype_lookup(type_of_self, name)
+        if hasattr(self, "__my_dict__") and name in self.__my_dict__:
+            return self.__my_dict__.read_value(name)
 
-            if class_variable is not None:
-                descr_get = Value()
-                for class_type in class_variable:
+        if class_variable is not None:
+            descr_get = Value()
+            for class_type in class_variable:
+                if isinstance(class_type, FunctionObject):
+                    descr_get.inject_type(
+                        MethodObject(instance=self, function=class_type)
+                    )
+                elif isinstance(class_type, SpecialFunctionObject):
+                    descr_get.inject_type(
+                        SpecialMethodObject(instance=self, function=class_type)
+                    )
+                else:
                     getters = my_getattr(class_type, "__get__")
                     for getter in getters:
                         if isinstance(getter, FunctionObject):
@@ -141,8 +214,8 @@ class TypeClass(Base, metaclass=Singleton):
                                 MethodObject(
                                     instance=class_type,
                                     function=getter,
-                                    descr_instance=NoneType(),
-                                    descr_owner=self,
+                                    descr_instance=self,
+                                    descr_owner=my_type(self),
                                 )
                             )
                         elif isinstance(getter, SpecialFunctionObject):
@@ -151,176 +224,54 @@ class TypeClass(Base, metaclass=Singleton):
                                     instance=class_type, function=getter
                                 )
                             )
-                if len(descr_get) > 0:
-                    return descr_get
-
-            if hasattr(self, "__my_dict__") and name in self.__my_dict__:
-                return self.__my_dict__.read_value(name)
-
-            raise AttributeError(name)
-
-        def __setattr__(self, name, value):
-            # https://github.com/python/cpython/blob/main/Objects/typeobject.c#L4144
-
-            type_of_self = my_type(self)
-            class_variable: Value = _pytype_lookup(type_of_self, name)
-            if class_variable is not None:
-                descr_set = Value()
-                for class_type in class_variable:
-                    setters = my_getattr(class_type, "__set__")
-                    for setter in setters:
-                        if isinstance(setter, FunctionObject):
-                            descr_set.inject_type(
+                        elif isinstance(getter, MethodObject):
+                            descr_get.inject_type(
                                 MethodObject(
-                                    instance=class_type,
-                                    function=setter,
+                                    instance=getter.__my_instance__,
+                                    function=getter.__my_func__,
                                     descr_instance=self,
-                                    descr_value=value,
+                                    descr_owner=my_type(self),
                                 )
                             )
-                        elif isinstance(setter, SpecialFunctionObject):
-                            descr_set.inject_type(
-                                SpecialMethodObject(
-                                    instance=class_type, function=setter
-                                )
-                            )
-                    descr_set.inject_value(setters)
-                if len(descr_set) > 0:
-                    return descr_set
 
-            if hasattr(self, "__my_dict__"):
+            if len(descr_get) > 0:
+                return descr_get
+
+        if class_variable is not None:
+            return class_variable
+
+        raise AttributeError(name)
+
+    def __setattr__(self, name, value):
+        type_of_self = my_type(self)
+        class_variable: Value = _pytype_lookup(type_of_self, name)
+        if class_variable is not None:
+            descr_set = Value()
+            for class_type in class_variable:
+                setters = my_getattr(class_type, "__set__")
+                for setter in setters:
+                    if isinstance(setter, FunctionObject):
+                        descr_set.inject_type(
+                            MethodObject(
+                                instance=class_type,
+                                function=setter,
+                                descr_instance=name,
+                                descr_value=value,
+                            )
+                        )
+                    elif isinstance(setter, SpecialFunctionObject):
+                        descr_set.inject_type(
+                            SpecialMethodObject(instance=class_type, function=setter)
+                        )
+                descr_set.inject_value(setters)
+            if len(descr_set) > 0:
+                return descr_set
+
+            if isinstance(self, Instance):
+                analysis_heap.write_field_to_heap(self, name, value)
+            elif hasattr(self, "__my_dict__"):
                 self.__my_dict__.write_local_value(name, value)
-            return []
-
-        func = SpecialFunctionObject(func=__getattribute__)
-        self.__my_dict__.write_local_value(
-            __getattribute__.__name__, create_value_with_type(func)
-        )
-        func = SpecialFunctionObject(func=__setattr__)
-        self.__my_dict__.write_local_value(
-            __setattr__.__name__, create_value_with_type(func)
-        )
-
-    def __init__(self):
-        super().__init__()
-        self.__my_uuid__ = id(self)
-        self.__my_bases__ = [object()]
-        self.__my_mro__ = c3(self)
-        self.__my_class__ = self
-        self.__custom__()
-
-    def __le__(self, other):
-        return True
-
-    def __iadd__(self, other):
-        return self
-
-
-class ObjectClass:
-    instance = None
-
-    def __new__(cls):
-        if cls.instance is None:
-            cls.instance = object.__new__(cls)
-
-            def __init__(self):
-                return self
-
-            def __getattribute__(self, name):
-                type_of_self = my_type(self)
-                class_variable: Value = _pytype_lookup(type_of_self, name)
-
-                if class_variable is not None:
-                    descr_get = Value()
-                    for class_type in class_variable:
-                        if my_hasattr(class_type, "__set__"):
-                            getters = my_getattr(class_type, "__get__")
-                            descr_get.inject_value(getters)
-                    if len(descr_get) > 0:
-                        return descr_get
-
-                if hasattr(self, "__my_dict__") and name in self.__my_dict__:
-                    return self.__my_dict__.read_value(name)
-
-                if class_variable is not None:
-                    descr_get = Value()
-                    for class_type in class_variable:
-                        if isinstance(class_type, FunctionObject):
-                            descr_get.inject_type(
-                                MethodObject(instance=self, function=class_type)
-                            )
-                        elif isinstance(class_type, SpecialFunctionObject):
-                            descr_get.inject_type(
-                                SpecialMethodObject(instance=self, function=class_type)
-                            )
-                        else:
-                            getters = my_getattr(class_type, "__get__")
-                            for getter in getters:
-                                if isinstance(getter, FunctionObject):
-                                    descr_get.inject_type(
-                                        MethodObject(
-                                            instance=class_type,
-                                            function=getter,
-                                            descr_instance=self,
-                                            descr_owner=my_type(self),
-                                        )
-                                    )
-                                elif isinstance(getter, SpecialFunctionObject):
-                                    descr_get.inject_type(
-                                        SpecialMethodObject(
-                                            instance=class_type, function=getter
-                                        )
-                                    )
-                                elif isinstance(getter, MethodObject):
-                                    descr_get.inject_type(
-                                        MethodObject(
-                                            instance=getter.__my_instance__,
-                                            function=getter.__my_func__,
-                                            descr_instance=self,
-                                            descr_owner=my_type(self),
-                                        )
-                                    )
-
-                    if len(descr_get) > 0:
-                        return descr_get
-
-                if class_variable is not None:
-                    return class_variable
-
-                raise AttributeError(name)
-
-            def __setattr__(self, name, value):
-                type_of_self = my_type(self)
-                class_variable: Value = _pytype_lookup(type_of_self, name)
-                if class_variable is not None:
-                    descr_set = Value()
-                    for class_type in class_variable:
-                        setters = my_getattr(class_type, "__set__")
-                        for setter in setters:
-                            if isinstance(setter, FunctionObject):
-                                descr_set.inject_type(
-                                    MethodObject(
-                                        instance=class_type,
-                                        function=setter,
-                                        descr_instance=name,
-                                        descr_value=value,
-                                    )
-                                )
-                            elif isinstance(setter, SpecialFunctionObject):
-                                descr_set.inject_type(
-                                    SpecialMethodObject(
-                                        instance=class_type, function=setter
-                                    )
-                                )
-                        descr_set.inject_value(setters)
-                    if len(descr_set) > 0:
-                        return descr_set
-
-                if isinstance(self, Instance):
-                    analysis_heap.write_field_to_heap(self, name, value)
-                elif hasattr(self, "__my_dict__"):
-                    self.__my_dict__.write_local_value(name, value)
-                return None
+            return None
 
             cls.instance.__my_dict__ = Namespace()
             func = SpecialFunctionObject(func=__init__)
@@ -340,61 +291,12 @@ class ObjectClass:
             )
         return cls.instance
 
-    def __init__(self):
-        self.__my_uuid__ = id(self)
-        self.__my_bases__ = [object()]
-        self.__my_mro__ = c3(self)
-        self.__my_class__ = my_typ
-
-    def __le__(self, other):
-        return True
-
-    def __iadd__(self, other):
-        return self
-
 
 class FunctionClass:
-    instance = None
-
-    def __new__(cls):
-        if cls.instance is None:
-            cls.instance = object.__new__(cls)
-            self = cls.instance
-            self.__my_uuid__ = id(self)
-            self.__my_bases__ = [my_object]
-            self.__my_mro__ = c3(self)
-            self.__my_class__ = my_typ
-            self.__my_dict__ = Namespace()
-        return cls.instance
-
-    def __le__(self, other: FunctionClass):
-        return True
-
-    def __iadd__(self, other: FunctionClass):
-        return self
+    pass
 
 
 class FunctionObject:
-    def __init__(self, uuid, name, module, code, namespace=None):
-        self.__my_uuid__ = uuid
-        self.__my_name__ = name
-        self.__my_module__ = module
-        self.__my_code__ = code
-        if namespace is None:
-            self.__my_dict__ = Namespace()
-        else:
-            self.__my_dict__ = namespace
-        self.__my_class__ = my_function
-
-    def __le__(self, other):
-        return self.__my_dict__ <= other.__my_dict__
-
-    def __iadd__(self, other):
-        self.__my_dict__ += other.__my_dict__
-        return self
-
-
-class DescriptorGetFunction:
     def __init__(self, uuid, name, module, code, namespace=None):
         self.__my_uuid__ = uuid
         self.__my_name__ = name

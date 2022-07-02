@@ -12,4 +12,34 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-a = 1 + 2 + 3 + 4
+
+class Meta(type):
+    def __new__(metacls, cls, bases, clsdict, **kwargs):
+        print(metacls, cls, bases, clsdict, kwargs)
+        print(type(cls))
+        return super().__new__(metacls, cls, bases, clsdict)
+
+    @classmethod
+    def __prepare__(metacls, name, bases):
+        print(metacls, name, bases)
+        return {}
+
+    def __call__(self, *args, **kwargs):
+        print(kwargs)
+        if "uuid" in kwargs:
+            kwargs.pop("uuid")
+        print(kwargs)
+        return super().__call__(*args, **kwargs)
+
+
+class Test(metaclass=Meta):
+    def __new__(cls, *args, **kwargs):
+        print(args, kwargs)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(self, *args, **kwargs):
+        print(args, kwargs)
+
+
+Test(uuid=1)
+print(Test.__class__)
