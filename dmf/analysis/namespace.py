@@ -245,11 +245,11 @@ class ObjectClass:
                             for getter in getters:
                                 if isinstance(getter, FunctionObject):
                                     descr_get.inject_type(
-                                        DescriptorGetMethod(
+                                        MethodObject(
                                             instance=class_type,
                                             function=getter,
-                                            desc_instance=self,
-                                            desc_owner=my_type(self),
+                                            descr_instance=self,
+                                            descr_owner=my_type(self),
                                         )
                                     )
                                 elif isinstance(getter, SpecialFunctionObject):
@@ -260,11 +260,11 @@ class ObjectClass:
                                     )
                                 elif isinstance(getter, MethodObject):
                                     descr_get.inject_type(
-                                        DescriptorGetMethod(
+                                        MethodObject(
                                             instance=getter.__my_instance__,
                                             function=getter.__my_func__,
-                                            desc_instance=self,
-                                            desc_owner=my_type(self),
+                                            descr_instance=self,
+                                            descr_owner=my_type(self),
                                         )
                                     )
 
@@ -286,11 +286,11 @@ class ObjectClass:
                         for setter in setters:
                             if isinstance(setter, FunctionObject):
                                 descr_set.inject_type(
-                                    DescriptorSetMethod(
+                                    MethodObject(
                                         instance=class_type,
                                         function=setter,
-                                        desc_instance=name,
-                                        desc_value=value,
+                                        descr_instance=name,
+                                        descr_value=value,
                                     )
                                 )
                             elif isinstance(setter, SpecialFunctionObject):
@@ -362,26 +362,6 @@ class FunctionClass:
 
 
 class FunctionObject:
-    def __init__(self, uuid, name, module, code, namespace=None):
-        self.__my_uuid__ = uuid
-        self.__my_name__ = name
-        self.__my_module__ = module
-        self.__my_code__ = code
-        if namespace is None:
-            self.__my_dict__ = Namespace()
-        else:
-            self.__my_dict__ = namespace
-        self.__my_class__ = my_function
-
-    def __le__(self, other):
-        return self.__my_dict__ <= other.__my_dict__
-
-    def __iadd__(self, other):
-        self.__my_dict__ += other.__my_dict__
-        return self
-
-
-class DescriptorGetFunction:
     def __init__(self, uuid, name, module, code, namespace=None):
         self.__my_uuid__ = uuid
         self.__my_name__ = name
