@@ -520,12 +520,60 @@ class Instance:
         return self.__my_uuid__ == other.__my_uuid__
 
 
-class IteratorObject:
-    def __init__(self, value: Value):
-        self.value = value
+class Iterator:
+    instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls.instance is None:
+            cls.instance = super().__new__(cls)
+
+            def __next__(self):
+                try:
+                    res = self.iterable.pop()
+                    if isinstance(res, Int):
+                        print("int")
+                    print("popped value", res)
+                except:
+                    res = Value()
+                finally:
+                    return res
+
+            cls.instance.__my_uuid__ = id(cls.instance)
+            cls.instance.__my_bases__ = [my_object]
+            cls.instance.__my_mro__ = c3(cls.instance)
+
+            local_functions = filter(
+                lambda value: isinstance(value, types.FunctionType),
+                locals().values(),
+            )
+
+            cls.instance.__my_dict__ = Namespace()
+            for function in local_functions:
+                cls.instance.__my_dict__.write_local_value(
+                    function.__name__,
+                    create_value_with_type(SpecialFunctionObject(func=function)),
+                )
+
+        return cls.instance
 
     def __le__(self, other):
-        pass
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+
+class IteratorObject:
+    def __init__(self, iterable):
+        self.__my_uuid__ = id(iterable)
+        self.__my_class__ = my_iterator
+        self.iterable = iterable
+
+    def __le__(self, other):
+        return len(self.iterable) == len(other.iterable)
+
+    def __iadd__(self, other):
+        return self
 
 
 class BuiltinList:
@@ -535,8 +583,13 @@ class BuiltinList:
         if cls.instance is None:
             cls.instance = object.__new__(cls)
 
+            def __iter__(self):
+                iterable = list(self.internal.values())
+                return IteratorObject(iterable)
+
             def append(self, x: Value):
                 self.internal.inject_value(x)
+                print("after insert ", x, self.internal)
                 return NoneType()
 
             def extend(self, iterable):
@@ -606,6 +659,13 @@ class BuiltinListObject:
 
     def __repr__(self):
         return self.internal.__repr__()
+
+    def __le__(self, other):
+        return self.internal <= other.internal
+
+    def __iadd__(self, other):
+        self.internal += other.internal
+        return self
 
 
 class BuiltinTuple:
@@ -771,3 +831,5 @@ builtin_namespace.write_local_value("tuple", v)
 
 my_function = FunctionClass()
 mock_value = Value()
+
+my_iterator = Iterator()

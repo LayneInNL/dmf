@@ -12,6 +12,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+
+def iter(obj):
+    return obj.__iter__()
+
+
+def next(obj):
+    return obj.__next__()
+
+
 a = list()
 a.append(1)
 a.append(False)
@@ -19,5 +28,4 @@ a.append(False)
 b = list()
 
 for elt in a:
-    pass
-    # b.append(elt)
+    b.append(elt)

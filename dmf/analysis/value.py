@@ -65,6 +65,12 @@ class Value:
     def __iter__(self):
         return iter(self.type_dict.values())
 
+    def inject(self, types):
+        if isinstance(types, Value):
+            self.inject_value(types)
+        else:
+            self.inject_type(types)
+
     def inject_type(self, typ):
         self.type_dict[typ.__my_uuid__] = typ
 
@@ -74,6 +80,9 @@ class Value:
                 self.type_dict[lab] = typ
             else:
                 self.type_dict[lab] += typ
+
+    def values(self):
+        return self.type_dict.values()
 
 
 def create_value_with_type(typ) -> Value:
