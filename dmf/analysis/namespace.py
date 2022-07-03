@@ -72,7 +72,7 @@ def _pytype_lookup(_type, _name):
     mro = _type.__my_mro__
     for cls in mro:
         if _name in cls.__my_dict__:
-            var = cls.__my_dict__.read_var(_name)
+            var = cls.__my_dict__.read_var_type(_name)
             assert isinstance(var, LocalVar)
             value: Value = cls.__my_dict__.read_value(_name)
             return value
@@ -518,6 +518,14 @@ class Instance:
 
     def __eq__(self, other):
         return self.__my_uuid__ == other.__my_uuid__
+
+
+class IteratorObject:
+    def __init__(self, value: Value):
+        self.value = value
+
+    def __le__(self, other):
+        pass
 
 
 class BuiltinList:

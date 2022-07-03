@@ -1169,3 +1169,16 @@ class Analysis(Base):
         new_stack.write_var(name, Namespace_Nonlocal, None)
 
         return new_stack
+
+    def transfer_Delete(
+        self,
+        program_point: ProgramPoint,
+        old_stack: Stack,
+        new_stack: Stack,
+        stmt: ast.Delete,
+    ) -> Stack:
+        assert len(stmt.targets) == 1, stmt
+        assert isinstance(stmt.targets[0], ast.Name), stmt
+        name = stmt.targets[0].id
+        new_stack.delete_var(name)
+        return new_stack

@@ -62,7 +62,7 @@ class Namespace(defaultdict):
     #         memo[self_id] = deepcopy(self, memo)
     #     return memo[self_id]
 
-    def read_var(self, name: str) -> Var:
+    def read_var_type(self, name: str) -> Var:
         for var, _ in self.items():
             if name == var.name:
                 return var

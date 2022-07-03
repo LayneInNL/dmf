@@ -422,7 +422,7 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_Delete(self, node: ast.Delete) -> None:
         for target in node.targets:
             decomposed_expr_sequence = self.visit(target)
-            delete_node = ast.Delete(decomposed_expr_sequence[-1])
+            delete_node = ast.Delete(targets=decomposed_expr_sequence[-1:])
             decomposed_expr_sequence = decomposed_expr_sequence[:-1]
             self.populate_body(decomposed_expr_sequence)
             add_stmt(self.curr_block, delete_node)
@@ -571,48 +571,35 @@ class CFGVisitor(ast.NodeVisitor):
             self.visit(new_assign)
 
     def visit_For(self, node: ast.For) -> None:
-        new_call: ast.Call = ast.Call(
-            args=[node.iter], func=ast.Name(id="list", ctx=ast.Load()), keywords=[]
+        iter_call: ast.Call = ast.Call(
+            args=[node.iter], func=ast.Name(id="iter", ctx=ast.Load()), keywords=[]
         )
-        iter_sequence: List = self.visit(new_call)
+        iter_seq: List = self.visit(iter_call)
 
-        new_var = temp.RandomVariableName.gen_random_name()
+        iter_name = ast.Name(id=temp.RandomVariableName.gen_random_name())
         new_assign = ast.Assign(
-            targets=[ast.Name(id=new_var, ctx=ast.Store())],
-            value=iter_sequence[-1],
+            targets=[iter_name],
+            value=iter_seq[-1],
         )
-        new_name = ast.Name(id=new_var, ctx=ast.Load())
 
-        iter_sequence = iter_sequence[:-1] + [new_assign]
-        # self.populate_body(iter_sequence[:-1])
+        iter_seq = iter_seq[:-1] + [new_assign]
 
         new_while: ast.While = ast.While(
-            test=new_name,
+            test=iter_name,
             body=[
                 ast.Assign(
                     targets=[node.target],
-                    value=ast.Subscript(
-                        value=new_name,
-                        slice=ast.Num(n=0),
-                        ctx=ast.Load(),
+                    value=ast.Call(
+                        func=ast.Name(id="next"), args=[iter_name], keywords=[]
                     ),
                 )
             ]
-            + node.body
-            + [
-                ast.Assign(
-                    targets=[new_name],
-                    value=ast.Subscript(
-                        value=new_name,
-                        slice=ast.Slice(lower=ast.Num(n=1), upper=None, step=None),
-                        ctx=ast.Load(),
-                    ),
-                )
-            ],
+            + node.body,
             orelse=node.orelse,
         )
-        iter_sequence.append(new_while)
-        self.populate_body(iter_sequence)
+        iter_seq.append(new_while)
+        iter_seq.append(ast.Delete(targets=[iter_name]))
+        self.populate_body(iter_seq)
 
     def visit_While(self, node: ast.While) -> None:
 

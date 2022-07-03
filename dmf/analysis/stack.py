@@ -96,7 +96,7 @@ class Frame:
 
     def _read_local_namespace(self, name: str) -> Value:
         if name in self.f_locals:
-            var = self.f_locals.read_var(name)
+            var = self.f_locals.read_var_type(name)
             if isinstance(var, LocalVar):
                 return self.f_locals.read_value(name)
             else:
@@ -117,7 +117,7 @@ class Frame:
             and parent_frame.f_locals is not self.f_globals
         ):
             if name in parent_frame.f_locals:
-                var = parent_frame.f_locals.read_var(name)
+                var = parent_frame.f_locals.read_var_type(name)
                 if isinstance(var, LocalVar):
                     return parent_frame.f_locals.read_value(name)
                 else:
@@ -128,7 +128,7 @@ class Frame:
 
     def _read_global_namespace(self, name: str) -> Value:
         if name in self.f_globals:
-            var = self.f_globals.read_var(name)
+            var = self.f_globals.read_var_type(name)
             if isinstance(var, LocalVar):
                 return self.f_globals.read_value(name)
             else:
@@ -137,7 +137,7 @@ class Frame:
 
     def _read_builtin_namespace(self, name: str) -> Value:
         if name in self.f_builtins:
-            var = self.f_builtins.read_var(name)
+            var = self.f_builtins.read_var_type(name)
             if isinstance(var, LocalVar):
                 return self.f_builtins.read_value(name)
             else:
@@ -146,7 +146,7 @@ class Frame:
 
     def write_var(self, name: str, scope: str, value: Value):
         if name in self.f_locals:
-            var = self.f_locals.read_var(name)
+            var = self.f_locals.read_var_type(name)
             if isinstance(var, LocalVar):
                 self.f_locals.write_local_value(name, value)
                 # if self.f_locals is self.f_globals:
@@ -176,7 +176,7 @@ class Frame:
                 (
                     var,
                     _,
-                ) = parent_frame.f_locals.read_var(name)
+                ) = parent_frame.f_locals.read_var_type(name)
                 if isinstance(var, LocalVar):
                     return parent_frame.f_locals
                 else:
@@ -190,6 +190,17 @@ class Frame:
             self.f_globals.write_local_value(name, Value(top=True))
 
         return self.f_globals
+
+    def delete_var(self, name: str):
+        if name in self.f_locals:
+            var: Var = self.f_locals.read_var_type(name)
+            if not isinstance(var, LocalVar):
+                owner_namespace = self.f_locals.read_value(name)
+                assert isinstance(owner_namespace, Namespace)
+                owner = owner_namespace.read_var_type(name)
+                assert isinstance(owner, LocalVar)
+                del owner_namespace[owner]
+            del self.f_locals[var]
 
 
 class Stack:
@@ -252,6 +263,9 @@ class Stack:
 
     def write_var(self, var: str, scope: str, value: Value):
         self.top_frame().write_var(var, scope, value)
+
+    def delete_var(self, var: str):
+        self.top_frame().delete_var(var)
 
     def next_ns(self):
         curr_frame = self.top_frame()
