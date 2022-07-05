@@ -558,12 +558,13 @@ class CFGVisitor(ast.NodeVisitor):
         self.populate_body(new_sequence)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
-        seq, node.target = self.decompose_expr(node.target)
-        self.populate_body(seq)
-        seq, node.value = self.decompose_expr(node.value)
-        self.populate_body(seq)
-        add_stmt(self.curr_block, node)
-        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        # We are only interested in types, so transform AugAssign into Assign
+
+        assign = ast.Assign(
+            targets=[node.target],
+            value=ast.BinOp(left=node.target, op=node.op, right=node.value),
+        )
+        self.visit(assign)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if node.value:
@@ -669,17 +670,66 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block: BasicBlock = after_if_block
 
     def visit_With(self, node: ast.With) -> None:
-        add_stmt(self.curr_block, node)
+        # https: // docs.python.org / zh - cn / 3.12 / reference / compound_stmts.html
 
-        with_body_block = self.new_block()
-        after_with_block = self.new_block()
-
-        self.add_edge(self.curr_block.bid, with_body_block.bid)
-        self.add_edge(self.curr_block.bid, after_with_block.bid)
-        self.curr_block = with_body_block
-        self.populate_body_to_next_bid(node.body, after_with_block.bid)
-
-        self.curr_block = after_with_block
+        if len(node.items) > 1:
+            curr_body = node.body
+            for item in reversed(node.items[1:]):
+                item_with = ast.With(items=[item], body=curr_body)
+                curr_body = [item_with]
+            node.items = node.items[0:1]
+            node.body = curr_body
+            self.visit(node)
+        else:
+            manager_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            manager_assign = ast.Assign(
+                targets=[manager_var], value=node.items[0].context_expr
+            )
+            manager_type_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            manager_type_value = ast.Call(
+                func=ast.Name(id="type"), args=[manager_var], keywords=[]
+            )
+            manager_type_assign = ast.Assign(
+                targets=[manager_type_var], value=manager_type_value
+            )
+            enter_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            enter_value = ast.Attribute(
+                value=manager_type_var,
+                attr="__enter__",
+                ctx=ast.Load(),
+            )
+            enter_assign = ast.Assign(targets=[enter_var], value=enter_value)
+            exit_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            exit_value = ast.Attribute(
+                value=manager_type_var,
+                attr="__exit__",
+                ctx=ast.Load(),
+            )
+            exit_assign = ast.Assign(targets=[exit_var], value=exit_value)
+            value_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            value_value = ast.Call(func=enter_var, args=[manager_var], keywords=[])
+            value_assign = ast.Assign(targets=[value_var], value=value_value)
+            preceded = [
+                manager_assign,
+                manager_type_assign,
+                enter_assign,
+                exit_assign,
+                value_assign,
+            ]
+            if node.items[0].optional_vars is not None:
+                preceded.append(
+                    ast.Assign(targets=[node.items[0].optional_vars], value=value_var)
+                )
+            new_expr_sequence = (
+                preceded
+                + node.body
+                + [
+                    ast.Call(
+                        func=exit_var, args=[manager_var, None, None, None], keywords=[]
+                    )
+                ]
+            )
+            self.populate_body(new_expr_sequence)
 
     # Need to record exception handling stack
     def visit_Raise(self, node: ast.Raise) -> None:

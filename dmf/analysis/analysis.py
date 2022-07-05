@@ -805,19 +805,6 @@ class Analysis(Base):
             assert False
         return new_stack
 
-    def transfer_AugAssign(
-        self,
-        program_point: ProgramPoint,
-        old_stack: Stack,
-        new_stack: Stack,
-        stmt: ast.AugAssign,
-    ):
-        lhs_value: Value = new_stack.compute_value_of_expr(stmt.target)
-        rhs_value: Value = new_stack.compute_value_of_expr(stmt.value)
-        lhs_value += rhs_value
-
-        return new_stack
-
     def transfer_call(
         self, program_point: ProgramPoint, old_stack: Stack, new_stack: Stack
     ):

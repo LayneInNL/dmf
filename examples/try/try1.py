@@ -11,28 +11,33 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-try:
-    pass
-except AttributeError:
-    pass
-except:
-    pass
-# else:
+# try:
 #     pass
+# # except AttributeError:
+# #     pass
+# # except:
+# #     pass
+# # # else:
+# # #     pass
 # finally:
 #     pass
 
-super()
+# super()
+#
+#
+# def test(a):
+#     if a:
+#         return a
+#     b = 2
+#
+#
+# ret = test(1)
+# ret2 = test(0)
+# print(ret, ret2)
+#
+# a = (lambda x: test(1))(1)
 
+# with open() as f, open() as f2:
+#     pass
 
-def test(a):
-    if a:
-        return a
-    b = 2
-
-
-ret = test(1)
-ret2 = test(0)
-print(ret, ret2)
-
-a = (lambda x: test(1))(1)
+a.y += 1
