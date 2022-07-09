@@ -12,4 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-a = 1 + 2 + 3 + 4
+
+class Test:
+    @property
+    def name(self):
+        pass
+
+    @name.setter
+    def name(self, value):
+        pass
+
+    @name.deleter
+    def name(self):
+        pass

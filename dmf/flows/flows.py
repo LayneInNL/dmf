@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import os
+from collections import defaultdict
 from typing import Dict, List, Tuple, Set, Optional, Any
 
 import astor
@@ -198,6 +199,7 @@ class CFGVisitor(ast.NodeVisitor):
         self.loop_guard_stack: List[BasicBlock] = []
         self.final_body_entry_stack: List[BasicBlock] = []
         self.final_body_exit_stack: List[BasicBlock] = []
+        self.properties: Dict = defaultdict(lambda: [None] * 4)
 
     def build(self, name: str, tree: ast.Module) -> CFG:
         self.cfg = CFG(name)
@@ -346,11 +348,59 @@ class CFGVisitor(ast.NodeVisitor):
 
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.generic_visit(node)
+        # re-construct properties
+        self._unify_properties()
 
         # post structure cleaning
         self.add_edge(self.curr_block.bid, self.cfg.final_block.bid)
 
+    def _unify_properties(self):
+        for name, attrs in self.properties.items():
+            new_attrs = []
+            for attr in attrs:
+                if isinstance(attr, str):
+                    new_attrs.append(ast.Name(id=attr))
+                else:
+                    assert attr is None, attr
+                    new_attrs.append(ast.NameConstant(value=None))
+
+            property_assign = ast.Assign(
+                targets=[ast.Name(id=name)],
+                value=ast.Call(
+                    func=ast.Name(id=property.__name__), args=new_attrs, keywords=[]
+                ),
+            )
+            self.visit(property_assign)
+
+    def _check_decorator_list(self, node: ast.FunctionDef):
+        if not node.decorator_list:
+            return
+
+        if len(node.decorator_list) > 1:
+            raise NotImplementedError
+
+        decorator = node.decorator_list[0]
+        # @property
+        if isinstance(decorator, ast.Name) and decorator.id == property.__name__:
+            self.properties[node.name][0] = node.name
+            node.decorator_list = []
+        elif isinstance(decorator, ast.Attribute):
+            # @xxx.setter
+            if decorator.attr == property.setter.__name__:
+                tmp_func_name = temp.RandomVariableName.gen_random_name()
+                node.name = tmp_func_name
+                self.properties[decorator.value.id][1] = node.name
+                node.decorator_list = []
+            # @xxx.deleter
+            elif decorator.attr == property.deleter.__name__:
+                tmp_func_name = temp.RandomVariableName.gen_random_name()
+                node.name = tmp_func_name
+                self.properties[decorator.value.id][2] = node.name
+                node.decorator_list = []
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._check_decorator_list(node)
+
         decorator_list = node.decorator_list
         node.decorator_list = []
 
