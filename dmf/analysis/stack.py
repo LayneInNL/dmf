@@ -261,8 +261,11 @@ class Stack:
     def read_var(self, var: str):
         return self.top_frame().read_var(var)
 
-    def write_var(self, var: str, scope: str, value: Value):
+    def write_var(self, var: str, scope: str, value):
         self.top_frame().write_var(var, scope, value)
+
+    def write_helper_var(self, var: str, value):
+        self.write_var(var, Namespace_Helper, value)
 
     def delete_var(self, var: str):
         self.top_frame().delete_var(var)
@@ -354,7 +357,7 @@ class Stack:
             return value
         else:
             logger.warn(expr)
-            assert False
+            assert False, expr
         return value
 
 

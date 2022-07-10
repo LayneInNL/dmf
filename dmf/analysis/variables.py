@@ -18,7 +18,7 @@ Namespace_Local = "local"
 Namespace_Nonlocal = "nonlocal"
 Namespace_Global = "global"
 Namespace_Helper = "helper"
-POSITION_FLAG = "POSITION_FLAG"
+POS_ARG_END = "POSITION_FLAG"
 INIT_FLAG = "INIT_FLAG"
 RETURN_FLAG = "RETURN_FLAG"
 

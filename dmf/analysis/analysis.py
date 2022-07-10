@@ -44,7 +44,7 @@ from dmf.analysis.variables import (
     Namespace_Nonlocal,
     Namespace_Global,
     RETURN_FLAG,
-    POSITION_FLAG,
+    POS_ARG_END,
     INIT_FLAG,
     Namespace_Helper,
 )
@@ -232,8 +232,10 @@ class Base:
                 return l2, l3
         raise KeyError
 
-    def add_sub_cfg(self, cfg: CFG):
+    def add_sub_cfg(self, lab: int):
+        cfg: CFG = self.sub_cfgs[lab]
         dmf.share.update_global_info(cfg)
+        return cfg, cfg.start_block.bid, cfg.final_block.bid
 
     def DELTA(self, program_point: ProgramPoint):
         added = []
@@ -583,10 +585,7 @@ class Analysis(Base):
     ):
         call_lab, call_ctx = program_point
 
-        cfg = self.sub_cfgs[call_lab]
-        self.add_sub_cfg(cfg)
-        entry_lab = cfg.start_block.bid
-        exit_lab = cfg.final_block.bid
+        cfg, entry_lab, exit_lab = self.add_sub_cfg(call_lab)
 
         return_lab = self.get_classdef_return_label(call_lab)
         self.inter_flows.add(
@@ -828,19 +827,32 @@ class Analysis(Base):
     def _transfer_call_normal(
         self, program_point: ProgramPoint, old_stack: Stack, new_stack: Stack
     ):
-        call_stmt: ast.stmt = self.get_stmt_by_point(program_point)
+        # Normal call has form: func_name(args, keywords)
+        call_stmt: ast.Call = self.get_stmt_by_point(program_point)
+        assert isinstance(call_stmt, ast.Call), call_stmt
 
+        # new namespace to simulate function call
         new_stack.next_ns()
 
-        args = call_stmt.args
-        idx = 0
-        for idx, arg in enumerate(args, 1):
-            arg_value = new_stack.compute_value_of_expr(arg)
-            new_stack.write_var(str(idx), Namespace_Local, arg_value)
-        new_stack.write_var(POSITION_FLAG, Namespace_Helper, idx)
+        # deal with positional args
+        args: List[ast.expr] = call_stmt.args
+        # has explicit args
+        if args:
+            for idx, arg in enumerate(args, 1):
+                if isinstance(arg, ast.Starred):
+                    raise NotImplementedError(arg)
+                arg_value = new_stack.compute_value_of_expr(arg)
+                new_stack.write_var(str(idx), Namespace_Local, arg_value)
+            new_stack.write_helper_var(POS_ARG_END, idx)
+        # may have implicit args, such as bounded methods
+        else:
+            new_stack.write_helper_var(POS_ARG_END, 0)
 
-        keywords = call_stmt.keywords
+        # deal with keyword args
+        keywords: List[ast.keyword] = call_stmt.keywords
         for keyword in keywords:
+            if keyword.arg is None:
+                raise NotImplementedError(keyword)
             keyword_value = new_stack.compute_value_of_expr(keyword.value)
             new_stack.write_var(keyword.arg, Namespace_Local, keyword_value)
 
@@ -865,7 +877,7 @@ class Analysis(Base):
                     owner = attr_typ.descriptor_owner
                     owner_value = create_value_with_type(owner)
                     new_stack.write_var("2", Namespace_Local, owner_value)
-                    new_stack.write_var(POSITION_FLAG, Namespace_Helper, 2)
+                    new_stack.write_var(POS_ARG_END, Namespace_Helper, 2)
 
         return new_stack
 
@@ -896,24 +908,90 @@ class Analysis(Base):
                         value = attr_typ.descriptor_value
                         value_value = create_value_with_type(value)
                         new_stack.write_var("2", Namespace_Local, value_value)
-                        new_stack.write_var(POSITION_FLAG, Namespace_Helper, 2)
+                        new_stack.write_var(POS_ARG_END, Namespace_Helper, 2)
 
         return new_stack
+
+    def _parse_positional_args(
+        self, start_pos: int, arguments: ast.arguments, stack: Stack
+    ):
+        args_flag = [False for _ in arguments.args]
+        f_locals: Namespace = stack.top_frame().f_locals
+        positional_len: int = f_locals.read_value(POS_ARG_END)
+        real_pos_len = positional_len - start_pos + 1
+
+        if real_pos_len > len(arguments.args):
+            if arguments.vararg is None:
+                raise TypeError
+
+            for idx, arg in enumerate(arguments.args):
+                arg_value = f_locals.read_value(str(idx))
+                stack.write_var(arg.arg, Namespace_Local, arg_value)
+                args_flag[idx] = True
+                f_locals.del_local_var(str(idx))
+            # TODO: vararg
+            if arguments.vararg is not None:
+                raise NotImplementedError
+        else:
+            for arg_idx, pos_idx in enumerate(range(start_pos, positional_len + 1)):
+                arg = arguments.args[arg_idx]
+                arg_value = f_locals.read_value(str(pos_idx))
+                stack.write_var(arg.arg, Namespace_Local, arg_value)
+                args_flag[arg_idx] = True
+                f_locals.del_local_var(str(arg_idx))
+        return args_flag
+
+    def _parse_keyword_args(self, arg_flags, arguments: ast.arguments, stack: Stack):
+        f_locals: Namespace = stack.top_frame().f_locals
+
+        # keyword arguments
+        for idx, elt in enumerate(arg_flags):
+            arg_name = arguments.args[idx].arg
+            if elt:
+                if arg_name in f_locals:
+                    raise TypeError
+            if not elt:
+                if arg_name in f_locals:
+                    arg_flags[idx] = True
+        return arg_flags
+
+    def _parse_default_args(self, arg_flags, arguments: ast.arguments, stack: Stack):
+        for idx, elt in enumerate(arg_flags):
+            if not elt:
+                arg_name = arguments.args[idx].arg
+                default = arguments.nl_defaults[idx]
+                if default is None:
+                    raise TypeError
+                stack.write_var(arg_name, Namespace_Local, default)
+        assert all(arg_flags)
+        return arg_flags
+
+    def _parse_kwonly_args(self, arguments: ast.arguments, stack: Stack):
+        f_locals: Namespace = stack.top_frame().f_locals
+        for idx, kwonly_arg in enumerate(arguments.kwonlyargs):
+            kwonly_arg_name = kwonly_arg.arg
+            if kwonly_arg_name not in f_locals:
+                default_value = arguments.nl_kw_defaults[idx]
+                if default_value is None:
+                    raise TypeError
+                else:
+                    stack.write_var(kwonly_arg_name, Namespace_Local, default_value)
+        # TODO: kwargs
+        if arguments.kwarg is not None:
+            raise NotImplementedError
 
     # consider current global namespace
     def transfer_entry(
         self, program_point: ProgramPoint, old_stack: Stack, new_stack: Stack
     ):
-        entry_lab, entry_ctx = program_point
-        stmt = self.get_stmt_by_label(entry_lab)
+        stmt = self.get_stmt_by_point(program_point)
 
         # is self.self_info[program_point] is not None, it means
         # this is a class method call
         # we pass instance information, module name to entry labels
         instance, init_flag, module_name = self.entry_info[program_point]
         if instance:
-            value = Value()
-            value.inject_type(instance)
+            value = create_value_with_type(instance)
             new_stack.write_var(str(0), Namespace_Local, value)
         if init_flag:
             new_stack.write_var(INIT_FLAG, Namespace_Helper, mock_value)
@@ -921,39 +999,12 @@ class Analysis(Base):
             new_stack.check_module_diff(module_name)
 
         if isinstance(stmt, ast.arguments):
-            arguments = stmt
             # Positional and keyword arguments
-            args = arguments.args
-            arg_flags = [False for _ in args]
-            # if it has an instance, self is considered
             start_pos = 0 if instance else 1
-            arg_pos = 0
-
-            f_locals: Namespace = new_stack.top_frame().f_locals
-
-            positional_len = f_locals.read_value(POSITION_FLAG)
-            for position in range(start_pos, positional_len + 1):
-                parameter = args[arg_pos].arg
-                parameter_value = f_locals.read_value(str(position))
-                new_stack.write_var(parameter, Namespace_Local, parameter_value)
-
-                arg_flags[arg_pos] = True
-                arg_pos += 1
-
-            # keyword arguments
-            for idx, elt in enumerate(arg_flags):
-                if not elt:
-                    arg_name = args[idx].arg
-                    if arg_name in f_locals:
-                        arg_flags[idx] = True
-
-            # default arguments
-            for idx, elt in enumerate(arg_flags):
-                if not elt:
-                    arg_name = args[idx].arg
-                    default = arguments.defaults[idx]
-                    assert default is not None
-                    new_stack.write_var(arg_name, Namespace_Local, default)
+            arg_flags = self._parse_positional_args(start_pos, stmt, new_stack)
+            arg_flags = self._parse_keyword_args(arg_flags, stmt, new_stack)
+            _ = self._parse_default_args(arg_flags, stmt, new_stack)
+            self._parse_kwonly_args(stmt, new_stack)
 
         return new_stack
 
@@ -962,8 +1013,7 @@ class Analysis(Base):
     ):
 
         if not new_stack.top_namespace_contains(RETURN_FLAG):
-            value = Value()
-            value.inject_type(NoneType())
+            value = create_value_with_type(NoneType())
             new_stack.write_var(RETURN_FLAG, Namespace_Local, value)
 
         return new_stack
@@ -1088,38 +1138,49 @@ class Analysis(Base):
         new_stack.write_var(cls_name, Namespace_Local, value)
         return new_stack
 
+    def _compute_defaults(self, stack: Stack, node: ast.FunctionDef):
+        # https: // docs.python.org / 3.11 / library / ast.html  # ast.arguments
+        args: ast.arguments = node.args
+
+        # defaults is a list of default values for arguments that can be passed positionally.
+        # If there are fewer defaults, they correspond to the last n arguments.
+        args_diff_len = len(args.args) - len(args.defaults)
+        args.nl_defaults = []
+        for default in args.defaults:
+            default_value = stack.compute_value_of_expr(default)
+            args.nl_defaults.append(default_value)
+        args.nl_defaults = [None] * args_diff_len + args.nl_defaults
+
+        # kw_defaults is a list of default values for keyword-only arguments.
+        # If one is None, the corresponding argument is required.
+        args.nl_kw_defaults = []
+        for kw_default in args.kw_defaults:
+            if kw_default is None:
+                args.nl_kw_defaults.append(kw_default)
+            else:
+                kw_default_value = stack.compute_value_of_expr(kw_default)
+                args.nl_kw_defaults.append(kw_default_value)
+
     def transfer_FunctionDef(
         self,
         program_point: ProgramPoint,
         old_stack: Stack,
         new_stack: Stack,
-        stmt: ast.FunctionDef,
+        node: ast.FunctionDef,
     ):
         lab, _ = program_point
-        func_cfg: CFG = self.sub_cfgs[lab]
-        self.add_sub_cfg(func_cfg)
+        func_cfg, entry_lab, exit_lab = self.add_sub_cfg(lab)
 
-        func_name: str = stmt.name
-        args: ast.arguments = stmt.args
-
-        diff = len(args.args) - len(args.defaults)
-        diff_none = [None] * diff
-        args.defaults = diff_none + args.defaults
-        for idx, default in enumerate(args.defaults):
-            args.defaults[idx] = (
-                None if default is None else new_stack.compute_value_of_expr(default)
-            )
+        self._compute_defaults(new_stack, node)
 
         func_module: str = new_stack.read_module()
-        entry_lab, exit_lab = func_cfg.start_block.bid, func_cfg.final_block.bid
-
         value = create_value_with_type(
             FunctionObject(
-                uuid=lab, name=func_name, module=func_module, code=(entry_lab, exit_lab)
+                uuid=lab, name=node.name, module=func_module, code=(entry_lab, exit_lab)
             )
         )
 
-        new_stack.write_var(func_name, Namespace_Local, value)
+        new_stack.write_var(node.name, Namespace_Local, value)
         return new_stack
 
     def transfer_Pass(

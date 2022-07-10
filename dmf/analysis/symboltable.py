@@ -56,12 +56,6 @@ class Namespace(defaultdict):
                 return True
         return False
 
-    # def __deepcopy__(self, memo):
-    #     self_id = id(self)
-    #     if self_id not in memo:
-    #         memo[self_id] = deepcopy(self, memo)
-    #     return memo[self_id]
-
     def read_var_type(self, name: str) -> Var:
         for var, _ in self.items():
             if name == var.name:
@@ -83,3 +77,6 @@ class Namespace(defaultdict):
 
     def write_helper_value(self, name: str, value):
         self[HelperVar(name)] = value
+
+    def del_local_var(self, name: str):
+        del self[LocalVar(name)]

@@ -11,17 +11,31 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+class property:
+    def __init__(self, fget=None, fset=None, fdel=None, doc=None):
+        self.fget = fget
+        self.fset = fset
+        self.fdel = fdel
+        self.doc = doc
+
+    def __get__(self, instance, owner):
+        return self.fget(instance)
+
+    def __set__(self, instance, value):
+        return self.fset(instance, value)
+
+    def __delete(self, instance):
+        return self.fdel(instance)
 
 
 class Test:
-    @property
     def name(self):
+        return 1
+
+    def name1(self, value):
         pass
 
-    @name.setter
-    def name(self, value):
+    def name2(self):
         pass
 
-    @name.deleter
-    def name(self):
-        pass
+    p = property(name, name1, name2)
