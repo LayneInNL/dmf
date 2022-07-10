@@ -24,11 +24,14 @@ class property:
     def __set__(self, instance, value):
         return self.fset(instance, value)
 
-    def __delete(self, instance):
+    def __delete__(self, instance):
         return self.fdel(instance)
 
 
 class Test:
+    def __init__(self):
+        pass
+
     def name(self):
         return 1
 
@@ -39,3 +42,6 @@ class Test:
         pass
 
     p = property(name, name1, name2)
+
+
+t = Test()

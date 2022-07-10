@@ -121,23 +121,28 @@ class TypeClass(Base, metaclass=Singleton):
             if class_variable is not None:
                 descr_get = Value()
                 for class_type in class_variable:
-                    getters = my_getattr(class_type, "__get__")
-                    for getter in getters:
-                        if isinstance(getter, FunctionObject):
-                            descr_get.inject_type(
-                                MethodObject(
-                                    instance=class_type,
-                                    function=getter,
-                                    descr_instance=NoneType(),
-                                    descr_owner=self,
+                    if isinstance(class_type, FunctionObject):
+                        descr_get.inject(class_type)
+                    elif isinstance(class_type, SpecialFunctionObject):
+                        descr_get.inject(class_type)
+                    else:
+                        getters = my_getattr(class_type, "__get__")
+                        for getter in getters:
+                            if isinstance(getter, FunctionObject):
+                                descr_get.inject_type(
+                                    MethodObject(
+                                        instance=class_type,
+                                        function=getter,
+                                        descr_instance=NoneType(),
+                                        descr_owner=self,
+                                    )
                                 )
-                            )
-                        elif isinstance(getter, SpecialFunctionObject):
-                            descr_get.inject_type(
-                                SpecialMethodObject(
-                                    instance=class_type, function=getter
+                            elif isinstance(getter, SpecialFunctionObject):
+                                descr_get.inject_type(
+                                    SpecialMethodObject(
+                                        instance=class_type, function=getter
+                                    )
                                 )
-                            )
                 if len(descr_get) > 0:
                     return descr_get
 
@@ -226,7 +231,9 @@ class ObjectClass:
                     if len(descr_get) > 0:
                         return descr_get
 
-                if hasattr(self, "__my_dict__") and name in self.__my_dict__:
+                if isinstance(self, Instance):
+                    return analysis_heap.read_field_from_heap(self, name)
+                elif hasattr(self, "__my_dict__") and name in self.__my_dict__:
                     return self.__my_dict__.read_value(name)
 
                 if class_variable is not None:
@@ -489,8 +496,8 @@ class Constructor:
             cls.instance.__my_uuid__ = id(cls.instance)
         return cls.instance
 
-    def __call__(self, address, cls):
-        return Instance(address=address, cls=cls)
+    def __call__(self, address, cls, heap):
+        return Instance(address=address, cls=cls, heap=heap)
 
     def __le__(self, other):
         return True
@@ -504,6 +511,7 @@ class Instance:
         self.__my_address__ = address
         self.__my_uuid__ = f"{address}-{cls.__my_uuid__}"
         self.__my_class__ = cls
+        self.__my_dict__ = None
         analysis_heap.write_ins_to_heap(self)
 
     def __le__(self, other: Instance):
@@ -761,12 +769,10 @@ class ModuleType:
 
 
 class Heap:
-    def __init__(self, heap: Heap = None):
+    def __init__(self):
         self.singletons: DefaultDict[Instance, Namespace[Var, Value]] = defaultdict(
             Namespace
         )
-        if heap is not None:
-            self.singletons.copy()
 
     def __le__(self, other: Heap):
         for ins in self.singletons:
@@ -809,14 +815,12 @@ class Heap:
     def write_field_to_heap(self, instance: Instance, field: str, value: Value):
         self.singletons[instance][LocalVar(field)] = value
 
-    def copy(self):
-        copied = Heap(self)
-        return copied
+    def read_field_from_heap(self, instance: Instance, field: str):
+        return self.singletons[instance][LocalVar(field)]
 
 
 builtin_namespace = Namespace()
 constructor = Constructor()
-analysis_heap = Heap()
 my_typ = TypeClass()
 my_object = ObjectClass()
 my_list = BuiltinList()
