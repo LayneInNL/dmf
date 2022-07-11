@@ -13,6 +13,7 @@
 #  limitations under the License.
 from typing import Tuple, Set
 
+from dmf.analysis.types import Heap
 from dmf.flows import construct_CFG
 
 # simulate modules

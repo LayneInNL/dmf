@@ -19,7 +19,7 @@ from copy import deepcopy
 from typing import List, Tuple
 
 import dmf.share
-from dmf.analysis.namespace import (
+from dmf.analysis.types import (
     Value,
     Namespace,
     Var,
@@ -377,3 +377,6 @@ def op2dunder(operator: ast.operator):
         magic_method = "__floordiv__"
 
     return magic_method
+
+
+analysis_stack = Stack()

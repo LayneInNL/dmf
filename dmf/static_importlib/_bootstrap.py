@@ -29,7 +29,7 @@ import _weakref
 import sys
 
 from dmf.analysis.analysis import Analysis
-from dmf.analysis.namespace import ModuleType
+from dmf.analysis.types import ModuleType
 import dmf.share
 
 _bootstrap_external = None

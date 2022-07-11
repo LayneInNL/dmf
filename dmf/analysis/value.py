@@ -87,7 +87,7 @@ class Value:
 
 def create_value_with_type(typ) -> Value:
     value = Value()
-    value.inject_type(typ)
+    value.inject(typ)
     return value
 
 

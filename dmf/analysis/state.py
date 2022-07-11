@@ -18,7 +18,7 @@ from copy import deepcopy
 from typing import Tuple, List
 
 import dmf.share
-from dmf.analysis.namespace import Heap, my_object
+from dmf.analysis.types import Heap, my_object
 from dmf.analysis.stack import Stack
 from dmf.analysis.variables import POS_ARG_END, Namespace_Local
 
@@ -34,6 +34,10 @@ def deepcopy_state(state: State) -> State:
     new_stack = deepcopy(stack, memo)
     for name, module in dmf.share.analysis_modules.items():
         module.namespace = deepcopy(module.namespace, memo)
+    print("old", id(dmf.analysis.types.analysis_heap))
+    dmf.analysis.types.analysis_heap = new_heap
+    print("new", id(dmf.analysis.types.analysis_heap))
+    dmf.analysis.stack.analysis_stack = new_stack
     return new_stack, new_heap
 
 
@@ -130,7 +134,7 @@ def parse_positional_args(start_pos: int, arguments: ast.arguments, state: State
             arg_value = f_locals.read_value(str(pos_idx))
             stack.write_var(arg.arg, Namespace_Local, arg_value)
             args_flag[arg_idx] = True
-            f_locals.del_local_var(str(arg_idx))
+            f_locals.del_local_var(str(pos_idx))
     return args_flag
 
 
@@ -156,7 +160,8 @@ def parse_default_args(arg_flags, arguments: ast.arguments, state: State):
             if default is None:
                 raise TypeError
             stack.write_var(arg_name, Namespace_Local, default)
-    assert all(arg_flags)
+            arg_flags[idx] = True
+    assert all(arg_flags), arg_flags
     return arg_flags
 
 

@@ -20,7 +20,7 @@ import sys
 import dmf.static_importlib
 
 import dmf.share
-from dmf.analysis.namespace import ModuleType
+from dmf.analysis.types import ModuleType
 from dmf.log.logger import logger
 
 parser = argparse.ArgumentParser()

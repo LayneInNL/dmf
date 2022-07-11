@@ -33,10 +33,10 @@ class Test:
         pass
 
     def name(self):
-        return 1
+        return self._name
 
     def name1(self, value):
-        pass
+        self._name = value
 
     def name2(self):
         pass
@@ -45,3 +45,5 @@ class Test:
 
 
 t = Test()
+t.p = False
+value = t.p

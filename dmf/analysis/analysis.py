@@ -20,23 +20,8 @@ from typing import Dict, Tuple, Deque, List
 
 import dmf.share
 from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
-from dmf.analysis.namespace import (
-    ModuleType,
-    CustomClass,
-    FunctionObject,
-    MethodObject,
-    dunder_lookup,
-    Constructor,
-    my_setattr,
-    mock_value,
-    SpecialMethodObject,
-    my_getattr,
-    BuiltinList,
-    BuiltinTuple,
-    Heap,
-)
 from dmf.analysis.prim import NoneType
-from dmf.analysis.stack import Frame, Stack
+from dmf.analysis.stack import Frame, analysis_stack
 from dmf.analysis.state import (
     compute_function_defaults,
     compute_bases,
@@ -51,6 +36,21 @@ from dmf.analysis.state import (
     merge_states,
     is_bot_state,
     deepcopy_state,
+)
+from dmf.analysis.types import (
+    ModuleType,
+    CustomClass,
+    FunctionObject,
+    MethodObject,
+    dunder_lookup,
+    Constructor,
+    my_setattr,
+    mock_value,
+    SpecialMethodObject,
+    my_getattr,
+    BuiltinList,
+    BuiltinTuple,
+    analysis_heap,
 )
 from dmf.analysis.value import Value, create_value_with_type
 from dmf.analysis.variables import (
@@ -79,7 +79,7 @@ class Analysis(AnalysisBase):
         super().__init__()
         self.entry_program_point_info: Dict = {}
         self.work_list: Deque[Tuple[ProgramPoint, ProgramPoint]] = deque()
-        self.extremal_value: State = (Stack(), Heap())
+        self.extremal_value: State = (analysis_stack, analysis_heap)
         self.analysis_list: defaultdict[ProgramPoint, State | BOTTOM] = defaultdict(
             lambda: BOTTOM
         )
@@ -466,8 +466,6 @@ class Analysis(AnalysisBase):
         new_method = dunder_lookup(typ, "__new__")
         if isinstance(new_method, Constructor):
             instance = new_method(addr, typ)
-            heap = new_heap.write_ins_to_heap(instance)
-            instance.__my_dict__ = heap
             dummy_value.inject(instance)
         elif isinstance(new_method, FunctionObject):
             entry_lab, exit_lab = new_method.__my_code__
@@ -656,6 +654,7 @@ class Analysis(AnalysisBase):
 
         target_value = new_stack.compute_value_of_expr(call_stmt.value)
         for target_typ in target_value:
+            print(target_typ, call_stmt.attr)
             attr_value = my_getattr(target_typ, call_stmt.attr, None)
             for attr_typ in attr_value:
                 if isinstance(attr_typ, MethodObject):
@@ -750,8 +749,24 @@ class Analysis(AnalysisBase):
             return self.transfer_return_classdef(program_point, old_state, new_state)
         elif isinstance(stmt, ast.Name):
             return self.transfer_return_name(program_point, old_state, new_state, stmt)
+        elif isinstance(stmt, ast.Assign):
+            assert isinstance(stmt.targets[0], ast.Attribute), stmt
+            return self.transfer_return_setter(
+                program_point, old_state, new_state, stmt
+            )
         else:
             assert False
+
+    def transfer_return_setter(
+        self,
+        program_point: ProgramPoint,
+        old_state: State,
+        new_state: State,
+        stmt: ast.Assign,
+    ):
+        new_stack, new_heap = new_state
+        new_stack.pop_frame()
+        return new_state
 
     def transfer_return_name(
         self,
