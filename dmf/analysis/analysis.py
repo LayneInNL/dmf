@@ -113,6 +113,15 @@ class Analysis(AnalysisBase):
         self.work_list.extendleft(self.DELTA(self.extremal_point))
         self.analysis_list[self.extremal_point] = self.extremal_value
 
+    def _push_state_to(self, state: State, program_point: ProgramPoint):
+        old: State | BOTTOM = self.analysis_list[program_point]
+        if not compare_states(state, old):
+            state = merge_states(state, old)
+            self.analysis_list[program_point]: State = state
+            self.LAMBDA(program_point)
+            added_program_points = self.DELTA(program_point)
+            self.work_list.extendleft(added_program_points)
+
     def iterate(self):
         # as long as there are flows in work_list
         while self.work_list:
@@ -121,23 +130,10 @@ class Analysis(AnalysisBase):
             logger.debug(f"Current program point1 {program_point1}")
 
             transferred: State | BOTTOM = self.transfer(program_point1)
-            old: State | BOTTOM = self.analysis_list[program_point2]
-
-            if not compare_states(transferred, old):
-                transferred = merge_states(transferred, old)
-                self.analysis_list[program_point2]: State = transferred
-                self.LAMBDA(program_point2)
-                added_program_points = self.DELTA(program_point2)
-                if not added_program_points:
-                    logger.critical("No added flows at {}".format(program_point2))
-                else:
-                    logger.debug("added flows {}".format(added_program_points))
-                    self.analyzed_program_points.add(program_point2)
-                    self.work_list.extendleft(added_program_points)
+            self._push_state_to(transferred, program_point2)
 
     def present(self):
-        self.analyzed_program_points.add(self.final_point)
-        for program_point in self.analyzed_program_points:
+        for program_point in self.analysis_list:
             logger.info(
                 "Context at program point {}: {}".format(
                     program_point, self.analysis_list[program_point]
@@ -153,11 +149,18 @@ class Analysis(AnalysisBase):
 
     # based on current program point, update self.IF
     def LAMBDA(self, program_point: ProgramPoint) -> None:
+        logger.debug(f"Current lambda point: {program_point}")
         old_state: State = self.analysis_list[program_point]
         new_state: State = deepcopy_state(old_state)
         dummy_value: Value = Value()
 
         # function calls and descriptors will produce dummy value and inter-procedural flows
+        # call labels includes:
+        # 1. ast.ClassDef
+        # 2. ast.Call
+        # 3. __get__
+        # 4. __set__
+        # 5. special init method for our analysis
         if self.is_call_point(program_point):
             if self.is_classdef_call_point(program_point):
                 self._lambda_classdef(program_point, old_state, new_state, dummy_value)
@@ -180,13 +183,19 @@ class Analysis(AnalysisBase):
         dummy_value: Value,
         typ: Constructor,
     ):
+        # correspond to object.__new__(cls)
+
+        stmt = self.get_stmt_by_point(program_point)
+        assert isinstance(stmt, ast.Call) and len(stmt.args) == 1
+
         call_lab, call_ctx = program_point
         addr = record(call_lab, call_ctx)
-        new_stack = new_state[0]
-        new_heap = new_state[1]
-        cls_value = new_stack.compute_value_of_expr(ast.Name(id="cls", ctx=ast.Load()))
+        new_stack, new_heap = new_state
+        cls_value = new_stack.compute_value_of_expr(stmt.args[0])
         for c in cls_value:
-            instance = typ(addr, c, new_heap)
+            instance = typ(addr, c)
+            heap = new_heap.write_ins_to_heap(instance)
+            instance.__my_dict__ = heap
             dummy_value.inject(instance)
 
     def _lambda_special_method(
@@ -213,17 +222,14 @@ class Analysis(AnalysisBase):
         dummy_value: Value,
     ):
         call_lab, call_ctx = program_point
+        ret_lab, dummy_ret_lab = self.get_special_init_return_label(call_lab)
+
         call_stmt: ast.Call = self.get_stmt_by_label(call_lab)
-        assert isinstance(call_stmt, ast.Call) and isinstance(call_stmt.func, ast.Name)
-        new_stack = new_state[0]
+        new_stack, new_heap = new_state
         value: Value = new_stack.compute_value_of_expr(call_stmt.func)
-        dummy_value = Value()
-        ret_lab, dummy_ret_lab = self.get_init_return_label(call_lab)
+
         for val in value:
-            if isinstance(val, SpecialMethodObject):
-                res = val()
-                dummy_value.inject_type(res)
-            elif isinstance(val, MethodObject):
+            if isinstance(val, MethodObject):
                 entry_lab, exit_lab = val.__my_func__.__my_code__
                 instance = val.__my_instance__
                 new_ctx: Tuple = merge(call_lab, instance.__my_address__, call_ctx)
@@ -241,9 +247,12 @@ class Analysis(AnalysisBase):
                     (ret_lab, call_ctx),
                 )
                 self.inter_flows.add(inter_flow)
+            else:
+                dummy_value.inject(val)
+
         dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
-        self.push_info_to_dummy(new_stack, (dummy_ret_lab, call_ctx))
+        self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     def _lambda_getter(
         self, program_point, old_state: State, new_state: State, dummy_value: Value
@@ -252,7 +261,7 @@ class Analysis(AnalysisBase):
         assert isinstance(call_stmt, ast.Attribute), call_stmt
 
         call_lab, call_ctx = program_point
-        new_stack = new_state[0]
+        new_stack, new_heap = new_state
         value = new_stack.compute_value_of_expr(call_stmt.value)
         dummy_value = Value()
         ret_lab, dummy_ret_lab = self.get_getter_return_label(call_lab)
@@ -282,7 +291,7 @@ class Analysis(AnalysisBase):
 
         dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
-        self.push_info_to_dummy(new_stack, (dummy_ret_lab, call_ctx))
+        self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     def _lambda_setter(
         self, program_point, old_state: State, new_state: State, dummy_value: Value
@@ -292,7 +301,7 @@ class Analysis(AnalysisBase):
         assert len(call_stmt.targets) == 1 and isinstance(
             call_stmt.targets[0], ast.Attribute
         )
-        new_stack = new_state[0]
+        new_stack, new_heap = new_state
 
         attribute: ast.Attribute = call_stmt.targets[0]
         attr: str = call_stmt.targets[0].attr
@@ -324,20 +333,7 @@ class Analysis(AnalysisBase):
                     )
                     self.inter_flows.add(inter_flow)
 
-        self.push_info_to_dummy(new_stack, (dummy_ret_lab, call_ctx))
-
-    def push_info_to_dummy(
-        self,
-        dummy_stack: Stack,
-        dummy_point: ProgramPoint,
-    ):
-        dummy_old_call_stack: Stack = self.analysis_list[dummy_point]
-        if not dummy_stack <= dummy_old_call_stack:
-            dummy_stack += dummy_old_call_stack
-            self.analysis_list[dummy_point] = dummy_stack
-            self.LAMBDA(dummy_point)
-            added_flows = self.DELTA(dummy_point)
-            self.work_list.extendleft(added_flows)
+        self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     # deal with cases such as class xxx
     def _lambda_classdef(
@@ -418,12 +414,12 @@ class Analysis(AnalysisBase):
             new_state[0].write_var(
                 dummy_ret_stmt.id, Namespace_Local, dummy_value_normal
             )
-            self.push_info_to_dummy(new_state[0], (dummy_ret_lab, call_ctx))
+            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
         if len(dummy_value_special):
-            _, dummy_ret_lab = self.get_new_return_label(call_lab)
+            _, dummy_ret_lab = self.get_special_new_return_label(call_lab)
             dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
             new_state[0].write_var(dummy_stmt.id, Namespace_Local, dummy_value_special)
-            self.push_info_to_dummy(new_state[0], (dummy_ret_lab, call_ctx))
+            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     def _lambda_builtin_list(
         self,
@@ -456,18 +452,26 @@ class Analysis(AnalysisBase):
     # find __new__ and __init__ method
     # then use it to create class instance
     def _lambda_class(
-        self, program_point, old_state: State, new_state: State, dummy_value: Value, typ
+        self,
+        program_point: ProgramPoint,
+        old_state: State,
+        new_state: State,
+        dummy_value: Value,
+        typ: CustomClass,
     ):
         call_lab, call_ctx = program_point
+        _, new_heap = new_state
+
         addr = record(call_lab, call_ctx)
         new_method = dunder_lookup(typ, "__new__")
         if isinstance(new_method, Constructor):
             instance = new_method(addr, typ)
+            heap = new_heap.write_ins_to_heap(instance)
+            instance.__my_dict__ = heap
             dummy_value.inject(instance)
-
         elif isinstance(new_method, FunctionObject):
             entry_lab, exit_lab = new_method.__my_code__
-            ret_lab, dummy_ret_lab = self.get_new_return_label(call_lab)
+            ret_lab, _ = self.get_special_new_return_label(call_lab)
             new_ctx = merge(call_lab, None, call_ctx)
             inter_flow = (
                 (call_lab, call_ctx),
@@ -576,14 +580,14 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Assign,
     ) -> State:
-        new_stack = new_state[0]
+        new_stack, new_heap = new_state
         rhs_value: Value = new_stack.compute_value_of_expr(stmt.value, program_point)
         target: ast.expr = stmt.targets[0]
         if isinstance(target, ast.Name):
             new_stack.write_var(target.id, Namespace_Local, rhs_value)
         else:
             assert False
-        return new_stack
+        return new_state
 
     def transfer_call(
         self, program_point: ProgramPoint, old_state: State, new_state: State
@@ -602,9 +606,9 @@ class Analysis(AnalysisBase):
     def _transfer_call_classdef(
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
-        new_stack = new_state[0]
+        new_stack, new_heap = new_state
         new_stack.next_ns()
-        return new_stack
+        return new_state
 
     def _transfer_call_normal(
         self, program_point: ProgramPoint, old_state: State, new_state: State
@@ -612,7 +616,7 @@ class Analysis(AnalysisBase):
         # Normal call has form: func_name(args, keywords)
         call_stmt: ast.Call = self.get_stmt_by_point(program_point)
         assert isinstance(call_stmt, ast.Call), call_stmt
-        new_stack = new_state[0]
+        new_stack, new_heap = new_state
 
         # new namespace to simulate function call
         new_stack.next_ns()
@@ -639,7 +643,7 @@ class Analysis(AnalysisBase):
             keyword_value = new_stack.compute_value_of_expr(keyword.value)
             new_stack.write_var(keyword.arg, Namespace_Local, keyword_value)
 
-        return new_stack
+        return new_state
 
     def _transfer_call_getter(
         self, program_point: ProgramPoint, old_state: State, new_state: State
@@ -647,7 +651,7 @@ class Analysis(AnalysisBase):
         call_stmt: ast.stmt = self.get_stmt_by_point(program_point)
         assert isinstance(call_stmt, ast.Attribute), call_stmt
 
-        new_stack = new_state[0]
+        new_stack, new_heap = new_state
         new_stack.next_ns()
 
         target_value = new_stack.compute_value_of_expr(call_stmt.value)
@@ -663,10 +667,10 @@ class Analysis(AnalysisBase):
                     new_stack.write_var("2", Namespace_Local, owner_value)
                     new_stack.write_var(POS_ARG_END, Namespace_Helper, 2)
 
-        return new_stack
+        return new_state
 
     def _transfer_call_setter(
-        self, program_point: ProgramPoint, old_state: State, new_stack: Stack
+        self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
         call_stmt: ast.stmt = self.get_stmt_by_point(program_point)
         assert isinstance(call_stmt, ast.Assign)
@@ -674,6 +678,7 @@ class Analysis(AnalysisBase):
             call_stmt.targets[0], ast.Attribute
         )
 
+        new_stack, new_heap = new_state
         new_stack.next_ns()
 
         attribute: ast.Attribute = call_stmt.targets[0]
@@ -694,14 +699,14 @@ class Analysis(AnalysisBase):
                         new_stack.write_var("2", Namespace_Local, value_value)
                         new_stack.write_var(POS_ARG_END, Namespace_Helper, 2)
 
-        return new_stack
+        return new_state
 
     # consider current global namespace
     def transfer_entry(
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
         stmt = self.get_stmt_by_point(program_point)
-        new_stack = new_state[0]
+        new_stack, new_heap = new_state
 
         # is self.self_info[program_point] is not None, it means
         # this is a class method call
@@ -723,17 +728,17 @@ class Analysis(AnalysisBase):
             _ = parse_default_args(arg_flags, stmt, new_state)
             parse_kwonly_args(stmt, new_state)
 
-        return new_stack
+        return new_state
 
     def transfer_exit(
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
-        new_stack = new_state[0]
+        new_stack, new_heap = new_state
         if not new_stack.top_namespace_contains(RETURN_FLAG):
             value = create_value_with_type(NoneType())
             new_stack.write_var(RETURN_FLAG, Namespace_Local, value)
 
-        return new_stack
+        return new_state
 
     def transfer_return(
         self, program_point: ProgramPoint, old_state: State, new_state: State
@@ -755,16 +760,15 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Name,
     ):
-        new_stack = new_state[0]
+        new_stack, new_heap = new_state
         return_value: Value = new_stack.read_var(RETURN_FLAG)
-        print(return_value)
         if new_stack.top_namespace_contains(INIT_FLAG):
             return_value = new_stack.read_var("self")
         new_stack.pop_frame()
 
         # no need to assign
         if stmt.id == Unused_Name:
-            return new_stack
+            return new_state
 
         # write value to name
         new_stack.write_var(stmt.id, Namespace_Local, return_value)
@@ -898,10 +902,10 @@ class Analysis(AnalysisBase):
         stmt: ast.Return,
     ) -> State:
         name: str = stmt.value.id
-        new_stack = new_state[0]
+        new_stack, new_heap = new_state
         value: Value = new_stack.read_var(name)
         new_stack.write_var(RETURN_FLAG, Namespace_Local, value)
-        return new_stack
+        return new_state
 
     def transfer_Global(
         self,
@@ -911,10 +915,10 @@ class Analysis(AnalysisBase):
         stmt: ast.Global,
     ) -> State:
         name = stmt.names[0]
-        new_stack = new_state[0]
+        new_stack, _ = new_state
         new_stack.write_var(name, Namespace_Global, None)
 
-        return new_stack
+        return new_state
 
     def transfer_Nonlocal(
         self,
@@ -924,10 +928,10 @@ class Analysis(AnalysisBase):
         stmt: ast.Nonlocal,
     ) -> State:
         name = stmt.names[0]
-        new_stack = new_state[0]
+        new_stack, _ = new_state
         new_stack.write_var(name, Namespace_Nonlocal, None)
 
-        return new_stack
+        return new_state
 
     def transfer_Delete(
         self,

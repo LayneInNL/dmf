@@ -57,10 +57,10 @@ def merge_states(lhs: State, rhs: State | BOTTOM) -> State:
     # if lhs is BOTTOM, we won't get here.
     if is_bot_state(rhs):
         return lhs
-
-    lhs[0] += rhs[0]
-    lhs[1] += rhs[1]
-    return lhs
+    res_lhs = list(lhs)
+    res_lhs[0] += rhs[0]
+    res_lhs[1] += rhs[1]
+    return tuple(res_lhs)
 
 
 def compute_function_defaults(state: State, node: ast.FunctionDef):

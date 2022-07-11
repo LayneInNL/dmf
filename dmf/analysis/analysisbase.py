@@ -157,7 +157,7 @@ class AnalysisBase:
                 return return_label, dummy_return_label
         raise KeyError
 
-    def get_new_return_label(self, label):
+    def get_special_new_return_label(self, label):
         for l1, l2, l3, l4, l5, l6, l7 in self.call_return_inter_flows:
             if label == l1:
                 return l2, l3
@@ -178,7 +178,7 @@ class AnalysisBase:
         logger.info(f"{label} not in setter_inter_flows")
         raise KeyError
 
-    def get_init_return_label(self, label):
+    def get_special_init_return_label(self, label):
         for l1, l2, l3 in self.special_init_flows:
             if label == l1:
                 return l2, l3

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import types
 from collections import defaultdict
-from copy import copy
+from copy import copy, deepcopy
 from typing import DefaultDict
 
 import dmf.share
@@ -231,9 +231,7 @@ class ObjectClass:
                     if len(descr_get) > 0:
                         return descr_get
 
-                if isinstance(self, Instance):
-                    return analysis_heap.read_field_from_heap(self, name)
-                elif hasattr(self, "__my_dict__") and name in self.__my_dict__:
+                if hasattr(self, "__my_dict__") and name in self.__my_dict__:
                     return self.__my_dict__.read_value(name)
 
                 if class_variable is not None:
@@ -310,9 +308,7 @@ class ObjectClass:
                     if len(descr_set) > 0:
                         return descr_set
 
-                if isinstance(self, Instance):
-                    analysis_heap.write_field_to_heap(self, name, value)
-                elif hasattr(self, "__my_dict__"):
+                if hasattr(self, "__my_dict__"):
                     self.__my_dict__.write_local_value(name, value)
                 return None
 
@@ -496,8 +492,8 @@ class Constructor:
             cls.instance.__my_uuid__ = id(cls.instance)
         return cls.instance
 
-    def __call__(self, address, cls, heap):
-        return Instance(address=address, cls=cls, heap=heap)
+    def __call__(self, address, cls):
+        return Instance(addr=address, cls=cls)
 
     def __le__(self, other):
         return True
@@ -507,18 +503,16 @@ class Constructor:
 
 
 class Instance:
-    def __init__(self, *, address, cls):
-        self.__my_address__ = address
-        self.__my_uuid__ = f"{address}-{cls.__my_uuid__}"
+    def __init__(self, addr, cls):
+        self.__my_address__ = addr
         self.__my_class__ = cls
-        self.__my_dict__ = None
-        analysis_heap.write_ins_to_heap(self)
+        self.__my_uuid__ = f"{addr}-{cls.__my_uuid__}"
+        self.__my_dict__: Namespace | None = None
 
     def __le__(self, other: Instance):
-        return analysis_heap.singletons[self] <= analysis_heap.singletons[other]
+        return True
 
     def __iadd__(self, other: Instance):
-        analysis_heap.singletons[self] += analysis_heap.singletons[other]
         return self
 
     def __hash__(self):
@@ -526,6 +520,15 @@ class Instance:
 
     def __eq__(self, other):
         return self.__my_uuid__ == other.__my_uuid__
+
+    # def __deepcopy__(self, memo):
+    #     new_addr = deepcopy(self.__my_address__, memo)
+    #     new_class = deepcopy(self.__my_class__, memo)
+    #     new_heap = deepcopy(self.__my_dict__, memo)
+    #     new_instance = Instance(new_addr, new_class)
+    #     new_instance.__my_dict__ = new_heap
+    #     memo[id(self)] = new_instance
+    #     return memo[id(self)]
 
 
 class Iterator:
@@ -774,6 +777,16 @@ class Heap:
             Namespace
         )
 
+    def __deepcopy__(self, memo):
+        new_singletons = deepcopy(self.singletons, memo)
+        new_heap = object.__new__(Heap)
+        new_heap.singletons = new_singletons
+        memo[id(self)] = new_heap
+        return new_heap
+
+    def __contains__(self, item):
+        return item in self.singletons
+
     def __le__(self, other: Heap):
         for ins in self.singletons:
             if ins not in other.singletons:
@@ -803,14 +816,12 @@ class Heap:
         return self
 
     def __repr__(self):
-        return "singleton: {}".format(self.singletons)
+        return "heaps: {}".format(self.singletons)
 
-    def write_ins_to_heap(self, instance: Instance):
-        if instance in self.singletons:
-            # logger.critical("Have same name")
-            pass
-        else:
+    def write_ins_to_heap(self, instance: Instance) -> Namespace:
+        if instance not in self.singletons:
             self.singletons[instance] = Namespace()
+        return self.singletons[instance]
 
     def write_field_to_heap(self, instance: Instance, field: str, value: Value):
         self.singletons[instance][LocalVar(field)] = value
