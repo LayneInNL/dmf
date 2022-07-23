@@ -30,7 +30,7 @@ from dmf.analysis.variables import (
 )
 
 
-def my_type(obj):
+def Type(obj):
     return obj.__my_class__
 
 
@@ -48,7 +48,7 @@ my_getattr_obj = object()
 
 def my_getattr(obj, name: str, default=my_getattr_obj) -> Value:
 
-    get_attribute = dunder_lookup(my_type(obj), "__getattribute__")
+    get_attribute = dunder_lookup(Type(obj), "__getattribute__")
 
     attr_value = Value()
     try:
@@ -63,7 +63,7 @@ def my_getattr(obj, name: str, default=my_getattr_obj) -> Value:
 
 
 def my_setattr(obj, name, value):
-    set_attr = dunder_lookup(my_type(obj), "__setattr__")
+    set_attr = dunder_lookup(Type(obj), "__setattr__")
     res = set_attr(obj, name, value)
     return res
 
@@ -111,78 +111,68 @@ class TypeClass(Base, metaclass=Singleton):
     # instance = None
 
     def __custom__(self):
-        def __getattribute__(self, name):
-            # https://github.com/python/cpython/blob/main/Objects/typeobject.c#L4057
-            # ignore meta type now
+        def __getattribute__(type, name):
+            metatype = Type(type)
 
-            type_of_self = self
-            class_variable: Value = _pytype_lookup(type_of_self, name)
+            meta_attribute = _pytype_lookup(metatype, name)
+            if meta_attribute is not None:
+                assert False, meta_attribute
 
-            if class_variable is not None:
+            attribute = _pytype_lookup(type, name)
+            cls_vars = attribute
+            if cls_vars is not None:
                 descr_get = Value()
-                for class_type in class_variable:
-                    if isinstance(class_type, FunctionObject):
-                        descr_get.inject(class_type)
-                    elif isinstance(class_type, SpecialFunctionObject):
-                        descr_get.inject(class_type)
+                for cls_var in cls_vars:
+                    cls_var_type = Type(cls_var)
+                    if isinstance(cls_var, FunctionObject):
+                        descr_get.inject(cls_var)
+                    elif isinstance(cls_var, SpecialFunctionObject):
+                        descr_get.inject(cls_var)
                     else:
-                        getters = my_getattr(class_type, "__get__")
-                        for getter in getters:
-                            if isinstance(getter, FunctionObject):
-                                descr_get.inject_type(
-                                    MethodObject(
-                                        instance=class_type,
-                                        function=getter,
-                                        descr_instance=NoneType(),
-                                        descr_owner=self,
-                                    )
-                                )
-                            elif isinstance(getter, SpecialFunctionObject):
-                                descr_get.inject_type(
-                                    SpecialMethodObject(
-                                        instance=class_type, function=getter
-                                    )
-                                )
+                        assert False, cls_var
                 if len(descr_get) > 0:
                     return descr_get
 
-            if hasattr(self, "__my_dict__") and name in self.__my_dict__:
-                return self.__my_dict__.read_value(name)
-
+            assert False, type
             raise AttributeError(name)
 
-        def __setattr__(self, name, value):
-            # https://github.com/python/cpython/blob/main/Objects/typeobject.c#L4144
-
-            type_of_self = my_type(self)
-            class_variable: Value = _pytype_lookup(type_of_self, name)
-            if class_variable is not None:
-                descr_set = Value()
-                for class_type in class_variable:
-                    setters = my_getattr(class_type, "__set__")
+        def __setattr__(type, name, value):
+            cls_vars: Value = _pytype_lookup(type, name)
+            descr_setters = Value()
+            if cls_vars is not None:
+                for cls_var in cls_vars:
+                    cls_var_type = Type(cls_var)
+                    setters = _pytype_lookup(cls_var_type, "__set__")
                     for setter in setters:
                         if isinstance(setter, FunctionObject):
-                            descr_set.inject_type(
+                            descr_setters.inject(
                                 MethodObject(
-                                    instance=class_type,
+                                    instance=cls_var,
                                     function=setter,
                                     descr_instance=self,
                                     descr_value=value,
                                 )
                             )
-                        elif isinstance(setter, SpecialFunctionObject):
-                            descr_set.inject_type(
-                                SpecialMethodObject(
-                                    instance=class_type, function=setter
-                                )
-                            )
-                    descr_set.inject_value(setters)
-                if len(descr_set) > 0:
-                    return descr_set
-
-            if hasattr(self, "__my_dict__"):
-                self.__my_dict__.write_local_value(name, value)
-            return []
+                            descr_setters.inject(setters)
+                        else:
+                            assert False, setter
+            if value is None:
+                if isinstance(self, Instance):
+                    if self not in analysis_heap:
+                        analysis_heap.write_instance_dict(self)
+                    instance_dict = analysis_heap.read_instance_dict(self)
+                    instance_dict.del_local_var(name)
+                elif hasattr(self, "__my_dict__"):
+                    self.__my_dict__.del_load_var(name)
+            else:
+                if isinstance(self, Instance):
+                    if self not in analysis_heap:
+                        analysis_heap.write_instance_dict(self)
+                    instance_dict = analysis_heap.read_instance_dict(self)
+                    instance_dict.write_local_value(name, value)
+                elif hasattr(self, "__my_dict__"):
+                    self.__my_dict__.write_local_value(name, value)
+            return descr_setters
 
         func = SpecialFunctionObject(func=__getattribute__)
         self.__my_dict__.write_local_value(
@@ -219,21 +209,33 @@ class ObjectClass:
                 return self
 
             def __getattribute__(self, name):
-                type_of_self = my_type(self)
-                class_variable: Value = _pytype_lookup(type_of_self, name)
+                # type_of_self = type(self)
+                type_of_self = Type(self)
+                # get class variables
+                cls_vars: Value = _pytype_lookup(type_of_self, name)
 
-                if class_variable is not None:
-                    descr_get = Value()
-                    for class_type in class_variable:
-                        if my_hasattr(class_type, "__set__"):
-                            getters = my_getattr(class_type, "__get__")
-                            for getter in getters:
-                                if isinstance(getter, MethodObject):
-                                    getter.descriptor_instance = self
-                                    getter.descriptor_owner = type_of_self
-                                descr_get.inject(getter)
-                    if len(descr_get) > 0:
-                        return descr_get
+                if cls_vars is not None:
+                    data_descr_getters = Value()
+                    for cls_var in cls_vars:
+                        cls_var_type = Type(cls_var)
+                        descr_getters = _pytype_lookup(cls_var_type, "__get__")
+                        if descr_getters is not None:
+                            descr_setters = _pytype_lookup(cls_var_type, "__set__")
+                            if descr_setters is not None:
+                                for getter in descr_getters:
+                                    if isinstance(getter, FunctionObject):
+                                        method_getter = MethodObject(
+                                            instance=cls_var,
+                                            function=getter,
+                                            descr_instance=self,
+                                            descr_owner=type_of_self,
+                                        )
+                                        data_descr_getters.inject(method_getter)
+                                    else:
+                                        assert False, getter
+                    if len(data_descr_getters) > 0:
+                        return data_descr_getters
+
                 if isinstance(self, Instance) and self in analysis_heap:
                     instance_dict = analysis_heap.read_instance_dict(self)
                     if name in instance_dict:
@@ -241,92 +243,78 @@ class ObjectClass:
                 elif hasattr(self, "__my_dict__") and name in self.__my_dict__:
                     return self.__my_dict__.read_value(name)
 
-                if class_variable is not None:
-                    descr_get = Value()
-                    for class_type in class_variable:
-                        if isinstance(class_type, FunctionObject):
-                            descr_get.inject(
-                                MethodObject(instance=self, function=class_type)
+                if cls_vars is not None:
+                    nondata_descr_getters = Value()
+                    for cls_var in cls_vars:
+                        if isinstance(cls_var, FunctionObject):
+                            nondata_descr_getters.inject(
+                                MethodObject(instance=self, function=cls_var)
                             )
-                        elif isinstance(class_type, SpecialFunctionObject):
-                            descr_get.inject(
-                                SpecialMethodObject(instance=self, function=class_type)
+                        elif isinstance(cls_var, SpecialFunctionObject):
+                            nondata_descr_getters.inject(
+                                SpecialMethodObject(instance=self, function=cls_var)
                             )
                         else:
-                            getters = my_getattr(class_type, "__get__")
-                            for getter in getters:
-                                if isinstance(getter, FunctionObject):
-                                    descr_get.inject(
-                                        MethodObject(
-                                            instance=class_type,
+                            cls_var_type = Type(cls_var)
+                            descr_getters = _pytype_lookup(cls_var_type, "__get__")
+                            if descr_getters is not None:
+                                for getter in descr_getters:
+                                    if isinstance(getter, FunctionObject):
+                                        method_getter = MethodObject(
+                                            instance=cls_var,
                                             function=getter,
                                             descr_instance=self,
-                                            descr_owner=my_type(self),
+                                            descr_owner=type_of_self,
                                         )
-                                    )
-                                elif isinstance(getter, SpecialFunctionObject):
-                                    descr_get.inject(
-                                        SpecialMethodObject(
-                                            instance=class_type, function=getter
-                                        )
-                                    )
-                                elif isinstance(getter, MethodObject):
-                                    descr_get.inject(
-                                        MethodObject(
-                                            instance=getter.__my_instance__,
-                                            function=getter.__my_func__,
-                                            descr_instance=self,
-                                            descr_owner=my_type(self),
-                                        )
-                                    )
-
-                    if len(descr_get) > 0:
-                        return descr_get
-
-                if class_variable is not None:
-                    return class_variable
+                                        nondata_descr_getters.inject(method_getter)
+                                    else:
+                                        assert False, getter
+                    if len(nondata_descr_getters) > 0:
+                        return nondata_descr_getters
+                if cls_vars is not None:
+                    return cls_vars
 
                 raise AttributeError(name)
 
             def __setattr__(self, name, value):
-                type_of_self = my_type(self)
-                class_variable: Value = _pytype_lookup(type_of_self, name)
-                if class_variable is not None:
-                    descr_set = Value()
-                    for class_type in class_variable:
-                        setters = my_getattr(class_type, "__set__")
+                self_type = Type(self)
+                cls_vars: Value = _pytype_lookup(self_type, name)
+
+                descr_setters = Value()
+                if cls_vars is not None:
+                    for cls_var in cls_vars:
+                        cls_var_type = Type(cls_var)
+                        setters = _pytype_lookup(cls_var_type, "__set__")
                         for setter in setters:
                             if isinstance(setter, FunctionObject):
-                                descr_set.inject(
+                                descr_setters.inject(
                                     MethodObject(
-                                        instance=class_type,
+                                        instance=cls_var,
                                         function=setter,
                                         descr_instance=self,
                                         descr_value=value,
                                     )
                                 )
-                            elif isinstance(setter, SpecialFunctionObject):
-                                descr_set.inject(
-                                    SpecialMethodObject(
-                                        instance=class_type, function=setter
-                                    )
-                                )
-                            elif isinstance(setter, MethodObject):
-                                setter.descriptor_instance = self
-                                setter.descriptor_value = value
-                                descr_set.inject(setter)
-                        descr_set.inject_value(setters)
-                    if len(descr_set) > 0:
-                        return descr_set
-
-                if isinstance(self, Instance):
-                    if self not in analysis_heap:
-                        analysis_heap.write_instance_dict(self)
-                    instance_dict = analysis_heap.read_instance_dict(self)
-                    instance_dict.write_local_value(name, value)
-                elif hasattr(self, "__my_dict__"):
-                    self.__my_dict__.write_local_value(name, value)
-                return []
+                                descr_setters.inject(setters)
+                            else:
+                                assert False, setter
+                if value is None:
+                    if isinstance(self, Instance):
+                        if self not in analysis_heap:
+                            analysis_heap.write_instance_dict(self)
+                        instance_dict = analysis_heap.read_instance_dict(self)
+                        instance_dict.del_local_var(name)
+                    elif hasattr(self, "__my_dict__"):
+                        self.__my_dict__.del_load_var(name)
+                else:
+                    if isinstance(self, Instance):
+                        if self not in analysis_heap:
+                            analysis_heap.write_instance_dict(self)
+                        instance_dict = analysis_heap.read_instance_dict(self)
+                        instance_dict.write_local_value(name, value)
+                    elif hasattr(self, "__my_dict__"):
+                        self.__my_dict__.write_local_value(name, value)
+                return descr_setters
 
             cls.instance.__my_dict__ = Namespace()
             func = SpecialFunctionObject(func=__init__)
