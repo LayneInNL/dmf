@@ -15,14 +15,13 @@
 from __future__ import annotations
 
 import types
-from collections import defaultdict
-from copy import copy, deepcopy
-from typing import DefaultDict, Dict
+from copy import copy
+from typing import Dict
 
 import dmf.share
 from dmf.analysis.c3 import c3
-from dmf.analysis.prim import NoneType, Int, Bool
 from dmf.analysis.namespace import Namespace
+from dmf.analysis.prim import NoneType, Int, Bool
 from dmf.analysis.value import Value, create_value_with_type
 from dmf.analysis.variables import (
     LocalVar,
@@ -1078,26 +1077,63 @@ class ModuleType:
         return self.namespace.read_value(name)
 
 
-# class SuperIns:
-#     def __init__(self, type1, type2):
-#         self.uuid = f"{type1.uuid}-{type2.uuid}"
-#         instance_mro = type2.cls.mro
-#         idx = instance_mro.index(type1) + 1
-#         self.proxy_location = idx
-#         self.proxy_class = instance_mro[idx]
-#         self.proxy_instance = type2
-#         self.uuid = "{}-{}".format(type1.uuid, type2.addr)
-#
-#     def getattr(self, field: str):
-#         return analysis_heap.read_field_from_class(
-#             self.proxy_instance, field, self.proxy_location
-#         )
-#
-#     def __le__(self, other: SuperIns):
-#         return True
-#
-#     def __iadd__(self, other: SuperIns):
-#         return self
+class TypeMeta(type):
+    def __init__(cls, name, bases, dict):
+        super().__init__(name, bases, dict)
+        cls.__my_dict__ = Namespace()
+        cls.__my_uuid__ = id(cls)
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+
+# we only consider form super(Class, Instance).function_call(...)
+class Super(metaclass=TypeMeta):
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+
+def _setup_Super():
+    def __init__(self, _class, _instance):
+        self.__my_uuid__ = f"{_class.__my_uuid__}-{_instance.__my_uuid__}"
+        instance_type = _instance.__my_class__
+        self.instance_mro = instance_type.__my_mro__
+        index = self.instance_mro.index(_class) + 1
+        self.proxy_location = index
+        self.proxy_instance = _instance
+
+    def __getattribute__(self, name):
+        res = Value()
+        for cls in self.instance_mro[self.proxy_location :]:
+            dict = cls.__my_dict__
+            if name in dict:
+                x = dict.read_value(name)
+                for v in x:
+                    if isinstance(v, FunctionObject):
+                        method = MethodObject(instance=self.proxy_instance, function=v)
+                        res.inject(method)
+                    else:
+                        raise NotImplementedError(v)
+        assert len(res) != 0
+        return res
+
+    cls_dict = Namespace()
+    local_functions = filter(
+        lambda value: isinstance(value, types.FunctionType),
+        locals().values(),
+    )
+    for function in local_functions:
+        cls_dict.write_local_value(
+            function.__name__,
+            create_value_with_type(SpecialFunctionObject(func=function)),
+        )
+    return cls_dict
 
 
 class Heap:
