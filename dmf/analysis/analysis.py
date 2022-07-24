@@ -48,8 +48,8 @@ from dmf.analysis.types import (
     mock_value,
     SpecialMethodObject,
     my_getattr,
-    BuiltinList,
-    BuiltinTuple,
+    BuiltinListClass,
+    BuiltinTupleClass,
     analysis_heap,
 )
 from dmf.analysis.value import Value, create_value_with_type
@@ -399,11 +399,11 @@ class Analysis(AnalysisBase):
                 self._lambda_constructor(
                     program_point, old_state, new_state, dummy_value_normal, typ
                 )
-            elif isinstance(typ, BuiltinList):
+            elif isinstance(typ, BuiltinListClass):
                 self._lambda_builtin_list(
                     program_point, old_state, new_state, dummy_value_normal, typ
                 )
-            elif isinstance(typ, BuiltinTuple):
+            elif isinstance(typ, BuiltinTupleClass):
                 self._lambda_builtin_tuple(
                     program_point, old_state, new_state, dummy_value_normal, typ
                 )
@@ -427,7 +427,7 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: BuiltinList,
+        typ: BuiltinListClass,
     ):
         call_lab, call_ctx = program_point
         call_stmt = self.get_stmt_by_point(program_point)
@@ -444,7 +444,7 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: BuiltinTuple,
+        typ: BuiltinTupleClass,
     ):
         self._lambda_builtin_list(program_point, old_state, new_state, dummy_value, typ)
 

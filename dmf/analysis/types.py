@@ -21,7 +21,7 @@ from typing import DefaultDict, Dict
 
 import dmf.share
 from dmf.analysis.c3 import c3
-from dmf.analysis.prim import NoneType, Int
+from dmf.analysis.prim import NoneType, Int, Bool
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.value import Value, create_value_with_type
 from dmf.analysis.variables import (
@@ -102,243 +102,127 @@ class Singleton(type):
         return cls._instances[cls]
 
 
-class Base:
-    def __init__(self):
-        setattr(self, "__my_dict__", Namespace())
+class TypeClass(metaclass=Singleton):
+    _instance = None
 
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.__my_dict__ = Namespace()
+            cls._instance.__my_uuid__ = id(cls._instance)
+        return cls._instance
 
-class TypeClass(Base, metaclass=Singleton):
-    # instance = None
-
-    def __custom__(self):
-        def __getattribute__(type, name):
-            metatype = Type(type)
-
-            meta_attribute = _pytype_lookup(metatype, name)
-            if meta_attribute is not None:
-                assert False, meta_attribute
-
-            attribute = _pytype_lookup(type, name)
-            cls_vars = attribute
-            if cls_vars is not None:
-                descr_get = Value()
-                for cls_var in cls_vars:
-                    cls_var_type = Type(cls_var)
-                    if isinstance(cls_var, FunctionObject):
-                        descr_get.inject(cls_var)
-                    elif isinstance(cls_var, SpecialFunctionObject):
-                        descr_get.inject(cls_var)
-                    else:
-                        assert False, cls_var
-                if len(descr_get) > 0:
-                    return descr_get
-
-            assert False, type
-            raise AttributeError(name)
-
-        def __setattr__(type, name, value):
-            cls_vars: Value = _pytype_lookup(type, name)
-            descr_setters = Value()
-            if cls_vars is not None:
-                for cls_var in cls_vars:
-                    cls_var_type = Type(cls_var)
-                    setters = _pytype_lookup(cls_var_type, "__set__")
-                    for setter in setters:
-                        if isinstance(setter, FunctionObject):
-                            descr_setters.inject(
-                                MethodObject(
-                                    instance=cls_var,
-                                    function=setter,
-                                    descr_instance=self,
-                                    descr_value=value,
-                                )
-                            )
-                            descr_setters.inject(setters)
-                        else:
-                            assert False, setter
-            if value is None:
-                if isinstance(self, Instance):
-                    if self not in analysis_heap:
-                        analysis_heap.write_instance_dict(self)
-                    instance_dict = analysis_heap.read_instance_dict(self)
-                    instance_dict.del_local_var(name)
-                elif hasattr(self, "__my_dict__"):
-                    self.__my_dict__.del_load_var(name)
-            else:
-                if isinstance(self, Instance):
-                    if self not in analysis_heap:
-                        analysis_heap.write_instance_dict(self)
-                    instance_dict = analysis_heap.read_instance_dict(self)
-                    instance_dict.write_local_value(name, value)
-                elif hasattr(self, "__my_dict__"):
-                    self.__my_dict__.write_local_value(name, value)
-            return descr_setters
-
-        func = SpecialFunctionObject(func=__getattribute__)
-        self.__my_dict__.write_local_value(
-            __getattribute__.__name__, create_value_with_type(func)
-        )
-        func = SpecialFunctionObject(func=__setattr__)
-        self.__my_dict__.write_local_value(
-            __setattr__.__name__, create_value_with_type(func)
-        )
-
-    def __init__(self):
-        super().__init__()
-        self.__my_uuid__ = id(self)
-        self.__my_bases__ = [object()]
-        self.__my_mro__ = c3(self)
-        self.__my_class__ = self
-        self.__custom__()
+    # def __init__(self):
+    # self.__my_bases__ = [object()]
+    # self.__my_mro__ = c3(self)
+    # self.__my_class__ = self
 
     def __le__(self, other):
         return True
 
     def __iadd__(self, other):
         return self
+
+
+def _setup_TypeClass():
+    def __getattribute__(type, name):
+        metatype = Type(type)
+
+        meta_attribute = _pytype_lookup(metatype, name)
+        if meta_attribute is not None:
+            assert False, meta_attribute
+
+        attribute = _pytype_lookup(type, name)
+        cls_vars = attribute
+        if cls_vars is not None:
+            descr_get = Value()
+            for cls_var in cls_vars:
+                if isinstance(cls_var, FunctionObject):
+                    descr_get.inject(cls_var)
+                elif isinstance(cls_var, SpecialFunctionObject):
+                    descr_get.inject(cls_var)
+                else:
+                    cls_var_type = Type(cls_var)
+                    cls_var_type_getters = _pytype_lookup(cls_var_type, "__get__")
+                    if cls_var_type_getters is not None:
+                        for getter in cls_var_type_getters:
+                            if isinstance(getter, FunctionObject):
+                                method_getter = MethodObject(
+                                    instance=cls_var,
+                                    function=getter,
+                                    descr_instance=NoneType(),
+                                    descr_owner=type,
+                                )
+                                descr_get.inject(method_getter)
+                            else:
+                                assert False, getter
+            if len(descr_get) > 0:
+                return descr_get
+
+        assert False, type
+        raise AttributeError(name)
+
+    def __setattr__(self, name, value):
+        cls_vars: Value = _pytype_lookup(self, name)
+        descr_setters = Value()
+        if cls_vars is not None:
+            for cls_var in cls_vars:
+                cls_var_type = Type(cls_var)
+                setters = _pytype_lookup(cls_var_type, "__set__")
+                for setter in setters:
+                    if isinstance(setter, FunctionObject):
+                        descr_setters.inject(
+                            MethodObject(
+                                instance=cls_var,
+                                function=setter,
+                                descr_instance=self,
+                                descr_value=value,
+                            )
+                        )
+                        descr_setters.inject(setters)
+                    else:
+                        assert False, setter
+        if value is None:
+            if isinstance(self, Instance):
+                if self not in analysis_heap:
+                    analysis_heap.write_instance_dict(self)
+                instance_dict = analysis_heap.read_instance_dict(self)
+                instance_dict.del_local_var(name)
+            elif hasattr(self, "__my_dict__"):
+                self.__my_dict__.del_load_var(name)
+        else:
+            if isinstance(self, Instance):
+                if self not in analysis_heap:
+                    analysis_heap.write_instance_dict(self)
+                instance_dict = analysis_heap.read_instance_dict(self)
+                instance_dict.write_local_value(name, value)
+            elif hasattr(self, "__my_dict__"):
+                self.__my_dict__.write_local_value(name, value)
+        return descr_setters
+
+    cls_dict = Namespace()
+    func = SpecialFunctionObject(func=__getattribute__)
+    cls_dict.write_local_value(__getattribute__.__name__, create_value_with_type(func))
+    func = SpecialFunctionObject(func=__setattr__)
+    cls_dict.write_local_value(__setattr__.__name__, create_value_with_type(func))
+    return cls_dict
 
 
 class ObjectClass:
-    instance = None
+    _instance = None
 
     def __new__(cls):
-        if cls.instance is None:
-            cls.instance = object.__new__(cls)
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.__my_dict__ = Namespace()
+            cls._instance.__my_uuid__ = id(cls._instance)
 
-            def __init__(self):
-                return self
+        return cls._instance
 
-            def __getattribute__(self, name):
-                # type_of_self = type(self)
-                type_of_self = Type(self)
-                # get class variables
-                cls_vars: Value = _pytype_lookup(type_of_self, name)
-
-                if cls_vars is not None:
-                    data_descr_getters = Value()
-                    for cls_var in cls_vars:
-                        cls_var_type = Type(cls_var)
-                        descr_getters = _pytype_lookup(cls_var_type, "__get__")
-                        if descr_getters is not None:
-                            descr_setters = _pytype_lookup(cls_var_type, "__set__")
-                            if descr_setters is not None:
-                                for getter in descr_getters:
-                                    if isinstance(getter, FunctionObject):
-                                        method_getter = MethodObject(
-                                            instance=cls_var,
-                                            function=getter,
-                                            descr_instance=self,
-                                            descr_owner=type_of_self,
-                                        )
-                                        data_descr_getters.inject(method_getter)
-                                    else:
-                                        assert False, getter
-                    if len(data_descr_getters) > 0:
-                        return data_descr_getters
-
-                if isinstance(self, Instance) and self in analysis_heap:
-                    instance_dict = analysis_heap.read_instance_dict(self)
-                    if name in instance_dict:
-                        return instance_dict.read_value(name)
-                elif hasattr(self, "__my_dict__") and name in self.__my_dict__:
-                    return self.__my_dict__.read_value(name)
-
-                if cls_vars is not None:
-                    nondata_descr_getters = Value()
-                    for cls_var in cls_vars:
-                        if isinstance(cls_var, FunctionObject):
-                            nondata_descr_getters.inject(
-                                MethodObject(instance=self, function=cls_var)
-                            )
-                        elif isinstance(cls_var, SpecialFunctionObject):
-                            nondata_descr_getters.inject(
-                                SpecialMethodObject(instance=self, function=cls_var)
-                            )
-                        else:
-                            cls_var_type = Type(cls_var)
-                            descr_getters = _pytype_lookup(cls_var_type, "__get__")
-                            if descr_getters is not None:
-                                for getter in descr_getters:
-                                    if isinstance(getter, FunctionObject):
-                                        method_getter = MethodObject(
-                                            instance=cls_var,
-                                            function=getter,
-                                            descr_instance=self,
-                                            descr_owner=type_of_self,
-                                        )
-                                        nondata_descr_getters.inject(method_getter)
-                                    else:
-                                        assert False, getter
-                    if len(nondata_descr_getters) > 0:
-                        return nondata_descr_getters
-                if cls_vars is not None:
-                    return cls_vars
-
-                raise AttributeError(name)
-
-            def __setattr__(self, name, value):
-                self_type = Type(self)
-                cls_vars: Value = _pytype_lookup(self_type, name)
-
-                descr_setters = Value()
-                if cls_vars is not None:
-                    for cls_var in cls_vars:
-                        cls_var_type = Type(cls_var)
-                        setters = _pytype_lookup(cls_var_type, "__set__")
-                        for setter in setters:
-                            if isinstance(setter, FunctionObject):
-                                descr_setters.inject(
-                                    MethodObject(
-                                        instance=cls_var,
-                                        function=setter,
-                                        descr_instance=self,
-                                        descr_value=value,
-                                    )
-                                )
-                                descr_setters.inject(setters)
-                            else:
-                                assert False, setter
-                if value is None:
-                    if isinstance(self, Instance):
-                        if self not in analysis_heap:
-                            analysis_heap.write_instance_dict(self)
-                        instance_dict = analysis_heap.read_instance_dict(self)
-                        instance_dict.del_local_var(name)
-                    elif hasattr(self, "__my_dict__"):
-                        self.__my_dict__.del_load_var(name)
-                else:
-                    if isinstance(self, Instance):
-                        if self not in analysis_heap:
-                            analysis_heap.write_instance_dict(self)
-                        instance_dict = analysis_heap.read_instance_dict(self)
-                        instance_dict.write_local_value(name, value)
-                    elif hasattr(self, "__my_dict__"):
-                        self.__my_dict__.write_local_value(name, value)
-                return descr_setters
-
-            cls.instance.__my_dict__ = Namespace()
-            func = SpecialFunctionObject(func=__init__)
-            cls.instance.__my_dict__.write_local_value(
-                __init__.__name__, create_value_with_type(func)
-            )
-            func = SpecialFunctionObject(func=__getattribute__)
-            cls.instance.__my_dict__.write_local_value(
-                __getattribute__.__name__, create_value_with_type(func)
-            )
-            func = SpecialFunctionObject(func=__setattr__)
-            cls.instance.__my_dict__.write_local_value(
-                __setattr__.__name__, create_value_with_type(func)
-            )
-            cls.instance.__my_dict__.write_local_value(
-                "__new__", create_value_with_type(constructor)
-            )
-        return cls.instance
-
-    def __init__(self):
-        self.__my_uuid__ = id(self)
-        self.__my_bases__ = [object()]
-        self.__my_mro__ = c3(self)
-        self.__my_class__ = my_typ
+    # def __init__(self):
+    # self.__my_bases__ = [object()]
+    # self.__my_mro__ = c3(self)
+    # self.__my_class__ = my_typ
 
     def __le__(self, other):
         return True
@@ -347,37 +231,156 @@ class ObjectClass:
         return self
 
 
+def _setup_ObjectClass():
+    def __init__(self):
+        return self
+
+    def __getattribute__(self, name):
+        # type_of_self = type(self)
+        self_type = Type(self)
+        # get class variables
+        cls_vars: Value = _pytype_lookup(self_type, name)
+
+        if cls_vars is not None:
+            data_descr_getters = Value()
+            for cls_var in cls_vars:
+                cls_var_type = Type(cls_var)
+                descr_getters = _pytype_lookup(cls_var_type, "__get__")
+                if descr_getters is not None:
+                    descr_setters = _pytype_lookup(cls_var_type, "__set__")
+                    if descr_setters is not None:
+                        for getter in descr_getters:
+                            if isinstance(getter, FunctionObject):
+                                method_getter = MethodObject(
+                                    instance=cls_var,
+                                    function=getter,
+                                    descr_instance=self,
+                                    descr_owner=self_type,
+                                )
+                                data_descr_getters.inject(method_getter)
+                            else:
+                                assert False, getter
+            if len(data_descr_getters) > 0:
+                return data_descr_getters
+
+        if isinstance(self, Instance) and self in analysis_heap:
+            instance_dict = analysis_heap.read_instance_dict(self)
+            if name in instance_dict:
+                return instance_dict.read_value(name)
+        elif hasattr(self, "__my_dict__") and name in self.__my_dict__:
+            return self.__my_dict__.read_value(name)
+
+        if cls_vars is not None:
+            nondata_descr_getters = Value()
+            for cls_var in cls_vars:
+                if isinstance(cls_var, FunctionObject):
+                    nondata_descr_getters.inject(
+                        MethodObject(instance=self, function=cls_var)
+                    )
+                elif isinstance(cls_var, SpecialFunctionObject):
+                    nondata_descr_getters.inject(
+                        SpecialMethodObject(instance=self, function=cls_var)
+                    )
+                else:
+                    cls_var_type = Type(cls_var)
+                    descr_getters = _pytype_lookup(cls_var_type, "__get__")
+                    if descr_getters is not None:
+                        for getter in descr_getters:
+                            if isinstance(getter, FunctionObject):
+                                method_getter = MethodObject(
+                                    instance=cls_var,
+                                    function=getter,
+                                    descr_instance=self,
+                                    descr_owner=self_type,
+                                )
+                                nondata_descr_getters.inject(method_getter)
+                            else:
+                                assert False, getter
+            if len(nondata_descr_getters) > 0:
+                return nondata_descr_getters
+        if cls_vars is not None:
+            return cls_vars
+
+        raise AttributeError(name)
+
+    def __setattr__(self, name, value):
+        self_type = Type(self)
+        cls_vars: Value = _pytype_lookup(self_type, name)
+
+        descr_setters = Value()
+        if cls_vars is not None:
+            for cls_var in cls_vars:
+                cls_var_type = Type(cls_var)
+                setters = _pytype_lookup(cls_var_type, "__set__")
+                for setter in setters:
+                    if isinstance(setter, FunctionObject):
+                        descr_setters.inject(
+                            MethodObject(
+                                instance=cls_var,
+                                function=setter,
+                                descr_instance=self,
+                                descr_value=value,
+                            )
+                        )
+                        descr_setters.inject(setters)
+                    else:
+                        assert False, setter
+        if value is None:
+            if isinstance(self, Instance):
+                if self not in analysis_heap:
+                    analysis_heap.write_instance_dict(self)
+                instance_dict = analysis_heap.read_instance_dict(self)
+                instance_dict.del_local_var(name)
+            elif hasattr(self, "__my_dict__"):
+                self.__my_dict__.del_load_var(name)
+        else:
+            if isinstance(self, Instance):
+                if self not in analysis_heap:
+                    analysis_heap.write_instance_dict(self)
+                instance_dict = analysis_heap.read_instance_dict(self)
+                instance_dict.write_local_value(name, value)
+            elif hasattr(self, "__my_dict__"):
+                self.__my_dict__.write_local_value(name, value)
+        return descr_setters
+
+    cls_dict = Namespace()
+    func = SpecialFunctionObject(func=__init__)
+    cls_dict.write_local_value(__init__.__name__, create_value_with_type(func))
+    func = SpecialFunctionObject(func=__getattribute__)
+    cls_dict.write_local_value(__getattribute__.__name__, create_value_with_type(func))
+    func = SpecialFunctionObject(func=__setattr__)
+    cls_dict.write_local_value(__setattr__.__name__, create_value_with_type(func))
+    cls_dict.write_local_value("__new__", create_value_with_type(constructor))
+    return cls_dict
+
+
 class FunctionClass:
-    instance = None
+    _instance = None
 
     def __new__(cls):
-        if cls.instance is None:
-            cls.instance = object.__new__(cls)
-            self = cls.instance
-            self.__my_uuid__ = id(self)
-            self.__my_bases__ = [my_object]
-            self.__my_mro__ = c3(self)
-            self.__my_class__ = my_typ
-            self.__my_dict__ = Namespace()
-        return cls.instance
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.__my_dict__ = Namespace()
+            cls._instance.__my_uuid__ = id(cls._instance)
+            # self.__my_bases__ = [my_object]
+            # self.__my_mro__ = c3(self)
+            # self.__my_class__ = my_typ
+        return cls._instance
 
-    def __le__(self, other: FunctionClass):
+    def __le__(self, other):
         return True
 
-    def __iadd__(self, other: FunctionClass):
+    def __iadd__(self, other):
         return self
 
 
 class FunctionObject:
-    def __init__(self, uuid, name, module, code, namespace=None):
+    def __init__(self, uuid, name, module, code):
         self.__my_uuid__ = uuid
         self.__my_name__ = name
         self.__my_module__ = module
         self.__my_code__ = code
-        if namespace is None:
-            self.__my_dict__ = Namespace()
-        else:
-            self.__my_dict__ = namespace
+        self.__my_dict__ = Namespace()
         self.__my_class__ = my_function
 
     def __le__(self, other):
@@ -389,14 +392,11 @@ class FunctionObject:
 
 
 class SpecialFunctionObject:
-    def __init__(self, *, func, namespace=None):
+    def __init__(self, *, func):
         self.__my_uuid__ = str(id(func))
         self.__my_name__ = func.__name__
         self.__my_code__ = func
-        if namespace is None:
-            self.__my_dict__ = Namespace()
-        else:
-            self.__my_dict__ = namespace
+        self.__my_dict__ = Namespace()
 
     def __le__(self, other):
         return self.__my_dict__ <= other.__my_dict__
@@ -415,7 +415,6 @@ class SpecialFunctionObject:
 class MethodObject:
     def __init__(
         self,
-        *,
         instance: Instance,
         function: FunctionObject,
         descr_instance=None,
@@ -441,7 +440,6 @@ class MethodObject:
 class SpecialMethodObject:
     def __init__(
         self,
-        *,
         instance: Instance,
         function: SpecialFunctionObject,
         descr_instance=None,
@@ -488,13 +486,13 @@ class CustomClass:
 
 
 class Constructor:
-    instance = None
+    _instance = None
 
     def __new__(cls, *args, **kwargs):
-        if cls.instance is None:
-            cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = id(cls.instance)
-        return cls.instance
+        if cls._instance is None:
+            cls._instance = object.__new__(cls)
+            cls._instance.__my_uuid__ = id(cls._instance)
+        return cls._instance
 
     def __call__(self, address, cls):
         return Instance(addr=address, cls=cls)
@@ -524,57 +522,39 @@ class Instance:
     def __eq__(self, other):
         return self.__my_uuid__ == other.__my_uuid__
 
-    # def __deepcopy__(self, memo):
-    #     new_addr = deepcopy(self.__my_address__, memo)
-    #     new_class = deepcopy(self.__my_class__, memo)
-    #     new_heap = deepcopy(self.__my_dict__, memo)
-    #     new_instance = Instance(new_addr, new_class)
-    #     new_instance.__my_dict__ = new_heap
-    #     memo[id(self)] = new_instance
-    #     return memo[id(self)]
 
-
-class Iterator:
-    instance = None
+class IteratorClass:
+    _instance = None
 
     def __new__(cls, *args, **kwargs):
-        if cls.instance is None:
-            cls.instance = super().__new__(cls)
-
-            def __next__(self):
-                try:
-                    res = self.iterable.pop()
-                    if isinstance(res, Int):
-                        print("int")
-                    print("popped value", res)
-                except:
-                    res = Value()
-                finally:
-                    return res
-
-            cls.instance.__my_uuid__ = id(cls.instance)
-            cls.instance.__my_bases__ = [my_object]
-            cls.instance.__my_mro__ = c3(cls.instance)
-
-            local_functions = filter(
-                lambda value: isinstance(value, types.FunctionType),
-                locals().values(),
-            )
-
-            cls.instance.__my_dict__ = Namespace()
-            for function in local_functions:
-                cls.instance.__my_dict__.write_local_value(
-                    function.__name__,
-                    create_value_with_type(SpecialFunctionObject(func=function)),
-                )
-
-        return cls.instance
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.__my_dict__ = Namespace()
+            # cls._instance.__my_uuid__ = id(cls._instance)
+            # cls._instance.__my_bases__ = [my_object]
+            # cls._instance.__my_mro__ = c3(cls._instance)
+        return cls._instance
 
     def __le__(self, other):
         return True
 
     def __iadd__(self, other):
         return self
+
+
+def _setup_IteratorClass():
+    def __next__(self):
+        try:
+            res = self.iterable.pop()
+        except:
+            res = Value()
+        finally:
+            return res
+
+    cls_dict = Namespace()
+    func = SpecialFunctionObject(func=__next__)
+    cls_dict.write_local_value(__next__.__name__, create_value_with_type(func))
+    return cls_dict
 
 
 class IteratorObject:
@@ -590,68 +570,19 @@ class IteratorObject:
         return self
 
 
-class BuiltinList:
-    instance = None
+class BuiltinListClass:
+    _instance = None
 
     def __new__(cls, *args, **kwargs):
-        if cls.instance is None:
-            cls.instance = object.__new__(cls)
+        if cls._instance is None:
+            cls._instance = object.__new__(cls)
 
-            def __iter__(self):
-                iterable = list(self.internal.values())
-                return IteratorObject(iterable)
+            cls._instance.__my_uuid__ = id(cls._instance)
+            cls._instance.__my_dict__ = Namespace()
+            # cls.instance.__my_bases__ = [my_object]
+            # cls.instance.__my_mro__ = c3(cls.instance)
 
-            def append(self, x: Value):
-                self.internal.inject_value(x)
-                print("after insert ", x, self.internal)
-                return NoneType()
-
-            def extend(self, iterable):
-                self.internal.inject_value(iterable)
-                return NoneType()
-
-            def remove(self, x):
-                return NoneType()
-
-            def pop(self, i=None):
-                return copy(self.internal)
-
-            def clear(self):
-                self.internal = Value()
-
-            def index(self, start=None, end=None):
-                return Int()
-
-            def count(self, x):
-                return Int()
-
-            def sort(self, key=None, reverse=False):
-                return NoneType()
-
-            def reverse(self):
-                return NoneType()
-
-            def copy(self):
-                internal = copy(self.internal)
-                return BuiltinListObject(internal)
-
-            cls.instance.__my_uuid__ = id(cls.instance)
-            cls.instance.__my_bases__ = [my_object]
-            cls.instance.__my_mro__ = c3(cls.instance)
-
-            local_functions = filter(
-                lambda value: isinstance(value, types.FunctionType),
-                locals().values(),
-            )
-
-            cls.instance.__my_dict__ = Namespace()
-            for function in local_functions:
-                cls.instance.__my_dict__.write_local_value(
-                    function.__name__,
-                    create_value_with_type(SpecialFunctionObject(func=function)),
-                )
-
-        return cls.instance
+        return cls._instance
 
     def __call__(self, iterable: Value = None):
         return BuiltinListObject(iterable)
@@ -663,9 +594,63 @@ class BuiltinList:
         return self
 
 
+def _setup_BuiltinListClass():
+    def __iter__(self):
+        iterable = list(self.internal.values())
+        return IteratorObject(iterable)
+
+    def append(self, x: Value):
+        self.internal.inject_value(x)
+        print("after insert ", x, self.internal)
+        return NoneType()
+
+    def extend(self, iterable):
+        self.internal.inject_value(iterable)
+        return NoneType()
+
+    def remove(self, x):
+        return NoneType()
+
+    def pop(self, i=None):
+        return copy(self.internal)
+
+    def clear(self):
+        self.internal = Value()
+
+    def index(self, start=None, end=None):
+        return Int()
+
+    def count(self, x):
+        return Int()
+
+    def sort(self, key=None, reverse=False):
+        return NoneType()
+
+    def reverse(self):
+        return NoneType()
+
+    def copy(self):
+        internal = copy(self.internal)
+        return BuiltinListObject(internal)
+
+    cls_dict = Namespace()
+    local_functions = filter(
+        lambda value: isinstance(value, types.FunctionType),
+        locals().values(),
+    )
+
+    for function in local_functions:
+        cls_dict.write_local_value(
+            function.__name__,
+            create_value_with_type(SpecialFunctionObject(func=function)),
+        )
+
+    return cls_dict
+
+
 class BuiltinListObject:
     def __init__(self, iterable: Value = None):
-        self.__my_class__ = my_list
+        # self.__my_class__ = my_list
         if iterable is None:
             self.internal = Value()
         else:
@@ -682,37 +667,231 @@ class BuiltinListObject:
         return self
 
 
-class BuiltinTuple:
-    instance = None
+class BuiltinSetClass:
+    _instance = None
 
     def __new__(cls, *args, **kwargs):
-        if cls.instance is None:
-            cls.instance = object.__new__(cls)
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.__my_uuid__ = id(cls._instance)
+            cls._instance.__my_dict__ = Namespace()
+            # cls.instance.__my_bases__ = [my_object]
+            # cls.instance.__my_mro__ = c3(cls.instance)
 
-            def index(self, start=None, end=None):
-                return Int()
+        return cls._instance
 
-            def count(self, x):
-                return Int()
+    def __call__(self, iterable: Value = None):
+        return BuiltinSetObject(iterable)
 
-            local_functions = filter(
-                lambda value: isinstance(value, types.FunctionType),
-                locals().values(),
-            )
+    def __le__(self, other):
+        return True
 
-            cls.instance.__my_dict__ = Namespace()
-            for function in local_functions:
-                cls.instance.__my_dict__.write_local_value(
-                    function.__name__,
-                    create_value_with_type(SpecialFunctionObject(func=function)),
-                )
+    def __iadd__(self, other):
+        return self
 
-        return cls.instance
 
-    def __init__(self):
-        self.instance.__my_uuid__ = id(self.instance)
-        self.instance.__my_bases__ = [my_object]
-        self.instance.__my_mro__ = c3(self.instance)
+def _setup_BuiltinSetClass():
+    def __iter__(self):
+        iterable = list(self.internal.values())
+        return IteratorObject(iterable)
+
+    def isdisjoint(self, other):
+        return Bool()
+
+    def issubset(self, other):
+        return Bool()
+
+    def union(self, other):
+        assert False, self
+
+    def intersection(self, other):
+        new_value = Value()
+        new_value += self.internal
+        new_value += other.internal
+        return BuiltinSetClass(new_value)
+
+    def difference(self, other):
+        new_value = Value()
+        new_value += self.internal
+        new_value += other.internal
+        return BuiltinSetClass(new_value)
+
+    def difference_update(self, others):
+        assert False, self
+
+    def copy(self):
+        internal = copy(self.internal)
+        return BuiltinSetObject(internal)
+
+    def extend(self, iterable):
+        self.internal.inject_value(iterable)
+        return NoneType()
+
+    def update(self, others):
+        assert False, self
+        self.internal += self.internal
+        return self
+
+    def intersection_update(self, others):
+        assert False, self
+
+    def symmetric_difference_update(self, other):
+        self.internal += other
+        return NoneType()
+
+    def add(self, elem):
+        self.internal.inject(elem)
+        return NoneType()
+
+    def remove(self, elem):
+        return NoneType()
+
+    def discard(self, elem):
+        return NoneType()
+
+    def pop(self, i=None):
+        return copy(self.internal)
+
+    def clear(self):
+        self.internal = Value()
+
+    cls_dict = Namespace()
+    local_functions = filter(
+        lambda value: isinstance(value, types.FunctionType),
+        locals().values(),
+    )
+
+    for function in local_functions:
+        cls_dict.write_local_value(
+            function.__name__,
+            create_value_with_type(SpecialFunctionObject(func=function)),
+        )
+
+    return cls_dict
+
+
+class BuiltinSetObject:
+    def __init__(self, iterable: Value = None):
+        # self.__my_class__ = my_list
+        if iterable is None:
+            self.internal = Value()
+        else:
+            self.internal = copy(iterable)
+
+    def __repr__(self):
+        return self.internal.__repr__()
+
+    def __le__(self, other):
+        return self.internal <= other.internal
+
+    def __iadd__(self, other):
+        self.internal += other.internal
+        return self
+
+
+class BuiltinFrozenSetClass:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.__my_uuid__ = id(cls._instance)
+            cls._instance.__my_dict__ = Namespace()
+            # cls.instance.__my_bases__ = [my_object]
+            # cls.instance.__my_mro__ = c3(cls.instance)
+
+        return cls._instance
+
+    def __call__(self, iterable: Value = None):
+        return BuiltinFrozenSetObject(iterable)
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+
+def _setup_BuiltinFrozenSetClass():
+    def __iter__(self):
+        iterable = list(self.internal.values())
+        return IteratorObject(iterable)
+
+    def isdisjoint(self, other):
+        return Bool()
+
+    def issubset(self, other):
+        return Bool()
+
+    def union(self, other):
+        assert False, self
+
+    def intersection(self, other):
+        new_value = Value()
+        new_value += self.internal
+        new_value += other.internal
+        return BuiltinFrozenSetClass(new_value)
+
+    def difference(self, other):
+        new_value = Value()
+        new_value += self.internal
+        new_value += other.internal
+        return BuiltinFrozenSetClass(new_value)
+
+    def difference_update(self, others):
+        assert False, self
+
+    def copy(self):
+        internal = copy(self.internal)
+        return BuiltinFrozenSetObject(internal)
+
+    def extend(self, iterable):
+        self.internal.inject_value(iterable)
+        return NoneType()
+
+    cls_dict = Namespace()
+    local_functions = filter(
+        lambda value: isinstance(value, types.FunctionType),
+        locals().values(),
+    )
+
+    for function in local_functions:
+        cls_dict.write_local_value(
+            function.__name__,
+            create_value_with_type(SpecialFunctionObject(func=function)),
+        )
+
+    return cls_dict
+
+
+class BuiltinFrozenSetObject:
+    def __init__(self, iterable: Value = None):
+        # self.__my_class__ = my_list
+        if iterable is None:
+            self.internal = Value()
+        else:
+            self.internal = copy(iterable)
+
+    def __repr__(self):
+        return self.internal.__repr__()
+
+    def __le__(self, other):
+        return self.internal <= other.internal
+
+    def __iadd__(self, other):
+        self.internal += other.internal
+        return self
+
+
+class BuiltinTupleClass:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.__my_uuid__ = id(cls._instance)
+            cls._instance.__my_dict__ = Namespace()
+        return cls._instance
 
     def __call__(self, iterable: Value = None):
         return BuiltinTupleObject(iterable)
@@ -724,9 +903,30 @@ class BuiltinTuple:
         return self
 
 
+def _setup_BuiltinTupleClass():
+    def index(self, start=None, end=None):
+        return Int()
+
+    def count(self, x):
+        return Int()
+
+    local_functions = filter(
+        lambda value: isinstance(value, types.FunctionType),
+        locals().values(),
+    )
+
+    cls_dict = Namespace()
+    for function in local_functions:
+        cls_dict.write_local_value(
+            function.__name__,
+            create_value_with_type(SpecialFunctionObject(func=function)),
+        )
+    return cls_dict
+
+
 class BuiltinTupleObject:
     def __init__(self, iterable: Value = None):
-        self.__my_class__ = my_list
+        # self.__my_class__ = my_list
         if iterable is None:
             self.internal = Value()
         else:
@@ -734,6 +934,132 @@ class BuiltinTupleObject:
 
     def __repr__(self):
         return self.internal.__repr__()
+
+    def __le__(self, other):
+        return self.internal <= other.internal
+
+    def __iadd__(self, other):
+        self.internal += other.internal
+        return self
+
+
+class BuiltinDictClass:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.__my_uuid__ = id(cls._instance)
+            cls._instance.__my_dict__ = Namespace()
+        return cls._instance
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __call__(self, keys=None, values=None):
+        pass
+
+
+def _setup_BuiltinDictClass():
+    def __iter__(self):
+        iterable = list(self.internal_keys.values())
+        return IteratorObject(iterable)
+
+    def clear(self):
+        self.internal_keys = Value()
+
+    def copy(self):
+        internal_keys = copy(self.internal_keys)
+        internal_values = copy(self.internal_values)
+        return BuiltinDictObject(internal_keys, internal_values)
+
+    def fromkeys(self, iterable, value=None):
+        assert False
+
+    def get(self, key, default=None):
+        res = self.internal_values
+        new_value = Value()
+        new_value += res
+        if default is not None:
+            new_value.inject(default)
+        return new_value
+
+    def items(self):
+        return self.copy()
+
+    def keys(self):
+        res = self.internal_keys
+        new_value = Value()
+        new_value += res
+        return new_value
+
+    def pop(self, key, default=None):
+        res = self.internal_values
+        new_value = Value()
+        new_value += res
+        if default is not None:
+            new_value.inject(default)
+        return new_value
+
+    def popitem(self):
+        assert False, self
+
+    def setdefault(self, key, default=None):
+        if default is not None:
+            self.internal_values.inject(default)
+        return self.internal_values
+
+    def update(self, other):
+        assert False, self
+
+    def values(self):
+        new_value = Value()
+        new_value += self.internal_values
+        return new_value
+
+    local_functions = filter(
+        lambda value: isinstance(value, types.FunctionType),
+        locals().values(),
+    )
+
+    cls_dict = Namespace()
+    for function in local_functions:
+        cls_dict.write_local_value(
+            function.__name__,
+            create_value_with_type(SpecialFunctionObject(func=function)),
+        )
+    return cls_dict
+
+
+class BuiltinDictObject:
+    def __init__(self, keys: Value = None, values: Value = None):
+        # self.__my_class__ = my_list
+        if keys is None:
+            self.internal_keys = Value()
+        else:
+            self.internal_keys = copy(keys)
+
+        if values is None:
+            self.internal_values = Value()
+        else:
+            self.internal_values = copy(values)
+
+    def __repr__(self):
+        return f"keys: {self.internal_keys.__repr__()}\n values: {self.internal_values.__repr__()}"
+
+    def __le__(self, other):
+        return (
+            self.internal_keys <= other.internal_keys
+            and self.internal_values <= other.internal_values
+        )
+
+    def __iadd__(self, other):
+        self.internal_keys += other.internal_keys
+        self.internal_values += other.internal_values
+        return self
 
 
 class ModuleType:
@@ -842,8 +1168,8 @@ builtin_namespace = Namespace()
 constructor = Constructor()
 my_typ = TypeClass()
 my_object = ObjectClass()
-my_list = BuiltinList()
-my_tuple = BuiltinTuple()
+my_list = BuiltinListClass()
+my_tuple = BuiltinTupleClass()
 
 v = create_value_with_type(my_object)
 builtin_namespace.write_local_value("object", v)
@@ -855,6 +1181,6 @@ builtin_namespace.write_local_value("tuple", v)
 my_function = FunctionClass()
 mock_value = Value()
 
-my_iterator = Iterator()
+my_iterator = IteratorClass()
 
 analysis_heap = Heap()
