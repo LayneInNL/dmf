@@ -21,7 +21,7 @@ def c3(cls_obj):
 def static_c3(cls_obj):
     if type(cls_obj) == object:
         return [cls_obj]
-    return [cls_obj] + static_merge([static_c3(base) for base in cls_obj.__my_bases__])
+    return [cls_obj] + static_merge([static_c3(base) for base in cls_obj.nl__bases__])
 
 
 def static_merge(mro_list):

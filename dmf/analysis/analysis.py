@@ -195,7 +195,7 @@ class Analysis(AnalysisBase):
         for c in cls_value:
             instance = typ(addr, c)
             heap = new_heap.write_ins_to_heap(instance)
-            instance.__my_dict__ = heap
+            instance.nl__dict__ = heap
             dummy_value.inject(instance)
 
     def _lambda_special_method(
@@ -230,14 +230,14 @@ class Analysis(AnalysisBase):
 
         for val in value:
             if isinstance(val, MethodObject):
-                entry_lab, exit_lab = val.__my_func__.__my_code__
-                instance = val.__my_instance__
-                new_ctx: Tuple = merge(call_lab, instance.__my_address__, call_ctx)
+                entry_lab, exit_lab = val.nl__func__.nl__code__
+                instance = val.nl__instance__
+                new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
 
                 self.entry_program_point_info[(entry_lab, new_ctx)] = (
                     instance,
                     INIT_FLAG,
-                    val.__my_module__,
+                    val.nl__module__,
                 )
 
                 inter_flow = (
@@ -269,14 +269,14 @@ class Analysis(AnalysisBase):
             attr_value = my_getattr(val, call_stmt.attr, [])
             for attr_val in attr_value:
                 if isinstance(attr_val, MethodObject):
-                    entry_lab, exit_lab = attr_val.__my_func__.__my_code__
-                    instance = attr_val.__my_instance__
-                    new_ctx: Tuple = merge(call_lab, instance.__my_address__, call_ctx)
+                    entry_lab, exit_lab = attr_val.nl__func__.nl__code__
+                    instance = attr_val.nl__instance__
+                    new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
 
                     self.entry_program_point_info[(entry_lab, new_ctx)] = (
                         instance,
                         None,
-                        attr_val.__my_module__,
+                        attr_val.nl__module__,
                     )
 
                     inter_flow = (
@@ -315,14 +315,14 @@ class Analysis(AnalysisBase):
             attr_value = my_setattr(attr_type, attr, expr_value)
             for attr_typ in attr_value:
                 if isinstance(attr_typ, MethodObject):
-                    entry_lab, exit_lab = attr_typ.__my_func__.__my_code__
-                    instance = attr_typ.__my_instance__
-                    new_ctx: Tuple = merge(call_lab, instance.__my_address__, call_ctx)
+                    entry_lab, exit_lab = attr_typ.nl__func__.nl__code__
+                    instance = attr_typ.nl__instance__
+                    new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
 
                     self.entry_program_point_info[(entry_lab, new_ctx)] = (
                         instance,
                         None,
-                        attr_typ.__my_module__,
+                        attr_typ.nl__module__,
                     )
 
                     inter_flow = (
@@ -435,7 +435,7 @@ class Analysis(AnalysisBase):
         address = record(call_lab, call_ctx)
         args, _ = compute_func_args(new_state, call_stmt.args, call_stmt.keywords)
         res = typ(*args)
-        res.__my_uuid__ = address
+        res.nl__uuid__ = address
         dummy_value.inject(res)
 
     def _lambda_builtin_tuple(
@@ -468,7 +468,7 @@ class Analysis(AnalysisBase):
             instance = new_method(addr, typ)
             dummy_value.inject(instance)
         elif isinstance(new_method, FunctionObject):
-            entry_lab, exit_lab = new_method.__my_code__
+            entry_lab, exit_lab = new_method.nl__code__
             ret_lab, _ = self.get_special_new_return_label(call_lab)
             new_ctx = merge(call_lab, None, call_ctx)
             inter_flow = (
@@ -481,7 +481,7 @@ class Analysis(AnalysisBase):
             self.entry_program_point_info[(entry_lab, new_ctx)] = (
                 typ,
                 None,
-                typ.__my_module__,
+                typ.nl__module__,
             )
 
     # unbound func call
@@ -495,7 +495,7 @@ class Analysis(AnalysisBase):
         typ: FunctionObject,
     ):
         call_lab, call_ctx = program_point
-        entry_lab, exit_lab = typ.__my_code__
+        entry_lab, exit_lab = typ.nl__code__
         ret_lab, _ = self.get_func_return_label(call_lab)
 
         new_ctx: Tuple = merge(call_lab, None, call_ctx)
@@ -509,7 +509,7 @@ class Analysis(AnalysisBase):
         self.entry_program_point_info[(entry_lab, new_ctx)] = (
             None,
             None,
-            typ.__my_module__,
+            typ.nl__module__,
         )
 
     def _lambda_method(
@@ -521,15 +521,15 @@ class Analysis(AnalysisBase):
         typ: MethodObject,
     ):
         call_lab, call_ctx = program_point
-        entry_lab, exit_lab = typ.__my_func__.__my_code__
-        instance = typ.__my_instance__
-        new_ctx: Tuple = merge(call_lab, instance.__my_address__, call_ctx)
+        entry_lab, exit_lab = typ.nl__func__.nl__code__
+        instance = typ.nl__instance__
+        new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
 
         ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
         self.entry_program_point_info[(entry_lab, new_ctx)] = (
             instance,
             None,
-            typ.__my_module__,
+            typ.nl__module__,
         )
 
         inter_flow = (

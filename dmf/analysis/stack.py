@@ -15,10 +15,19 @@
 from __future__ import annotations
 
 import ast
-from copy import deepcopy
-from typing import List, Tuple
+from typing import List
 
 import dmf.share
+from dmf.analysis.prim import (
+    BUILTIN_TYPES,
+    Int,
+    NoneType,
+    Bool,
+    Str,
+    Bytes,
+    Float,
+    Complex,
+)
 from dmf.analysis.types import (
     Value,
     Namespace,
@@ -29,17 +38,6 @@ from dmf.analysis.types import (
     LocalVar,
     FunctionObject,
     builtin_namespace,
-    Heap,
-)
-from dmf.analysis.prim import (
-    BUILTIN_TYPES,
-    Int,
-    NoneType,
-    Bool,
-    Str,
-    Bytes,
-    Float,
-    Complex,
 )
 from dmf.analysis.variables import (
     Namespace_Global,

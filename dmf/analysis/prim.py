@@ -56,7 +56,7 @@ class Int(BinOp):
     def __new__(cls, *args, **kwargs):
         if cls.instance is None:
             cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = index_generator()
+            cls.instance.nl__uuid__ = index_generator()
         return cls.instance
 
     def __le__(self, other):
@@ -76,7 +76,7 @@ class Float(BinOp):
     def __new__(cls, *args, **kwargs):
         if cls.instance is None:
             cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = index_generator()
+            cls.instance.nl__uuid__ = index_generator()
         return cls.instance
 
     def __le__(self, other):
@@ -96,7 +96,7 @@ class Complex(BinOp):
     def __new__(cls, *args, **kwargs):
         if cls.instance is None:
             cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = index_generator()
+            cls.instance.nl__uuid__ = index_generator()
         return cls.instance
 
     def __le__(self, other):
@@ -116,7 +116,7 @@ class Bool(BinOp):
     def __new__(cls, *args, **kwargs):
         if cls.instance is None:
             cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = index_generator()
+            cls.instance.nl__uuid__ = index_generator()
         return cls.instance
 
     def __le__(self, other):
@@ -136,7 +136,7 @@ class NoneType(BinOp):
     def __new__(cls, *args, **kwargs):
         if cls.instance is None:
             cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = index_generator()
+            cls.instance.nl__uuid__ = index_generator()
         return cls.instance
 
     def __le__(self, other):
@@ -156,7 +156,7 @@ class Str(BinOp):
     def __new__(cls, *args, **kwargs):
         if cls.instance is None:
             cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = index_generator()
+            cls.instance.nl__uuid__ = index_generator()
         return cls.instance
 
     def __le__(self, other):
@@ -176,7 +176,7 @@ class Bytes(BinOp):
     def __new__(cls, *args, **kwargs):
         if cls.instance is None:
             cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = index_generator()
+            cls.instance.nl__uuid__ = index_generator()
         return cls.instance
 
     def __le__(self, other):
@@ -196,7 +196,7 @@ class ListType:
     def __new__(cls):
         if cls.instance is None:
             cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = index_generator()
+            cls.instance.nl__uuid__ = index_generator()
         return cls.instance
 
     def __le__(self, other):
@@ -216,7 +216,7 @@ class TupleType:
     def __new__(cls):
         if cls.instance is None:
             cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = index_generator()
+            cls.instance.nl__uuid__ = index_generator()
         return cls.instance
 
     def __le__(self, other):
@@ -236,7 +236,7 @@ class SetType:
     def __new__(cls):
         if cls.instance is None:
             cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = index_generator()
+            cls.instance.nl__uuid__ = index_generator()
         return cls.instance
 
     def __le__(self, other):
@@ -256,7 +256,7 @@ class DictType:
     def __new__(cls):
         if cls.instance is None:
             cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = index_generator()
+            cls.instance.nl__uuid__ = index_generator()
         return cls.instance
 
     def __le__(self, other):
@@ -276,7 +276,7 @@ class SuperType:
     def __new__(cls):
         if cls.instance is None:
             cls.instance = object.__new__(cls)
-            cls.instance.__my_uuid__ = index_generator()
+            cls.instance.nl__uuid__ = index_generator()
         return cls.instance
 
     def __le__(self, other):

@@ -72,7 +72,7 @@ class Value:
             self.inject_type(types)
 
     def inject_type(self, typ):
-        self.type_dict[typ.__my_uuid__] = typ
+        self.type_dict[typ.nl__uuid__] = typ
 
     def inject_value(self, value: Value):
         for lab, typ in value.type_dict.items():
