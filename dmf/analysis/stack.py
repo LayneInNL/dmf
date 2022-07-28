@@ -33,7 +33,7 @@ from dmf.analysis.types import (
     Namespace,
     Var,
     CustomClass,
-    my_getattr,
+    Getattr,
     Instance,
     LocalVar,
     FunctionObject,
@@ -304,21 +304,21 @@ class Stack:
             for typ in receiver_value:
                 if isinstance(typ, CustomClass):
                     try:
-                        tmp = my_getattr(typ, receiver_attr)
+                        tmp = Getattr(typ, receiver_attr)
                     except AttributeError:
                         pass
                     else:
                         value.inject_value(tmp)
                 elif isinstance(typ, Instance):
                     try:
-                        tmp = my_getattr(typ, receiver_attr)
+                        tmp = Getattr(typ, receiver_attr)
                     except AttributeError:
                         pass
                     else:
                         value.inject_value(tmp)
                 elif isinstance(typ, FunctionObject):
                     try:
-                        tmp = my_getattr(typ, receiver_attr)
+                        tmp = Getattr(typ, receiver_attr)
                     except AttributeError:
                         pass
                     else:

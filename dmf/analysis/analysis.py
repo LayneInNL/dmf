@@ -41,15 +41,15 @@ from dmf.analysis.types import (
     ModuleType,
     CustomClass,
     FunctionObject,
-    MethodObject,
+    MethodClass,
     dunder_lookup,
     Constructor,
-    my_setattr,
+    Setattr,
     mock_value,
-    SpecialMethodObject,
-    my_getattr,
-    BuiltinListClass,
-    BuiltinTupleClass,
+    SpecialMethodClass,
+    Getattr,
+    ListClass,
+    TupleClass,
     analysis_heap,
 )
 from dmf.analysis.value import Value, create_value_with_type
@@ -204,7 +204,7 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: SpecialMethodObject,
+        typ: SpecialMethodClass,
     ):
         call_stmt = self.get_stmt_by_point(program_point)
 
@@ -229,7 +229,7 @@ class Analysis(AnalysisBase):
         value: Value = new_stack.compute_value_of_expr(call_stmt.func)
 
         for val in value:
-            if isinstance(val, MethodObject):
+            if isinstance(val, MethodClass):
                 entry_lab, exit_lab = val.nl__func__.nl__code__
                 instance = val.nl__instance__
                 new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
@@ -266,9 +266,9 @@ class Analysis(AnalysisBase):
         dummy_value = Value()
         ret_lab, dummy_ret_lab = self.get_getter_return_label(call_lab)
         for val in value:
-            attr_value = my_getattr(val, call_stmt.attr, [])
+            attr_value = Getattr(val, call_stmt.attr, [])
             for attr_val in attr_value:
-                if isinstance(attr_val, MethodObject):
+                if isinstance(attr_val, MethodClass):
                     entry_lab, exit_lab = attr_val.nl__func__.nl__code__
                     instance = attr_val.nl__instance__
                     new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
@@ -312,9 +312,9 @@ class Analysis(AnalysisBase):
         attr_value = new_stack.compute_value_of_expr(attribute.value)
         expr_value = new_stack.compute_value_of_expr(call_stmt.value)
         for attr_type in attr_value:
-            attr_value = my_setattr(attr_type, attr, expr_value)
+            attr_value = Setattr(attr_type, attr, expr_value)
             for attr_typ in attr_value:
-                if isinstance(attr_typ, MethodObject):
+                if isinstance(attr_typ, MethodClass):
                     entry_lab, exit_lab = attr_typ.nl__func__.nl__code__
                     instance = attr_typ.nl__instance__
                     new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
@@ -387,11 +387,11 @@ class Analysis(AnalysisBase):
                 self._lambda_function(
                     program_point, old_state, new_state, dummy_value, typ
                 )
-            elif isinstance(typ, MethodObject):
+            elif isinstance(typ, MethodClass):
                 self._lambda_method(
                     program_point, old_state, new_state, dummy_value, typ
                 )
-            elif isinstance(typ, SpecialMethodObject):
+            elif isinstance(typ, SpecialMethodClass):
                 self._lambda_special_method(
                     program_point, old_state, new_state, dummy_value_normal, typ
                 )
@@ -399,11 +399,11 @@ class Analysis(AnalysisBase):
                 self._lambda_constructor(
                     program_point, old_state, new_state, dummy_value_normal, typ
                 )
-            elif isinstance(typ, BuiltinListClass):
+            elif isinstance(typ, ListClass):
                 self._lambda_builtin_list(
                     program_point, old_state, new_state, dummy_value_normal, typ
                 )
-            elif isinstance(typ, BuiltinTupleClass):
+            elif isinstance(typ, TupleClass):
                 self._lambda_builtin_tuple(
                     program_point, old_state, new_state, dummy_value_normal, typ
                 )
@@ -427,7 +427,7 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: BuiltinListClass,
+        typ: ListClass,
     ):
         call_lab, call_ctx = program_point
         call_stmt = self.get_stmt_by_point(program_point)
@@ -444,7 +444,7 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: BuiltinTupleClass,
+        typ: TupleClass,
     ):
         self._lambda_builtin_list(program_point, old_state, new_state, dummy_value, typ)
 
@@ -518,7 +518,7 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: MethodObject,
+        typ: MethodClass,
     ):
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = typ.nl__func__.nl__code__
@@ -655,9 +655,9 @@ class Analysis(AnalysisBase):
         target_value = new_stack.compute_value_of_expr(call_stmt.value)
         for target_typ in target_value:
             print(target_typ, call_stmt.attr)
-            attr_value = my_getattr(target_typ, call_stmt.attr, None)
+            attr_value = Getattr(target_typ, call_stmt.attr, None)
             for attr_typ in attr_value:
-                if isinstance(attr_typ, MethodObject):
+                if isinstance(attr_typ, MethodClass):
                     instance = attr_typ.descriptor_instance
                     instance_value = create_value_with_type(instance)
                     new_stack.write_var("1", Namespace_Local, instance_value)
@@ -686,10 +686,10 @@ class Analysis(AnalysisBase):
         lhs_value = new_stack.compute_value_of_expr(attribute.value)
         rhs_value = new_stack.compute_value_of_expr(call_stmt.value)
         for target_typ in lhs_value:
-            attr_value = my_setattr(target_typ, attr, rhs_value)
+            attr_value = Setattr(target_typ, attr, rhs_value)
             if attr_value is not None:
                 for attr_typ in attr_value:
-                    if isinstance(attr_typ, MethodObject):
+                    if isinstance(attr_typ, MethodClass):
                         instance = attr_typ.descriptor_instance
                         instance_value = create_value_with_type(instance)
                         new_stack.write_var("1", Namespace_Local, instance_value)
@@ -858,7 +858,7 @@ class Analysis(AnalysisBase):
             name=cls_name,
             module=module,
             bases=bases,
-            namespace=frame.f_locals,
+            dict=frame.f_locals,
         )
         value.inject_type(custom_class)
         new_stack.write_var(cls_name, Namespace_Local, value)
