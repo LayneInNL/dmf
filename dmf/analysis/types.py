@@ -106,14 +106,10 @@ class TypeMeta(type):
 
 class TypeClass(metaclass=TypeMeta):
     pass
-    # def __init__(self):
-    # self.nl__bases__ = [object()]
-    # self.nl__mro__ = c3(self)
-    # self.nl__class__ = self
 
 
 def _setup_TypeClass():
-    def __getattribute__(type, name):
+    def nl__getattribute__(type, name):
         metatype = Type(type)
 
         meta_attribute = _pytype_lookup(metatype, name)
@@ -131,7 +127,7 @@ def _setup_TypeClass():
                     descr_get.inject(cls_var)
                 else:
                     cls_var_type = Type(cls_var)
-                    cls_var_type_getters = _pytype_lookup(cls_var_type, "__get__")
+                    cls_var_type_getters = _pytype_lookup(cls_var_type, "nl__get__")
                     if cls_var_type_getters is not None:
                         for getter in cls_var_type_getters:
                             if isinstance(getter, FunctionClass):
@@ -150,13 +146,13 @@ def _setup_TypeClass():
         assert False, type
         raise AttributeError(name)
 
-    def __setattr__(self, name, value):
+    def nl__setattr__(self, name, value):
         cls_vars: Value = _pytype_lookup(self, name)
         descr_setters = Value()
         if cls_vars is not None:
             for cls_var in cls_vars:
                 cls_var_type = Type(cls_var)
-                setters = _pytype_lookup(cls_var_type, "__set__")
+                setters = _pytype_lookup(cls_var_type, "nl__set__")
                 for setter in setters:
                     if isinstance(setter, FunctionClass):
                         descr_setters.inject(
@@ -203,16 +199,13 @@ def _setup_TypeClass():
 
 class ObjectClass(metaclass=TypeMeta):
     pass
-    # self.nl__bases__ = [object()]
-    # self.nl__mro__ = c3(self)
-    # self.nl__class__ = my_typ
 
 
 def _setup_ObjectClass():
-    def __init__(self):
+    def nl__init__(self):
         return self
 
-    def __getattribute__(self, name):
+    def nl__getattribute__(self, name):
         # type_of_self = type(self)
         self_type = Type(self)
         # get class variables
@@ -222,9 +215,9 @@ def _setup_ObjectClass():
             data_descr_getters = Value()
             for cls_var in cls_vars:
                 cls_var_type = Type(cls_var)
-                descr_getters = _pytype_lookup(cls_var_type, "__get__")
+                descr_getters = _pytype_lookup(cls_var_type, "nl__get__")
                 if descr_getters is not None:
-                    descr_setters = _pytype_lookup(cls_var_type, "__set__")
+                    descr_setters = _pytype_lookup(cls_var_type, "nl__set__")
                     if descr_setters is not None:
                         for getter in descr_getters:
                             if isinstance(getter, FunctionClass):
@@ -260,7 +253,7 @@ def _setup_ObjectClass():
                     )
                 else:
                     cls_var_type = Type(cls_var)
-                    descr_getters = _pytype_lookup(cls_var_type, "__get__")
+                    descr_getters = _pytype_lookup(cls_var_type, "nl__get__")
                     if descr_getters is not None:
                         for getter in descr_getters:
                             if isinstance(getter, FunctionClass):
@@ -280,7 +273,7 @@ def _setup_ObjectClass():
 
         raise AttributeError(name)
 
-    def __setattr__(self, name, value):
+    def nl__setattr__(self, name, value):
         self_type = Type(self)
         cls_vars: Value = _pytype_lookup(self_type, name)
 
@@ -288,7 +281,7 @@ def _setup_ObjectClass():
         if cls_vars is not None:
             for cls_var in cls_vars:
                 cls_var_type = Type(cls_var)
-                setters = _pytype_lookup(cls_var_type, "__set__")
+                setters = _pytype_lookup(cls_var_type, "nl__set__")
                 for setter in setters:
                     if isinstance(setter, FunctionClass):
                         descr_setters.inject(
@@ -330,7 +323,7 @@ def _setup_ObjectClass():
             function.__name__,
             create_value_with_type(SpecialFunctionClass(function=function)),
         )
-    cls_dict.write_local_value("__new__", create_value_with_type(Constructor))
+    cls_dict.write_local_value("nl__new__", create_value_with_type(Constructor))
     return cls_dict
 
 

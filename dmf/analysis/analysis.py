@@ -40,7 +40,7 @@ from dmf.analysis.state import (
 from dmf.analysis.types import (
     ModuleType,
     CustomClass,
-    FunctionObject,
+    FunctionClass,
     MethodClass,
     dunder_lookup,
     Constructor,
