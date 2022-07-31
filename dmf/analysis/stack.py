@@ -36,7 +36,6 @@ from dmf.analysis.types import (
     Getattr,
     Instance,
     LocalVar,
-    FunctionObject,
     builtin_namespace,
 )
 from dmf.analysis.variables import (
@@ -166,7 +165,7 @@ class Frame:
                 namespace = self._find_global_namespace(name)
                 self.f_locals.write_global_value(name, namespace)
             elif scope == Namespace_Helper:
-                self.f_locals.write_helper_value(name, value)
+                self.f_locals.write_special_value(name, value)
 
     def _find_nonlocal_namespace(self, name: str) -> Namespace:
         parent_frame: Frame = self.f_back

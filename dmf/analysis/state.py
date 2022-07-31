@@ -18,7 +18,7 @@ from copy import deepcopy
 from typing import Tuple, List
 
 import dmf.share
-from dmf.analysis.types import Heap, my_object
+from dmf.analysis.types import Heap
 from dmf.analysis.stack import Stack
 from dmf.analysis.variables import POS_ARG_END, Namespace_Local
 

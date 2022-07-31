@@ -13,7 +13,6 @@
 #  limitations under the License.
 from typing import Tuple, Set
 
-from dmf.analysis.types import Heap
 from dmf.flows import construct_CFG
 
 # simulate modules
@@ -21,6 +20,7 @@ modules = {}
 # simulate modules for static analysis
 analysis_modules = {}
 static_import_module = None
+import_module = None
 # CFG flows
 flows = set()
 blocks = {}

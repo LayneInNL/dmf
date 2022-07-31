@@ -52,6 +52,7 @@ from dmf.analysis.types import (
     TupleClass,
     analysis_heap,
 )
+from dmf.analysis.typeshed_types import TypeshedModule
 from dmf.analysis.value import Value, create_value_with_type
 from dmf.analysis.variables import (
     Namespace_Local,
@@ -383,7 +384,7 @@ class Analysis(AnalysisBase):
                 self._lambda_class(
                     program_point, old_state, new_state, dummy_value_special, typ
                 )
-            elif isinstance(typ, FunctionObject):
+            elif isinstance(typ, FunctionClass):
                 self._lambda_function(
                     program_point, old_state, new_state, dummy_value, typ
                 )
@@ -467,7 +468,7 @@ class Analysis(AnalysisBase):
         if isinstance(new_method, Constructor):
             instance = new_method(addr, typ)
             dummy_value.inject(instance)
-        elif isinstance(new_method, FunctionObject):
+        elif isinstance(new_method, FunctionClass):
             entry_lab, exit_lab = new_method.nl__code__
             ret_lab, _ = self.get_special_new_return_label(call_lab)
             new_ctx = merge(call_lab, None, call_ctx)
@@ -492,7 +493,7 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: FunctionObject,
+        typ: FunctionClass,
     ):
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = typ.nl__code__
@@ -796,14 +797,16 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Import,
     ):
-        module_name = stmt.names[0].name
-        as_name = stmt.names[0].asname
-        mod = dmf.share.static_import_module(module_name)
-        value = Value()
-        value.inject_type(mod)
+        assert len(stmt.names) == 1
+        name = stmt.names[0].name
+        asname = stmt.names[0].asname
+        module = dmf.share.import_module(name)
+        if isinstance(module, dict):
+            module = TypeshedModule(name, module)
+        value = create_value_with_type(module)
         new_stack = new_state[0]
-        new_stack.write_var(module_name if as_name is None else as_name, value)
-        logger.debug("Import module {}".format(mod))
+        new_stack.write_var(name if asname is None else asname, Namespace_Local, value)
+        logger.debug("Import module {}".format(module))
         return new_state
 
     def transfer_ImportFrom(
@@ -878,7 +881,7 @@ class Analysis(AnalysisBase):
 
         func_module: str = new_state[0].read_module()
         value = create_value_with_type(
-            FunctionObject(
+            FunctionClass(
                 uuid=lab, name=node.name, module=func_module, code=(entry_lab, exit_lab)
             )
         )

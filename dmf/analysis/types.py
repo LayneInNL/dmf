@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import ast
 import types
 from copy import copy
 from typing import Dict
@@ -22,6 +23,7 @@ import dmf.share
 from dmf.analysis.c3 import c3
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.prim import NoneType, Int, Bool
+from dmf.analysis.typeshed_types import TypeshedClass, TypeshedFunction
 from dmf.analysis.value import Value, create_value_with_type
 from dmf.analysis.variables import (
     LocalVar,
@@ -67,15 +69,24 @@ def Setattr(obj, name, value):
     return res
 
 
-def _pytype_lookup(_type, _name):
-    mro = _type.nl__mro__
-    for cls in mro:
-        if _name in cls.nl__dict__:
-            var = cls.nl__dict__.read_var_type(_name)
-            assert isinstance(var, LocalVar)
-            value: Value = cls.nl__dict__.read_value(_name)
-            return value
-    return None
+def _PyType_Lookup(_type, _name):
+    if isinstance(_type, TypeshedClass):
+        if _name in _type.child_nodes:
+            nameinfo = _type.child_nodes[_name]
+            if isinstance(nameinfo.ast, (ast.FunctionDef, ast.AnnAssign, ast.ClassDef)):
+                qualified_name = _type.nl__uuid__ + (nameinfo.name,)
+                res = TypeshedFunction(qualified_name, nameinfo)
+            else:
+                raise NotImplementedError
+    elif isinstance(_type, CustomClass):
+        mro = _type.nl__mro__
+        for cls in mro:
+            if _name in cls.nl__dict__:
+                var = cls.nl__dict__.read_var_type(_name)
+                assert isinstance(var, LocalVar)
+                value: Value = cls.nl__dict__.read_value(_name)
+                return value
+        return None
 
 
 def dunder_lookup(typ, name: str):
@@ -112,11 +123,11 @@ def _setup_TypeClass():
     def nl__getattribute__(type, name):
         metatype = Type(type)
 
-        meta_attribute = _pytype_lookup(metatype, name)
+        meta_attribute = _PyType_Lookup(metatype, name)
         if meta_attribute is not None:
             assert False, meta_attribute
 
-        attribute = _pytype_lookup(type, name)
+        attribute = _PyType_Lookup(type, name)
         cls_vars = attribute
         if cls_vars is not None:
             descr_get = Value()
@@ -127,7 +138,7 @@ def _setup_TypeClass():
                     descr_get.inject(cls_var)
                 else:
                     cls_var_type = Type(cls_var)
-                    cls_var_type_getters = _pytype_lookup(cls_var_type, "nl__get__")
+                    cls_var_type_getters = _PyType_Lookup(cls_var_type, "nl__get__")
                     if cls_var_type_getters is not None:
                         for getter in cls_var_type_getters:
                             if isinstance(getter, FunctionClass):
@@ -147,12 +158,12 @@ def _setup_TypeClass():
         raise AttributeError(name)
 
     def nl__setattr__(self, name, value):
-        cls_vars: Value = _pytype_lookup(self, name)
+        cls_vars: Value = _PyType_Lookup(self, name)
         descr_setters = Value()
         if cls_vars is not None:
             for cls_var in cls_vars:
                 cls_var_type = Type(cls_var)
-                setters = _pytype_lookup(cls_var_type, "nl__set__")
+                setters = _PyType_Lookup(cls_var_type, "nl__set__")
                 for setter in setters:
                     if isinstance(setter, FunctionClass):
                         descr_setters.inject(
@@ -209,15 +220,15 @@ def _setup_ObjectClass():
         # type_of_self = type(self)
         self_type = Type(self)
         # get class variables
-        cls_vars: Value = _pytype_lookup(self_type, name)
+        cls_vars: Value = _PyType_Lookup(self_type, name)
 
         if cls_vars is not None:
             data_descr_getters = Value()
             for cls_var in cls_vars:
                 cls_var_type = Type(cls_var)
-                descr_getters = _pytype_lookup(cls_var_type, "nl__get__")
+                descr_getters = _PyType_Lookup(cls_var_type, "nl__get__")
                 if descr_getters is not None:
-                    descr_setters = _pytype_lookup(cls_var_type, "nl__set__")
+                    descr_setters = _PyType_Lookup(cls_var_type, "nl__set__")
                     if descr_setters is not None:
                         for getter in descr_getters:
                             if isinstance(getter, FunctionClass):
@@ -253,7 +264,7 @@ def _setup_ObjectClass():
                     )
                 else:
                     cls_var_type = Type(cls_var)
-                    descr_getters = _pytype_lookup(cls_var_type, "nl__get__")
+                    descr_getters = _PyType_Lookup(cls_var_type, "nl__get__")
                     if descr_getters is not None:
                         for getter in descr_getters:
                             if isinstance(getter, FunctionClass):
@@ -275,13 +286,13 @@ def _setup_ObjectClass():
 
     def nl__setattr__(self, name, value):
         self_type = Type(self)
-        cls_vars: Value = _pytype_lookup(self_type, name)
+        cls_vars: Value = _PyType_Lookup(self_type, name)
 
         descr_setters = Value()
         if cls_vars is not None:
             for cls_var in cls_vars:
                 cls_var_type = Type(cls_var)
-                setters = _pytype_lookup(cls_var_type, "nl__set__")
+                setters = _PyType_Lookup(cls_var_type, "nl__set__")
                 for setter in setters:
                     if isinstance(setter, FunctionClass):
                         descr_setters.inject(
@@ -852,9 +863,9 @@ class ModuleType:
         self.package = package
         self.file = file
         self.namespace = Namespace()
-        self.namespace.write_helper_value("__name__", name)
-        self.namespace.write_helper_value("__package__", package)
-        self.namespace.write_helper_value("__file__", file)
+        self.namespace.write_special_value("__name__", name)
+        self.namespace.write_special_value("__package__", package)
+        self.namespace.write_special_value("__file__", file)
         self.entry_label, self.exit_label = dmf.share.create_and_update_cfg(self.file)
 
     def getattr(self, name: str) -> Value:

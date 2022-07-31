@@ -13,6 +13,7 @@ __all__ = ["__import__", "import_module", "invalidate_caches", "reload"]
 import _imp  # Just the builtin component, NOT the full Python module
 import sys
 
+import dmf.share
 from . import _bootstrap
 
 _bootstrap._setup(sys, _imp)
@@ -103,6 +104,8 @@ def import_module(name, package=None):
             level += 1
     return _bootstrap._gcd_import(name[level:], package, level)
 
+
+dmf.share.import_module = import_module
 
 _RELOADING = {}
 

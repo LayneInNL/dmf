@@ -58,9 +58,9 @@ class GlobalVar(Var):
         return f"({self.name}, {Namespace_Global})"
 
 
-class HelperVar(Var):
+class SpecialVar(Var):
     def __init__(self, name: str):
         super().__init__(name)
 
     def __repr__(self):
-        return f"({self.name}, helper)"
+        return f"({self.name}, special)"

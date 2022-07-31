@@ -18,6 +18,7 @@ import sys
 
 # Must put it here to initialize static_importlib
 import dmf.static_importlib
+import dmf.import_lib
 
 import dmf.share
 from dmf.analysis.types import ModuleType

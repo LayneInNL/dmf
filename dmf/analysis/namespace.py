@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from dmf.analysis.value import Value
-from dmf.analysis.variables import HelperVar, Var, LocalVar, NonlocalVar, GlobalVar
+from dmf.analysis.variables import SpecialVar, Var, LocalVar, NonlocalVar, GlobalVar
 
 
 class Namespace(defaultdict):
@@ -32,7 +32,7 @@ class Namespace(defaultdict):
     # So we have to collect all variables
     def __le__(self, other):
         variables = filter(
-            lambda elt: not isinstance(elt, HelperVar),
+            lambda elt: not isinstance(elt, SpecialVar),
             self.keys() | other.keys(),
         )
         for var in variables:
@@ -42,7 +42,7 @@ class Namespace(defaultdict):
 
     def __iadd__(self, other):
         variables = filter(
-            lambda elt: not isinstance(elt, HelperVar),
+            lambda elt: not isinstance(elt, SpecialVar),
             self.keys() | other.keys(),
         )
         for var in variables:
@@ -75,8 +75,8 @@ class Namespace(defaultdict):
     def write_global_value(self, name: str, ns: Namespace):
         self[GlobalVar(name)] = ns
 
-    def write_helper_value(self, name: str, value):
-        self[HelperVar(name)] = value
+    def write_special_value(self, name: str, value):
+        self[SpecialVar(name)] = value
 
     def del_local_var(self, name: str):
         del self[LocalVar(name)]
