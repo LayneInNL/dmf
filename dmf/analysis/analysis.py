@@ -904,7 +904,10 @@ class Analysis(AnalysisBase):
         func_module: str = new_state[0].read_module()
         value = create_value_with_type(
             FunctionClass(
-                uuid=lab, name=node.name, module=func_module, code=(entry_lab, exit_lab)
+                uuid=lab,
+                name=node.name,
+                globals=func_module,
+                code=(entry_lab, exit_lab),
             )
         )
 

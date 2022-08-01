@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import ast
+import logging
 import os
 from collections import defaultdict
 from typing import Dict, List, Tuple, Set, Optional, Any
@@ -114,6 +115,8 @@ class CFG:
         self.return_labels: Set[int] = set()
         self.dummy_labels: Set[int] = set()
 
+        self.is_generator: bool = False
+
     def _traverse(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
             visited.add(block.bid)
@@ -200,6 +203,8 @@ class CFGVisitor(ast.NodeVisitor):
         self.final_body_entry_stack: List[BasicBlock] = []
         self.final_body_exit_stack: List[BasicBlock] = []
         self.properties: Dict = defaultdict(lambda: [None] * 4)
+        # check if a function is a generator function by checking if it has yields
+        self.is_generator: bool = False
 
     def build(self, name: str, tree: ast.Module) -> CFG:
         self.cfg = CFG(name)
@@ -243,6 +248,10 @@ class CFGVisitor(ast.NodeVisitor):
             entry_node=self.curr_block.stmt[0].args,
         )
         func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
+
+        if visitor.is_generator:
+            func_cfg.is_generator = True
+
         self.cfg.sub_cfgs[func_id] = func_cfg
 
     def add_ClassCFG(self, node: ast.ClassDef):
@@ -1247,7 +1256,11 @@ class CFGVisitor(ast.NodeVisitor):
             ]
 
     def visit_Yield(self, node: ast.Yield) -> Any:
+        # encounter yield, this function is a generator function
+        self.is_generator = True
+
         if node.value is None:
+            node.value = ast.NameConstant(value=None)
             return [node]
 
         seq, node.value = self.decompose_expr(node.value)
@@ -1255,6 +1268,9 @@ class CFGVisitor(ast.NodeVisitor):
         return seq + [node]
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Any:
+        # encounter yield from, this function is a generator function
+        self.is_generator = True
+
         seq, node.value = self.decompose_expr(node.value)
 
         return seq + [node]

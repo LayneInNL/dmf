@@ -14,8 +14,12 @@
 
 
 def test():
+    yield 1
+
+
+def test1():
     pass
 
 
-test.x = 1
-y = test.x
+# test.x = 1
+# y = test.x
