@@ -62,19 +62,40 @@ from dmf.typeshed_client import NameInfo, OverloadedName
 class TypeshedVariable:
     def __init__(self, qualified_name, nameinfo):
         self.nl__uuid__ = qualified_name
-        self.nl__nameinfo__ = nameinfo
+        self.name = nameinfo.name
+        self.ast = nameinfo.ast
 
     def __le__(self, other):
         return True
 
     def __iadd__(self, other):
+        return self
+
+    def __deepcopy__(self, memo):
+        return self
+
+
+class TypeshedAnnVariable:
+    def __init__(self, qualified_name, nameinfo):
+        self.nl__uuid__ = qualified_name
+        self.name = nameinfo.name
+        self.ast = nameinfo.ast
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __deepcopy__(self, memo):
         return self
 
 
 class TypeshedFunction:
     def __init__(self, qualified_name, nameinfo):
         self.nl__uuid__ = qualified_name
-        self.nl__nameinfo__ = nameinfo
+        self.name = nameinfo.name
+        self.ast = nameinfo.ast
 
     def __le__(self, other):
         return True
@@ -82,16 +103,23 @@ class TypeshedFunction:
     def __iadd__(self, other):
         return self
 
+    def __deepcopy__(self, memo):
+        return self
+
 
 class TypeshedOverloadedFunction:
     def __init__(self, qualified_name, nameinfo):
         self.nl__uuid__ = qualified_name
-        self.nl__nameinfo__ = nameinfo
+        self.name = nameinfo.name
+        self.ast = nameinfo.ast.definitions
 
     def __le__(self, other):
         return True
 
     def __iadd__(self, other):
+        return self
+
+    def __deepcopy__(self, memo):
         return self
 
 
@@ -108,14 +136,10 @@ class TypeshedClass:
     def __iadd__(self, other):
         return self
 
+    def __deepcopy__(self, memo):
+        return self
 
-class TypeshedModule:
-    def __init__(self, qualified_name, namedict):
-        self.nl__uuid__ = qualified_name
-        self.nl__dict__ = namedict
-
-    def __getattr__(self, name):
-        print(type(self.nl__dict__))
+    def getattr(self, name):
         if name in self.nl__dict__:
             attr = self.nl__dict__[name]
             qualified_name = self.nl__uuid__ + (name,)
@@ -128,12 +152,46 @@ class TypeshedModule:
                     return TypeshedFunction(qualified_name, attr)
                 elif isinstance(attr.ast, OverloadedName):
                     return TypeshedOverloadedFunction(qualified_name, attr)
-                elif isinstance(attr.ast, ast.AnnAssign):
+                elif isinstance(attr.ast, ast.Assign):
                     return TypeshedVariable(qualified_name, attr)
+                elif isinstance(attr.ast, ast.AnnAssign):
+                    return TypeshedAnnVariable(qualified_name, attr)
                 else:
                     raise NotImplementedError(attr)
+            else:
+                raise NotImplementedError(name)
 
-        raise AttributeError
+        raise AttributeError(name)
+
+
+class TypeshedModule:
+    def __init__(self, qualified_name, namedict):
+        self.nl__uuid__ = qualified_name
+        self.nl__dict__ = namedict
+
+    def getattr(self, name):
+        if name in self.nl__dict__:
+            attr = self.nl__dict__[name]
+            qualified_name = self.nl__uuid__ + (name,)
+            if isinstance(attr, dict):
+                return TypeshedModule(qualified_name, attr)
+            elif isinstance(attr, NameInfo):
+                if isinstance(attr.ast, ast.ClassDef):
+                    return TypeshedClass(qualified_name, attr)
+                elif isinstance(attr.ast, ast.FunctionDef):
+                    return TypeshedFunction(qualified_name, attr)
+                elif isinstance(attr.ast, OverloadedName):
+                    return TypeshedOverloadedFunction(qualified_name, attr)
+                elif isinstance(attr.ast, ast.Assign):
+                    return TypeshedVariable(qualified_name, attr)
+                elif isinstance(attr.ast, ast.AnnAssign):
+                    return TypeshedAnnVariable(qualified_name, attr)
+                else:
+                    raise NotImplementedError(attr)
+            else:
+                raise NotImplementedError(name)
+
+        raise AttributeError(name)
 
     def __le__(self, other):
         return True

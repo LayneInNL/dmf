@@ -791,6 +791,13 @@ class Analysis(AnalysisBase):
         new_stack.write_var(stmt.id, Namespace_Local, return_value)
         return new_state
 
+    def _import_a_module(self, name):
+        module = dmf.share.import_module(name)
+        if isinstance(module, dict):
+            name_tuple = tuple(name.split("."))
+            module = TypeshedModule(name_tuple, module)
+        return module
+
     def transfer_Import(
         self,
         program_point: ProgramPoint,
@@ -801,16 +808,10 @@ class Analysis(AnalysisBase):
         assert len(stmt.names) == 1
         name = stmt.names[0].name
         asname = stmt.names[0].asname
-        module = dmf.share.import_module(name)
-
-        module_name_tuple = tuple(name.split("."))
-        if isinstance(module, dict):
-            module = TypeshedModule(module_name_tuple, module)
+        module = self._import_a_module(name)
         if asname is None:
             name = name.partition(".")[0]
-            module = dmf.share.import_module(name)
-            module_name_tuple = tuple(name.split("."))
-            module = TypeshedModule(module_name_tuple, module)
+            module = self._import_a_module(name)
         else:
             name = asname
 
@@ -834,24 +835,18 @@ class Analysis(AnalysisBase):
         package = new_stack.read_package()
 
         module_name = resolve_name(dot_number + module_name, package)
-        module = dmf.share.import_module(module_name)
-        if isinstance(module, dict):
-            module_name_tuple = tuple(module_name.split("."))
-            module = TypeshedModule(module_name_tuple, module)
+        module = self._import_a_module(module_name)
         logger.debug("ImportFrom module {}".format(module))
 
         for alias in stmt.names:
             name = alias.name
             asname = alias.asname
             try:
-                attr = module.__getattr__(name)
+                attr = module.getattr(name)
             except AttributeError:
                 sub_module_name = f"{module_name}.{name}"
-                sub_module = dmf.share.import_module(sub_module_name)
+                sub_module = self._import_a_module(sub_module_name)
                 attr = sub_module
-                if isinstance(attr, dict):
-                    sub_module_name_tuple = tuple(sub_module_name.split("."))
-                    attr = TypeshedModule(sub_module_name_tuple, attr)
                 if asname is None:
                     new_stack.write_var(name, Namespace_Local, attr)
                 else:

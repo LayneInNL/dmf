@@ -868,7 +868,7 @@ class ModuleType:
         self.namespace.write_special_value("__file__", file)
         self.entry_label, self.exit_label = dmf.share.create_and_update_cfg(self.file)
 
-    def __getattr__(self, name: str) -> Value:
+    def getattr(self, name: str) -> Value:
         if name in self.namespace:
             return self.namespace.read_value(name)
         raise AttributeError(name)
