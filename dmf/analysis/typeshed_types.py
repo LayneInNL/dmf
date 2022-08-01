@@ -11,6 +11,8 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import ast
+
 from dmf.analysis.namespace import Namespace
 
 
@@ -54,6 +56,7 @@ from dmf.analysis.namespace import Namespace
 #
 #     def __call__(self, *args, **kwargs):
 #         return self.nl__code__(*args, **kwargs)
+from dmf.typeshed_client import NameInfo, OverloadedName
 
 
 class TypeshedVariable:
@@ -80,12 +83,24 @@ class TypeshedFunction:
         return self
 
 
+class TypeshedOverloadedFunction:
+    def __init__(self, qualified_name, nameinfo):
+        self.nl__uuid__ = qualified_name
+        self.nl__nameinfo__ = nameinfo
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+
 class TypeshedClass:
     def __init__(self, qualified_name, nameinfo):
         self.nl__uuid__ = qualified_name
         self.name = nameinfo.name
         self.ast = nameinfo.ast
-        self.child_nodes = nameinfo.child_nodes
+        self.nl__dict__ = nameinfo.child_nodes
 
     def __le__(self, other):
         return True
@@ -97,7 +112,28 @@ class TypeshedClass:
 class TypeshedModule:
     def __init__(self, qualified_name, namedict):
         self.nl__uuid__ = qualified_name
-        self.nl__namedict__ = namedict
+        self.nl__dict__ = namedict
+
+    def __getattr__(self, name):
+        print(type(self.nl__dict__))
+        if name in self.nl__dict__:
+            attr = self.nl__dict__[name]
+            qualified_name = self.nl__uuid__ + (name,)
+            if isinstance(attr, dict):
+                return TypeshedModule(qualified_name, attr)
+            elif isinstance(attr, NameInfo):
+                if isinstance(attr.ast, ast.ClassDef):
+                    return TypeshedClass(qualified_name, attr)
+                elif isinstance(attr.ast, ast.FunctionDef):
+                    return TypeshedFunction(qualified_name, attr)
+                elif isinstance(attr.ast, OverloadedName):
+                    return TypeshedOverloadedFunction(qualified_name, attr)
+                elif isinstance(attr.ast, ast.AnnAssign):
+                    return TypeshedVariable(qualified_name, attr)
+                else:
+                    raise NotImplementedError(attr)
+
+        raise AttributeError
 
     def __le__(self, other):
         return True
@@ -106,4 +142,8 @@ class TypeshedModule:
         return self
 
     def __repr__(self):
-        return self.nl__uuid__
+        return self.nl__uuid__.__repr__()
+
+    def __deepcopy__(self, memo):
+        memo[id(self)] = self
+        return self

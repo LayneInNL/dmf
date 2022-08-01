@@ -9,7 +9,7 @@ work. One should use importlib as the public-facing version of this module.
 
 from isort import place_module
 from isort.sections import STDLIB
-from typeshed_client import get_stub_names
+from dmf.typeshed_client import get_stub_names
 
 #
 # IMPORTANT: Whenever making changes to this module, be sure to run

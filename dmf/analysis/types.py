@@ -868,8 +868,10 @@ class ModuleType:
         self.namespace.write_special_value("__file__", file)
         self.entry_label, self.exit_label = dmf.share.create_and_update_cfg(self.file)
 
-    def getattr(self, name: str) -> Value:
-        return self.namespace.read_value(name)
+    def __getattr__(self, name: str) -> Value:
+        if name in self.namespace:
+            return self.namespace.read_value(name)
+        raise AttributeError(name)
 
 
 class Constructor(metaclass=TypeMeta):
@@ -939,24 +941,6 @@ def _setup_Super():
             create_value_with_type(SpecialFunctionClass(function=function)),
         )
     return cls_dict
-
-
-class Map(metaclass=TypeMeta):
-    def __init__(self, function, iterable):
-        self.function = function
-        self.iterable = iterable
-
-
-def _setup_Map():
-    def __iter__(self):
-        pass
-
-    def __next__(self):
-        pass
-
-
-class Filter(metaclass=TypeMeta):
-    pass
 
 
 class Heap:

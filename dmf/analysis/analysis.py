@@ -64,6 +64,7 @@ from dmf.analysis.variables import (
     Namespace_Helper,
 )
 from dmf.flows.temp import Unused_Name
+from dmf.import_lib.util import resolve_name
 from dmf.log.logger import logger
 
 
@@ -801,11 +802,21 @@ class Analysis(AnalysisBase):
         name = stmt.names[0].name
         asname = stmt.names[0].asname
         module = dmf.share.import_module(name)
+
+        module_name_tuple = tuple(name.split("."))
         if isinstance(module, dict):
-            module = TypeshedModule(name, module)
+            module = TypeshedModule(module_name_tuple, module)
+        if asname is None:
+            name = name.partition(".")[0]
+            module = dmf.share.import_module(name)
+            module_name_tuple = tuple(name.split("."))
+            module = TypeshedModule(module_name_tuple, module)
+        else:
+            name = asname
+
         value = create_value_with_type(module)
         new_stack = new_state[0]
-        new_stack.write_var(name if asname is None else asname, Namespace_Local, value)
+        new_stack.write_var(name, Namespace_Local, value)
         logger.debug("Import module {}".format(module))
         return new_state
 
@@ -816,24 +827,40 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.ImportFrom,
     ):
-        new_stack = new_state[0]
         module_name = "" if stmt.module is None else stmt.module
         dot_number = "." * stmt.level
-        package = new_stack.read_package()
-        mod = dmf.share.static_import_module(
-            name=dot_number + module_name,
-            package=package,
-        )
-        logger.debug("ImportFrom module {}".format(mod))
 
-        aliases = stmt.names
-        for alias in aliases:
-            imported_name = alias.name
-            imported_value = mod.getattr(imported_name)
-            if alias.asname is None:
-                new_stack.write_var(imported_name, Namespace_Local, imported_value)
+        new_stack = new_state[0]
+        package = new_stack.read_package()
+
+        module_name = resolve_name(dot_number + module_name, package)
+        module = dmf.share.import_module(module_name)
+        if isinstance(module, dict):
+            module_name_tuple = tuple(module_name.split("."))
+            module = TypeshedModule(module_name_tuple, module)
+        logger.debug("ImportFrom module {}".format(module))
+
+        for alias in stmt.names:
+            name = alias.name
+            asname = alias.asname
+            try:
+                attr = module.__getattr__(name)
+            except AttributeError:
+                sub_module_name = f"{module_name}.{name}"
+                sub_module = dmf.share.import_module(sub_module_name)
+                attr = sub_module
+                if isinstance(attr, dict):
+                    sub_module_name_tuple = tuple(sub_module_name.split("."))
+                    attr = TypeshedModule(sub_module_name_tuple, attr)
+                if asname is None:
+                    new_stack.write_var(name, Namespace_Local, attr)
+                else:
+                    new_stack.write_var(asname, Namespace_Local, attr)
             else:
-                new_stack.write_var(alias.asname, Namespace_Local, imported_value)
+                if asname is None:
+                    new_stack.write_var(name, Namespace_Local, attr)
+                else:
+                    new_stack.write_var(asname, Namespace_Local, attr)
         return new_state
 
     def transfer_return_classdef(
