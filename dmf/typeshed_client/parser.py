@@ -35,6 +35,7 @@ class OverloadedName(NamedTuple):
 
 class NameInfo(NamedTuple):
     name: str
+    module_str: str
     is_exported: bool
     ast: Union[ast.AST, ImportedName, OverloadedName]
     # should be Optional[NameDict] but that needs a recursive type
@@ -124,6 +125,7 @@ def parse_ast(
             else:
                 new_info = NameInfo(
                     existing.name,
+                    existing.module_str,
                     existing.is_exported,
                     OverloadedName([existing.ast, info.ast]),
                 )
@@ -155,16 +157,17 @@ class _NameExtractor(ast.NodeVisitor):
     ) -> None:
         self.ctx = ctx
         self.module_name = module_name
+        self.module_str = ".".join(module_name)
         self.is_init = is_init
 
     def visit_Module(self, node: ast.Module) -> List[NameInfo]:
         return [info for child in node.body for info in self.visit(child)]
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Iterable[NameInfo]:
-        yield NameInfo(node.name, not node.name.startswith("_"), node)
+        yield NameInfo(node.name, self.module_str, not node.name.startswith("_"), node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Iterable[NameInfo]:
-        yield NameInfo(node.name, not node.name.startswith("_"), node)
+        yield NameInfo(node.name, self.module_str, not node.name.startswith("_"), node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Iterable[NameInfo]:
         children = [info for child in node.body for info in self.visit(child)]
@@ -177,13 +180,16 @@ class _NameExtractor(ast.NodeVisitor):
                 else:
                     new_info = NameInfo(
                         existing.name,
+                        existing.module_str,
                         existing.is_exported,
                         OverloadedName([existing.ast, info.ast]),
                     )
                     child_dict[info.name] = new_info
             else:
                 child_dict[info.name] = info
-        yield NameInfo(node.name, not node.name.startswith("_"), node, child_dict)
+        yield NameInfo(
+            node.name, self.module_str, not node.name.startswith("_"), node, child_dict
+        )
 
     def visit_Assign(self, node: ast.Assign) -> Iterable[NameInfo]:
         for target in node.targets:
@@ -191,7 +197,9 @@ class _NameExtractor(ast.NodeVisitor):
                 raise InvalidStub(
                     f"Assignment should only be to a simple name: {ast.dump(node)}"
                 )
-            yield NameInfo(target.id, not target.id.startswith("_"), node)
+            yield NameInfo(
+                target.id, self.module_str, not target.id.startswith("_"), node
+            )
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> Iterable[NameInfo]:
         target = node.target
@@ -199,7 +207,7 @@ class _NameExtractor(ast.NodeVisitor):
             raise InvalidStub(
                 f"Assignment should only be to a simple name: {ast.dump(node)}"
             )
-        yield NameInfo(target.id, not target.id.startswith("_"), node)
+        yield NameInfo(target.id, self.module_str, not target.id.startswith("_"), node)
 
     def visit_If(self, node: ast.If) -> Iterable[NameInfo]:
         visitor = _LiteralEvalVisitor(self.ctx)
@@ -224,13 +232,16 @@ class _NameExtractor(ast.NodeVisitor):
             if alias.asname is not None:
                 yield NameInfo(
                     alias.asname,
+                    self.module_str,
                     True,
                     ImportedName(ModulePath(tuple(alias.name.split(".")))),
                 )
             else:
                 # "import a.b" just binds the name "a"
                 name = alias.name.split(".", 1)[0]
-                yield NameInfo(name, False, ImportedName(ModulePath((name,))))
+                yield NameInfo(
+                    name, self.module_str, False, ImportedName(ModulePath((name,)))
+                )
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Iterable[NameInfo]:
         module: Tuple[str, ...]
@@ -254,7 +265,10 @@ class _NameExtractor(ast.NodeVisitor):
             if alias.asname is not None:
                 is_exported = not alias.asname.startswith("_")
                 yield NameInfo(
-                    alias.asname, is_exported, ImportedName(source_module, alias.name)
+                    alias.asname,
+                    self.module_str,
+                    is_exported,
+                    ImportedName(source_module, alias.name),
                 )
             elif alias.name == "*":
                 name_dict = get_stub_names(
@@ -268,10 +282,18 @@ class _NameExtractor(ast.NodeVisitor):
                     continue
                 for name, info in name_dict.items():
                     if info.is_exported:
-                        yield NameInfo(name, True, ImportedName(source_module, name))
+                        yield NameInfo(
+                            name,
+                            self.module_str,
+                            True,
+                            ImportedName(source_module, name),
+                        )
             else:
                 yield NameInfo(
-                    alias.name, False, ImportedName(source_module, alias.name)
+                    alias.name,
+                    self.module_str,
+                    False,
+                    ImportedName(source_module, alias.name),
                 )
 
     def visit_Expr(self, node: ast.Expr) -> Iterable[NameInfo]:
