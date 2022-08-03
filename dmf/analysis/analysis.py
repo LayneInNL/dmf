@@ -40,7 +40,7 @@ from dmf.analysis.state import (
 from dmf.analysis.types import (
     ModuleType,
     CustomClass,
-    FunctionClass,
+    FunctionType,
     MethodClass,
     dunder_lookup,
     Constructor,
@@ -232,7 +232,7 @@ class Analysis(AnalysisBase):
 
         for val in value:
             if isinstance(val, MethodClass):
-                entry_lab, exit_lab = val.nl__func__.nl__code__
+                entry_lab, exit_lab = val.nl__func__.nl__gate__
                 instance = val.nl__instance__
                 new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
 
@@ -271,7 +271,7 @@ class Analysis(AnalysisBase):
             attr_value = Getattr(val, call_stmt.attr, [])
             for attr_val in attr_value:
                 if isinstance(attr_val, MethodClass):
-                    entry_lab, exit_lab = attr_val.nl__func__.nl__code__
+                    entry_lab, exit_lab = attr_val.nl__func__.nl__gate__
                     instance = attr_val.nl__instance__
                     new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
 
@@ -317,7 +317,7 @@ class Analysis(AnalysisBase):
             attr_value = Setattr(attr_type, attr, expr_value)
             for attr_typ in attr_value:
                 if isinstance(attr_typ, MethodClass):
-                    entry_lab, exit_lab = attr_typ.nl__func__.nl__code__
+                    entry_lab, exit_lab = attr_typ.nl__func__.nl__gate__
                     instance = attr_typ.nl__instance__
                     new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
 
@@ -385,7 +385,7 @@ class Analysis(AnalysisBase):
                 self._lambda_class(
                     program_point, old_state, new_state, dummy_value_special, typ
                 )
-            elif isinstance(typ, FunctionClass):
+            elif isinstance(typ, FunctionType):
                 self._lambda_function(
                     program_point, old_state, new_state, dummy_value, typ
                 )
@@ -469,8 +469,8 @@ class Analysis(AnalysisBase):
         if isinstance(new_method, Constructor):
             instance = new_method(addr, typ)
             dummy_value.inject(instance)
-        elif isinstance(new_method, FunctionClass):
-            entry_lab, exit_lab = new_method.nl__code__
+        elif isinstance(new_method, FunctionType):
+            entry_lab, exit_lab = new_method.nl__gate__
             ret_lab, _ = self.get_special_new_return_label(call_lab)
             new_ctx = merge(call_lab, None, call_ctx)
             inter_flow = (
@@ -494,10 +494,10 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: FunctionClass,
+        typ: FunctionType,
     ):
         call_lab, call_ctx = program_point
-        entry_lab, exit_lab = typ.nl__code__
+        entry_lab, exit_lab = typ.nl__gate__
         ret_lab, _ = self.get_func_return_label(call_lab)
 
         new_ctx: Tuple = merge(call_lab, None, call_ctx)
@@ -523,7 +523,7 @@ class Analysis(AnalysisBase):
         typ: MethodClass,
     ):
         call_lab, call_ctx = program_point
-        entry_lab, exit_lab = typ.nl__func__.nl__code__
+        entry_lab, exit_lab = typ.nl__func__.nl__gate__
         instance = typ.nl__instance__
         new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
 
@@ -903,7 +903,7 @@ class Analysis(AnalysisBase):
 
         func_module: str = new_state[0].read_module()
         value = create_value_with_type(
-            FunctionClass(
+            FunctionType(
                 uuid=lab,
                 name=node.name,
                 globals=func_module,

@@ -31,7 +31,7 @@ from dmf.analysis.variables import (
 )
 
 
-def Type(obj):
+def Py_TYPE(obj):
     return obj.nl__class__
 
 
@@ -49,7 +49,7 @@ my_getattr_obj = object()
 
 def Getattr(obj, name: str, default=my_getattr_obj) -> Value:
 
-    get_attribute = dunder_lookup(Type(obj), "__getattribute__")
+    get_attribute = dunder_lookup(Py_TYPE(obj), "__getattribute__")
 
     attr_value = Value()
     try:
@@ -64,7 +64,7 @@ def Getattr(obj, name: str, default=my_getattr_obj) -> Value:
 
 
 def Setattr(obj, name, value):
-    set_attr = dunder_lookup(Type(obj), "__setattr__")
+    set_attr = dunder_lookup(Py_TYPE(obj), "__setattr__")
     res = set_attr(obj, name, value)
     return res
 
@@ -115,13 +115,13 @@ class TypeMeta(type):
         return self
 
 
-class TypeClass(metaclass=TypeMeta):
+class Type(metaclass=TypeMeta):
     pass
 
 
-def _setup_TypeClass():
+def _setup_Type():
     def nl__getattribute__(type, name):
-        metatype = Type(type)
+        metatype = Py_TYPE(type)
 
         meta_attribute = _PyType_Lookup(metatype, name)
         if meta_attribute is not None:
@@ -132,16 +132,16 @@ def _setup_TypeClass():
         if cls_vars is not None:
             descr_get = Value()
             for cls_var in cls_vars:
-                if isinstance(cls_var, FunctionClass):
+                if isinstance(cls_var, FunctionType):
                     descr_get.inject(cls_var)
                 elif isinstance(cls_var, SpecialFunctionClass):
                     descr_get.inject(cls_var)
                 else:
-                    cls_var_type = Type(cls_var)
+                    cls_var_type = Py_TYPE(cls_var)
                     cls_var_type_getters = _PyType_Lookup(cls_var_type, "nl__get__")
                     if cls_var_type_getters is not None:
                         for getter in cls_var_type_getters:
-                            if isinstance(getter, FunctionClass):
+                            if isinstance(getter, FunctionType):
                                 method_getter = MethodClass(
                                     instance=cls_var,
                                     function=getter,
@@ -162,10 +162,10 @@ def _setup_TypeClass():
         descr_setters = Value()
         if cls_vars is not None:
             for cls_var in cls_vars:
-                cls_var_type = Type(cls_var)
+                cls_var_type = Py_TYPE(cls_var)
                 setters = _PyType_Lookup(cls_var_type, "nl__set__")
                 for setter in setters:
-                    if isinstance(setter, FunctionClass):
+                    if isinstance(setter, FunctionType):
                         descr_setters.inject(
                             MethodClass(
                                 instance=cls_var,
@@ -208,30 +208,30 @@ def _setup_TypeClass():
     return cls_dict
 
 
-class ObjectClass(metaclass=TypeMeta):
+class Object(metaclass=TypeMeta):
     pass
 
 
-def _setup_ObjectClass():
+def _setup_Object():
     def nl__init__(self):
         return self
 
     def nl__getattribute__(self, name):
         # type_of_self = type(self)
-        self_type = Type(self)
+        self_type = Py_TYPE(self)
         # get class variables
         cls_vars: Value = _PyType_Lookup(self_type, name)
 
         if cls_vars is not None:
             data_descr_getters = Value()
             for cls_var in cls_vars:
-                cls_var_type = Type(cls_var)
+                cls_var_type = Py_TYPE(cls_var)
                 descr_getters = _PyType_Lookup(cls_var_type, "nl__get__")
                 if descr_getters is not None:
                     descr_setters = _PyType_Lookup(cls_var_type, "nl__set__")
                     if descr_setters is not None:
                         for getter in descr_getters:
-                            if isinstance(getter, FunctionClass):
+                            if isinstance(getter, FunctionType):
                                 method_getter = MethodClass(
                                     instance=cls_var,
                                     function=getter,
@@ -254,7 +254,7 @@ def _setup_ObjectClass():
         if cls_vars is not None:
             nondata_descr_getters = Value()
             for cls_var in cls_vars:
-                if isinstance(cls_var, FunctionClass):
+                if isinstance(cls_var, FunctionType):
                     nondata_descr_getters.inject(
                         MethodClass(instance=self, function=cls_var)
                     )
@@ -263,11 +263,11 @@ def _setup_ObjectClass():
                         SpecialMethodClass(instance=self, function=cls_var)
                     )
                 else:
-                    cls_var_type = Type(cls_var)
+                    cls_var_type = Py_TYPE(cls_var)
                     descr_getters = _PyType_Lookup(cls_var_type, "nl__get__")
                     if descr_getters is not None:
                         for getter in descr_getters:
-                            if isinstance(getter, FunctionClass):
+                            if isinstance(getter, FunctionType):
                                 method_getter = MethodClass(
                                     instance=cls_var,
                                     function=getter,
@@ -285,16 +285,16 @@ def _setup_ObjectClass():
         raise AttributeError(name)
 
     def nl__setattr__(self, name, value):
-        self_type = Type(self)
+        self_type = Py_TYPE(self)
         cls_vars: Value = _PyType_Lookup(self_type, name)
 
         descr_setters = Value()
         if cls_vars is not None:
             for cls_var in cls_vars:
-                cls_var_type = Type(cls_var)
+                cls_var_type = Py_TYPE(cls_var)
                 setters = _PyType_Lookup(cls_var_type, "nl__set__")
                 for setter in setters:
-                    if isinstance(setter, FunctionClass):
+                    if isinstance(setter, FunctionType):
                         descr_setters.inject(
                             MethodClass(
                                 instance=cls_var,
@@ -338,12 +338,13 @@ def _setup_ObjectClass():
     return cls_dict
 
 
-class FunctionClass(metaclass=TypeMeta):
+class FunctionType(metaclass=TypeMeta):
     def __init__(self, uuid, code, globals, name=None, argdefs=None, closure=None):
         self.nl__uuid__ = uuid
+        self.nl__fallback__ = "types.FunctionType"
         self.nl__name__ = name
         self.nl__module__ = globals
-        self.nl__code__ = code
+        self.nl__gate__ = code
         self.nl__dict__ = Namespace()
 
     def __le__(self, other):
@@ -379,7 +380,7 @@ class MethodClass(metaclass=TypeMeta):
     def __init__(
         self,
         instance: Instance,
-        function: FunctionClass,
+        function: FunctionType,
         descr_instance=None,
         descr_owner=None,
         descr_value=None,
@@ -922,7 +923,7 @@ def _setup_Super():
             if name in dict:
                 x = dict.read_value(name)
                 for v in x:
-                    if isinstance(v, FunctionClass):
+                    if isinstance(v, FunctionType):
                         method = MethodClass(instance=self.proxy_instance, function=v)
                         res.inject(method)
                     else:
