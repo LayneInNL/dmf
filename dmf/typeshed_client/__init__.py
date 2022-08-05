@@ -1,26 +1,17 @@
 """Package for retrieving data from typeshed."""
-from . import finder
-from . import parser
-from . import resolver
+# from . import finder
+from dmf.typeshed_client.parser import Resolver
 
-# Exported names
-from .finder import (
-    get_stub_ast,
-    get_stub_file,
-    get_all_stub_files,
-    get_search_context,
-    SearchContext,
-    ModulePath,
-)
-from .parser import (
-    get_stub_names,
-    parse_ast,
-    ImportedName,
-    NameDict,
-    NameInfo,
-    OverloadedName,
-)
-from .resolver import ImportedInfo, Resolver
+# # Exported names
+# from .finder import (
+#     get_stub_file,
+#     get_all_stub_files,
+#     get_search_context,
+#     SearchContext,
+#     ModulePath,
+# )
 
+resolver = Resolver()
+res = resolver.resolve_attribute("builtins", "FileIO")
 
 __version__ = "2.0.5"

@@ -1,12 +1,10 @@
 """This module is responsible for finding stub files."""
-from functools import lru_cache
-import importlib_resources
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
-import ast
+from functools import lru_cache
+from pathlib import Path
 from typing import (
     Dict,
     Generator,
@@ -20,6 +18,8 @@ from typing import (
     Tuple,
 )
 
+import importlib_resources
+
 PythonVersion = Tuple[int, int]
 ModulePath = NewType("ModulePath", Tuple[str, ...])
 
@@ -29,9 +29,6 @@ class SearchContext(NamedTuple):
     search_path: Sequence[Path]
     version: PythonVersion
     platform: str
-
-    def is_python2(self) -> bool:
-        return self.version[0] == 2
 
 
 def get_search_context(
@@ -85,16 +82,6 @@ def get_stub_file(
     return get_stub_file_name(tuple(module_name.split(".")), search_context)
 
 
-def get_stub_ast(
-    module_name: str, *, search_context: Optional[SearchContext] = None
-) -> Optional[ast.AST]:
-    """Return the AST for the stub for the given module name."""
-    path = get_stub_file(module_name, search_context=search_context)
-    if path is None:
-        return None
-    return parse_stub_file(path)
-
-
 def get_all_stub_files(
     search_context: Optional[SearchContext] = None,
 ) -> Iterable[Tuple[str, Path]]:
@@ -129,8 +116,6 @@ def get_all_stub_files(
     # typeshed
     versions = get_typeshed_versions(search_context.typeshed)
     typeshed_dirs = [search_context.typeshed]
-    if search_context.is_python2():
-        typeshed_dirs.insert(0, search_context.typeshed / "@python2")
 
     for typeshed_dir in typeshed_dirs:
         for entry in os.scandir(typeshed_dir):
@@ -144,12 +129,6 @@ def get_all_stub_files(
             if search_context.version < version.min:
                 continue
             if version.max is not None and search_context.version > version.max:
-                continue
-            if (
-                search_context.is_python2()
-                and typeshed_dir.name != "@python2"
-                and version.in_python2
-            ):
                 continue
             if entry.is_dir():
                 seen = yield from _get_all_stub_files_from_directory(
@@ -243,12 +222,6 @@ def get_stub_file_name(
     if version.max is not None and search_context.version > version.max:
         return None
 
-    if search_context.version[0] == 2:
-        python2_dir = search_context.typeshed / "@python2"
-        stub = _find_stub_in_dir(python2_dir, module_name)
-        if stub is not None or version.in_python2:
-            return stub
-
     return _find_stub_in_dir(search_context.typeshed, module_name)
 
 
@@ -311,11 +284,6 @@ def _find_stub_in_dir(stubdir: Path, module: ModulePath) -> Optional[Path]:
 
 def find_typeshed() -> Path:
     return importlib_resources.files("typeshed_client") / "typeshed"
-
-
-def parse_stub_file(path: Path) -> ast.AST:
-    text = path.read_text()
-    return ast.parse(text, filename=str(path))
 
 
 def _path_to_module(path: Path) -> str:

@@ -1,21 +1,18 @@
 """This module is responsible for parsing a stub AST into a dictionary of names."""
-
+from __future__ import annotations
 import ast
 import logging
 from typing import (
     Any,
     Dict,
-    Iterable,
     List,
-    NamedTuple,
-    NoReturn,
     Optional,
     Tuple,
     Union,
 )
 
 from . import finder
-from .finder import get_search_context, SearchContext, ModulePath, parse_stub_file
+from .finder import get_search_context, SearchContext, ModulePath
 
 log = logging.getLogger(__name__)
 
@@ -24,115 +21,275 @@ class InvalidStub(Exception):
     pass
 
 
-class ImportedName(NamedTuple):
-    module_name: ModulePath
-    name: Optional[str] = None
+class BasicNameInfo:
+    def __init__(self, name: str, is_exported: bool):
+        self.name: str = name
+        self.is_exported: bool = is_exported
 
 
-class OverloadedName(NamedTuple):
-    definitions: List[ast.AST]
+class ModuleNameInfo(BasicNameInfo):
+    def __init__(self, name: str, is_exported: bool, module_dict=None):
+        super().__init__(name, is_exported)
+        if module_dict is None:
+            self.module_dict = {}
+        else:
+            self.module_dict = module_dict
+
+    def get_name(self, attr_name: str):
+        if attr_name not in self.module_dict:
+            raise AttributeError(attr_name)
+        name_info = self.module_dict[attr_name]
+        return name_info
 
 
-class NameInfo(NamedTuple):
-    name: str
-    module_str: str
-    is_exported: bool
-    ast: Union[ast.AST, ImportedName, OverloadedName]
-    # should be Optional[NameDict] but that needs a recursive type
-    child_nodes: Optional[Dict[str, Any]] = None
+class AssignNameInfo(BasicNameInfo):
+    def __init__(self, name, is_exported, node):
+        super().__init__(name, is_exported)
+        self.node = node
 
 
-NameDict = Dict[str, Union[NameInfo, Dict]]
+class AnnAssignNameInfo(BasicNameInfo):
+    def __init__(self, name, is_exported, node):
+        super().__init__(name, is_exported)
+        self.node = node
 
 
-_module_cache: Dict[str, NameDict] = {}
+class ClassNameInfo(BasicNameInfo):
+    def __init__(self, name: str, is_exported: bool, node, child_nodes):
+        super().__init__(name, is_exported)
+        self.node: ast.ClassDef = node
+        self.child_nodes: Dict[str, ...] = child_nodes
 
 
-def get_stub_names(
-    module_name: str, *, search_context: Optional[SearchContext] = None
-) -> Optional[NameDict]:
-    if module_name in _module_cache:
-        return _module_cache[module_name]
+class PossibleImportedNameInfo(BasicNameInfo):
+    def __init__(
+        self, name: str, is_exported: bool, imported_module: str, imported_name
+    ):
+        super().__init__(name, is_exported)
+        self.imported_module: str = imported_module
+        self.imported_name: Optional[str] = imported_name
 
-    module_path = tuple(module_name.split("."))
-    """Given a module name, return a dictionary of names defined in that module."""
+
+class ImportedModuleInfo(BasicNameInfo):
+    def __init__(self, name: str, is_exported: bool, imported_module: str):
+        super().__init__(name, is_exported)
+        self.imported_module: str = imported_module
+
+
+class ImportedNameInfo(BasicNameInfo):
+    def __init__(
+        self, name: str, is_exported: bool, imported_module: str, imported_name
+    ):
+        super().__init__(name, is_exported)
+        self.imported_module: str = imported_module
+        self.imported_name: Optional[str] = imported_name
+
+
+class FunctionNameInfo(BasicNameInfo):
+    def __init__(self, name: str, is_exported: bool):
+        super().__init__(name, is_exported)
+        self.ordinaries: List[ast.FunctionDef] = []
+        self.getters: List[ast.FunctionDef] = []
+        self.setters: List[ast.FunctionDef] = []
+        self.deleters: List[ast.FunctionDef] = []
+
+    def append_ordinary(self, node: ast.FunctionDef):
+        self.ordinaries.append(node)
+
+    def append_getter(self, node: ast.FunctionDef):
+        self.getters.append(node)
+
+    def append_setter(self, node: ast.FunctionDef):
+        self.setters.append(node)
+
+    def append_deleter(self, node: ast.FunctionDef):
+        self.deleters.append(node)
+
+
+module_cache: Dict[str, ModuleNameInfo] = {}
+
+
+def parse_module(
+    module_name: str, search_context: SearchContext = None
+) -> ModuleNameInfo:
+    if module_name in module_cache:
+        return module_cache[module_name]
+    log.critical(f"Parsing {module_name}")
     if search_context is None:
         search_context = get_search_context()
-    path = finder.get_stub_file(module_name, search_context=search_context)
+
+    path = finder.get_stub_file(module_name)
     if path is None:
-        return None
+        raise FileNotFoundError(module_name)
+
     is_init = path.name == "__init__.pyi"
-    ast = parse_stub_file(path)
-    name_dict = parse_ast(ast, search_context, ModulePath(module_path), is_init=is_init)
-    _module_cache[module_name] = name_dict
+    module_content = path.read_text()
+    module_ast = ast.parse(module_content)
 
-    module_path_length = len(module_path)
-    if module_path_length > 1:
-        first, second = 1, 2
-        while second <= module_path_length:
-            first_module_name = ".".join(module_path[0:first])
-            first_module_name_dict = get_stub_names(first_module_name)
-            second_module_name = ".".join(module_path[0:second])
-            second_module_name_dict = get_stub_names(second_module_name)
-            second_module_package_name = module_path[second - 1]
-            first_module_name_dict[second_module_package_name] = second_module_name_dict
-            first += 1
-            second += 1
+    visitor = TypeshedVisitor(search_context, module_name, is_init=is_init)
+    visitor.visit(module_ast)
+    module = ModuleNameInfo(module_name, True, visitor.module_dict)
+    module_cache[module_name] = module
 
-    return _module_cache[module_name]
+    return module
 
 
-def parse_ast(
-    ast: ast.AST,
-    search_context: SearchContext,
-    module_name: ModulePath,
-    *,
-    is_init: bool = False,
-) -> NameDict:
-    visitor = _NameExtractor(search_context, module_name, is_init=is_init)
-    name_dict: NameDict = {}
-    try:
-        names = visitor.visit(ast)
-    except _AssertFailed:
-        return name_dict
-    for info in names:
-        if info.name in name_dict:
-            if info.child_nodes:
-                log.warning(
-                    "Name is already present in %s: %s", ".".join(module_name), info
-                )
-                continue
-            existing = name_dict[info.name]
+def is_exported_attr(name: str) -> bool:
+    return not name.startswith("_")
 
-            # This is common and harmless, likely from an "import *"
-            if isinstance(existing.ast, ImportedName) and isinstance(
-                info.ast, ImportedName
-            ):
-                continue
 
-            if isinstance(existing.ast, ImportedName):
-                log.warning(
-                    "Name is already imported in %s: %s",
-                    ".".join(module_name),
-                    existing,
-                )
-            elif existing.child_nodes:
-                log.warning(
-                    "Name is already present in %s: %s", ".".join(module_name), existing
-                )
-            elif isinstance(existing.ast, OverloadedName):
-                existing.ast.definitions.append(info.ast)
-            else:
-                new_info = NameInfo(
-                    existing.name,
-                    existing.module_str,
-                    existing.is_exported,
-                    OverloadedName([existing.ast, info.ast]),
-                )
-                name_dict[info.name] = new_info
+class TypeshedVisitor(ast.NodeVisitor):
+    """Extract names from a stub module."""
+
+    def __init__(
+        self,
+        ctx: SearchContext,
+        module_name: str,
+        module_dict: Dict = None,
+        is_init: bool = False,
+    ) -> None:
+        self.ctx = ctx
+        self.module_name = module_name
+        self.module_path = ModulePath(tuple(module_name.split(".")))
+        self.is_init = is_init
+        if module_dict is None:
+            self.module_dict = {}
         else:
-            name_dict[info.name] = info
-    return name_dict
+            self.module_dict = module_dict
+
+    def visit_FunctionDef(self, node: ast.FunctionDef):
+        function_name = node.name
+        is_exported = is_exported_attr(function_name)
+        if function_name not in self.module_dict:
+            self.module_dict[function_name] = FunctionNameInfo(
+                function_name, is_exported
+            )
+        function_name_info: FunctionNameInfo = self.module_dict[function_name]
+
+        if not node.decorator_list:
+            function_name_info.append_ordinary(node)
+        else:
+            # as far as I know, the decorators of ast.FunctionDef in typeshed could be classified as three categories:
+            # 1. Normal functions(without decorators)
+            # 2. Descriptor functions(@property, @xxx.setter and @xxx.deleter)
+            # 3. other functions( such as @abstractmethod, @classmethod)
+            assert len(node.decorator_list) <= 2, node.decorator_list
+            for decorator in node.decorator_list:
+                if isinstance(decorator, ast.Name) and decorator.id == "property":
+                    function_name_info.append_getter(node)
+                    break
+                elif (
+                    isinstance(decorator, ast.Attribute) and decorator.attr == "setter"
+                ):
+                    function_name_info.append_setter(node)
+                    break
+                elif (
+                    isinstance(decorator, ast.Attribute) and decorator.attr == "deleter"
+                ):
+                    function_name_info.append_deleter(node)
+                    break
+                else:
+                    function_name_info.append_ordinary(node)
+                    break
+
+    def visit_ClassDef(self, node: ast.ClassDef):
+        class_name = node.name
+        is_exported = is_exported_attr(class_name)
+        module_dict = {}
+        children_name_extractor = TypeshedVisitor(
+            self.ctx, self.module_name, module_dict, is_init=self.is_init
+        )
+        children_name_extractor.visit(ast.Module(body=node.body))
+        children_name_dict = children_name_extractor.module_dict
+        self.module_dict[class_name] = ClassNameInfo(
+            class_name, is_exported, node, children_name_dict
+        )
+
+    def visit_Assign(self, node: ast.Assign):
+        assert len(node.targets) == 1
+        for target in node.targets:
+            if not isinstance(target, ast.Name):
+                raise InvalidStub(
+                    f"Assignment should only be to a simple name: {ast.dump(node)}"
+                )
+            self.module_dict[target.id] = AssignNameInfo(
+                target.id, not target.id.startswith("_"), node
+            )
+
+    def visit_AnnAssign(self, node: ast.AnnAssign):
+        target = node.target
+        if not isinstance(target, ast.Name):
+            raise InvalidStub(
+                f"Assignment should only be to a simple name: {ast.dump(node)}"
+            )
+        self.module_dict[target.id] = AnnAssignNameInfo(
+            target.id, not target.id.startswith("_"), node
+        )
+
+    def visit_If(self, node: ast.If):
+        visitor = _LiteralEvalVisitor(self.ctx)
+        value = visitor.visit(node.test)
+        if value:
+            self.visit(ast.Module(body=node.body))
+        else:
+            self.visit(ast.Module(body=node.orelse))
+
+    def visit_Import(self, node: ast.Import):
+        for alias in node.names:
+            if alias.asname is not None:
+                self.module_dict[alias.asname] = ImportedModuleInfo(
+                    alias.asname, True, alias.name
+                )
+            else:
+                # "import a.b" just binds the name "a"
+                name = alias.name.partition(".")[0]
+                self.module_dict[name] = ImportedModuleInfo(name, False, name)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom):
+        if node.module is None:
+            module = ()
+        else:
+            module = tuple(node.module.split("."))
+        if node.level == 0:
+            source_module = ModulePath(module)
+        elif node.level == 1:
+            if self.is_init:
+                source_module = ModulePath(self.module_path + module)
+            else:
+                source_module = ModulePath(self.module_path[:-1] + module)
+        else:
+            if self.is_init:
+                source_module = ModulePath(self.module_path[: 1 - node.level] + module)
+            else:
+                source_module = ModulePath(self.module_path[: -node.level] + module)
+        for alias in node.names:
+            if alias.asname is not None:
+                is_exported = not alias.asname.startswith("_")
+                self.module_dict[alias.asname] = PossibleImportedNameInfo(
+                    alias.asname, is_exported, ".".join(source_module), alias.name
+                )
+            elif alias.name == "*":
+                module = parse_module(".".join(source_module))
+                name_dict = module.module_dict
+                if name_dict is None:
+                    log.critical(
+                        f"could not import {source_module} in {self.module_path} with "
+                        f"{self.ctx}"
+                    )
+                    raise ModuleNotFoundError
+                for name, info in name_dict.items():
+                    if info.is_exported:
+                        self.module_dict[name] = ImportedNameInfo(
+                            name, True, ".".join(source_module), name
+                        )
+            else:
+                self.module_dict[alias.name] = PossibleImportedNameInfo(
+                    alias.name, False, ".".join(source_module), alias.name
+                )
+
+    def visit_Expr(self, node: ast.Expr):
+        if not isinstance(node.value, (ast.Ellipsis, ast.Str)):
+            raise InvalidStub(f"Cannot handle node {ast.dump(node)}")
 
 
 _CMP_OP_TO_FUNCTION = {
@@ -147,165 +304,6 @@ _CMP_OP_TO_FUNCTION = {
     ast.In: lambda x, y: x in y,
     ast.NotIn: lambda x, y: x not in y,
 }
-
-
-class _NameExtractor(ast.NodeVisitor):
-    """Extract names from a stub module."""
-
-    def __init__(
-        self, ctx: SearchContext, module_name: ModulePath, *, is_init: bool = False
-    ) -> None:
-        self.ctx = ctx
-        self.module_name = module_name
-        self.module_str = ".".join(module_name)
-        self.is_init = is_init
-
-    def visit_Module(self, node: ast.Module) -> List[NameInfo]:
-        return [info for child in node.body for info in self.visit(child)]
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> Iterable[NameInfo]:
-        yield NameInfo(node.name, self.module_str, not node.name.startswith("_"), node)
-
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Iterable[NameInfo]:
-        yield NameInfo(node.name, self.module_str, not node.name.startswith("_"), node)
-
-    def visit_ClassDef(self, node: ast.ClassDef) -> Iterable[NameInfo]:
-        children = [info for child in node.body for info in self.visit(child)]
-        child_dict: NameDict = {}
-        for info in children:
-            if info.name in child_dict:
-                existing = child_dict[info.name]
-                if isinstance(existing.ast, OverloadedName):
-                    existing.ast.definitions.append(info.ast)
-                else:
-                    new_info = NameInfo(
-                        existing.name,
-                        existing.module_str,
-                        existing.is_exported,
-                        OverloadedName([existing.ast, info.ast]),
-                    )
-                    child_dict[info.name] = new_info
-            else:
-                child_dict[info.name] = info
-        yield NameInfo(
-            node.name, self.module_str, not node.name.startswith("_"), node, child_dict
-        )
-
-    def visit_Assign(self, node: ast.Assign) -> Iterable[NameInfo]:
-        for target in node.targets:
-            if not isinstance(target, ast.Name):
-                raise InvalidStub(
-                    f"Assignment should only be to a simple name: {ast.dump(node)}"
-                )
-            yield NameInfo(
-                target.id, self.module_str, not target.id.startswith("_"), node
-            )
-
-    def visit_AnnAssign(self, node: ast.AnnAssign) -> Iterable[NameInfo]:
-        target = node.target
-        if not isinstance(target, ast.Name):
-            raise InvalidStub(
-                f"Assignment should only be to a simple name: {ast.dump(node)}"
-            )
-        yield NameInfo(target.id, self.module_str, not target.id.startswith("_"), node)
-
-    def visit_If(self, node: ast.If) -> Iterable[NameInfo]:
-        visitor = _LiteralEvalVisitor(self.ctx)
-        value = visitor.visit(node.test)
-        if value:
-            for stmt in node.body:
-                yield from self.visit(stmt)
-        else:
-            for stmt in node.orelse:
-                yield from self.visit(stmt)
-
-    def visit_Assert(self, node: ast.Assert) -> Iterable[NameInfo]:
-        visitor = _LiteralEvalVisitor(self.ctx)
-        value = visitor.visit(node.test)
-        if value:
-            return []
-        else:
-            raise _AssertFailed
-
-    def visit_Import(self, node: ast.Import) -> Iterable[NameInfo]:
-        for alias in node.names:
-            if alias.asname is not None:
-                yield NameInfo(
-                    alias.asname,
-                    self.module_str,
-                    True,
-                    ImportedName(ModulePath(tuple(alias.name.split(".")))),
-                )
-            else:
-                # "import a.b" just binds the name "a"
-                name = alias.name.split(".", 1)[0]
-                yield NameInfo(
-                    name, self.module_str, False, ImportedName(ModulePath((name,)))
-                )
-
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> Iterable[NameInfo]:
-        module: Tuple[str, ...]
-        if node.module is None:
-            module = ()
-        else:
-            module = tuple(node.module.split("."))
-        if node.level == 0:
-            source_module = ModulePath(module)
-        elif node.level == 1:
-            if self.is_init:
-                source_module = ModulePath(self.module_name + module)
-            else:
-                source_module = ModulePath(self.module_name[:-1] + module)
-        else:
-            if self.is_init:
-                source_module = ModulePath(self.module_name[: 1 - node.level] + module)
-            else:
-                source_module = ModulePath(self.module_name[: -node.level] + module)
-        for alias in node.names:
-            if alias.asname is not None:
-                is_exported = not alias.asname.startswith("_")
-                yield NameInfo(
-                    alias.asname,
-                    self.module_str,
-                    is_exported,
-                    ImportedName(source_module, alias.name),
-                )
-            elif alias.name == "*":
-                name_dict = get_stub_names(
-                    ".".join(source_module), search_context=self.ctx
-                )
-                if name_dict is None:
-                    log.warning(
-                        f"could not import {source_module} in {self.module_name} with "
-                        f"{self.ctx}"
-                    )
-                    continue
-                for name, info in name_dict.items():
-                    if info.is_exported:
-                        yield NameInfo(
-                            name,
-                            self.module_str,
-                            True,
-                            ImportedName(source_module, name),
-                        )
-            else:
-                yield NameInfo(
-                    alias.name,
-                    self.module_str,
-                    False,
-                    ImportedName(source_module, alias.name),
-                )
-
-    def visit_Expr(self, node: ast.Expr) -> Iterable[NameInfo]:
-        if not isinstance(node.value, (ast.Ellipsis, ast.Str)):
-            raise InvalidStub(f"Cannot handle node {ast.dump(node)}")
-        return []
-
-    def visit_Pass(self, node: ast.Pass) -> Iterable[NameInfo]:
-        return []
-
-    def generic_visit(self, node: ast.AST) -> NoReturn:
-        raise InvalidStub(f"Cannot handle node {ast.dump(node)}")
 
 
 class _LiteralEvalVisitor(ast.NodeVisitor):
@@ -365,9 +363,38 @@ class _LiteralEvalVisitor(ast.NodeVisitor):
         else:
             raise InvalidStub(f"Invalid attribute on {ast.dump(node)}")
 
-    def generic_visit(self, node: ast.AST) -> NoReturn:
-        raise InvalidStub(f"Cannot evaluate node {ast.dump(node)}")
 
+class Resolver:
+    def __init__(self, search_context: Optional[SearchContext] = None) -> None:
+        if search_context is None:
+            search_context = get_search_context()
+        self.search_context = search_context
 
-class _AssertFailed(Exception):
-    """Raised when a top-level assert in a stub fails."""
+    def resolve_module(self, module_name: str) -> ModuleNameInfo:
+        return parse_module(module_name)
+
+    def resolve_attribute(self, module_name: str, attr_name: str):
+        module = self.resolve_module(module_name)
+        attr = module.get_name(attr_name)
+        if isinstance(attr, PossibleImportedNameInfo):
+            res = self.resolve_module(attr.imported_module)
+            if attr_name in res.module_dict:
+                return self.resolve_attribute(attr.imported_module, attr.imported_name)
+            else:
+                return self.resolve_module(
+                    f"{attr.imported_module}.{attr.imported_name}"
+                )
+        elif isinstance(attr, ImportedModuleInfo):
+            return self.resolve_module(attr.imported_module)
+        elif isinstance(attr, ImportedNameInfo):
+            return self.resolve_attribute(attr.imported_module, attr.imported_name)
+        elif isinstance(attr, ClassNameInfo):
+            return attr
+        elif isinstance(attr, FunctionNameInfo):
+            return attr
+        elif isinstance(attr, AssignNameInfo):
+            return attr
+        elif isinstance(attr, AnnAssignNameInfo):
+            return attr
+        else:
+            raise NotImplementedError(attr)
