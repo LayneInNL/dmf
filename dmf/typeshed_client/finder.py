@@ -290,10 +290,10 @@ def _find_stub_in_dir(stubdir: Path, module: ModulePath) -> Optional[Path]:
 
 
 def find_typeshed() -> Path:
-    from dmf import typeshed_client
+    from dmf import resources
 
-    path = os.path.join(typeshed_client.__path__[0], "typeshed")
-    return Path(path)
+    stdlib_path = os.path.join(resources.__path__[0], "typeshed/stdlib")
+    return Path(stdlib_path)
 
 
 def _path_to_module(path: Path) -> str:
