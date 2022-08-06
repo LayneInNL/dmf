@@ -11,7 +11,4 @@ from dmf.typeshed_client.parser import Resolver
 #     ModulePath,
 # )
 
-resolver = Resolver()
-res = resolver.resolve_attribute("builtins", "FileIO")
-
 __version__ = "2.0.5"

@@ -18,8 +18,6 @@ from typing import (
     Tuple,
 )
 
-import importlib_resources
-
 PythonVersion = Tuple[int, int]
 ModulePath = NewType("ModulePath", Tuple[str, ...])
 
@@ -29,6 +27,9 @@ class SearchContext(NamedTuple):
     search_path: Sequence[Path]
     version: PythonVersion
     platform: str
+
+
+default_search_context: Optional[SearchContext] = None
 
 
 def get_search_context(
@@ -54,6 +55,11 @@ def get_search_context(
       process's value.
 
     """
+    global default_search_context
+
+    if default_search_context is not None:
+        return default_search_context
+
     if version is None:
         version = sys.version_info[:2]
     if search_path is None:
@@ -68,9 +74,10 @@ def get_search_context(
             raise ValueError("python_executable is ignored if search_path is given")
     if typeshed is None:
         typeshed = find_typeshed()
-    return SearchContext(
+    default_search_context = SearchContext(
         typeshed=typeshed, search_path=search_path, version=version, platform=platform
     )
+    return default_search_context
 
 
 def get_stub_file(
@@ -262,7 +269,7 @@ def get_typeshed_versions(typeshed: Path) -> Dict[str, _VersionData]:
 
 def _parse_version(version: str) -> PythonVersion:
     major, minor = version.split(".")
-    return (int(major), int(minor))
+    return int(major), int(minor)
 
 
 def _find_stub_in_dir(stubdir: Path, module: ModulePath) -> Optional[Path]:
@@ -283,7 +290,10 @@ def _find_stub_in_dir(stubdir: Path, module: ModulePath) -> Optional[Path]:
 
 
 def find_typeshed() -> Path:
-    return importlib_resources.files("typeshed_client") / "typeshed"
+    from dmf import typeshed_client
+
+    path = os.path.join(typeshed_client.__path__[0], "typeshed")
+    return Path(path)
 
 
 def _path_to_module(path: Path) -> str:
