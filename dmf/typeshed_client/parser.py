@@ -49,13 +49,19 @@ class AssignNameInfo(BasicNameInfo):
 
 
 class AnnAssignNameInfo(BasicNameInfo):
-    def __init__(self, name, is_exported, node):
+    def __init__(self, name: str, is_exported: bool, node: ast.AnnAssign):
         super().__init__(name, is_exported)
-        self.node = node
+        self.node: ast.AnnAssign = node
 
 
 class ClassNameInfo(BasicNameInfo):
-    def __init__(self, name: str, is_exported: bool, node, child_nodes):
+    def __init__(
+        self,
+        name: str,
+        is_exported: bool,
+        node: ast.ClassDef,
+        child_nodes: Dict[str, ...],
+    ):
         super().__init__(name, is_exported)
         self.node: ast.ClassDef = node
         self.child_nodes: Dict[str, ...] = child_nodes
@@ -63,7 +69,11 @@ class ClassNameInfo(BasicNameInfo):
 
 class PossibleImportedNameInfo(BasicNameInfo):
     def __init__(
-        self, name: str, is_exported: bool, imported_module: str, imported_name
+        self,
+        name: str,
+        is_exported: bool,
+        imported_module: str,
+        imported_name: Optional[str],
     ):
         super().__init__(name, is_exported)
         self.imported_module: str = imported_module
@@ -78,11 +88,11 @@ class ImportedModuleInfo(BasicNameInfo):
 
 class ImportedNameInfo(BasicNameInfo):
     def __init__(
-        self, name: str, is_exported: bool, imported_module: str, imported_name
+        self, name: str, is_exported: bool, imported_module: str, imported_name: str
     ):
         super().__init__(name, is_exported)
         self.imported_module: str = imported_module
-        self.imported_name: Optional[str] = imported_name
+        self.imported_name: str = imported_name
 
 
 class FunctionNameInfo(BasicNameInfo):
@@ -127,8 +137,8 @@ def parse_module(
     module_ast = ast.parse(module_content)
 
     visitor = TypeshedVisitor(search_context, module_name, is_init=is_init)
-    visitor.visit(module_ast)
-    module = ModuleNameInfo(module_name, True, visitor.module_dict)
+    module_dict = visitor.build(module_ast)
+    module = ModuleNameInfo(module_name, True, module_dict)
     module_cache[module_name] = module
 
     return module
@@ -145,17 +155,17 @@ class TypeshedVisitor(ast.NodeVisitor):
         self,
         ctx: SearchContext,
         module_name: str,
-        module_dict: Dict = None,
         is_init: bool = False,
     ) -> None:
         self.ctx = ctx
         self.module_name = module_name
         self.module_path = ModulePath(tuple(module_name.split(".")))
         self.is_init = is_init
-        if module_dict is None:
-            self.module_dict = {}
-        else:
-            self.module_dict = module_dict
+        self.module_dict = {}
+
+    def build(self, module_ast: ast.AST):
+        self.visit(module_ast)
+        return self.module_dict
 
     def visit_FunctionDef(self, node: ast.FunctionDef):
         function_name = node.name
@@ -173,36 +183,36 @@ class TypeshedVisitor(ast.NodeVisitor):
             # 1. Normal functions(without decorators)
             # 2. Descriptor functions(@property, @xxx.setter and @xxx.deleter)
             # 3. other functions( such as @abstractmethod, @classmethod)
-            assert len(node.decorator_list) <= 2, node.decorator_list
+            getter, setter, deleter = False, False, False
             for decorator in node.decorator_list:
                 if isinstance(decorator, ast.Name) and decorator.id == "property":
                     function_name_info.append_getter(node)
-                    break
+                    getter = True
                 elif (
                     isinstance(decorator, ast.Attribute) and decorator.attr == "setter"
                 ):
                     function_name_info.append_setter(node)
-                    break
+                    setter = True
                 elif (
                     isinstance(decorator, ast.Attribute) and decorator.attr == "deleter"
                 ):
                     function_name_info.append_deleter(node)
-                    break
-                else:
-                    function_name_info.append_ordinary(node)
-                    break
+                    deleter = True
+            if any([getter, setter, deleter]):
+                if getter + setter + deleter > 1:
+                    raise NotImplementedError
+            else:
+                function_name_info.append_ordinary(node)
 
     def visit_ClassDef(self, node: ast.ClassDef):
         class_name = node.name
         is_exported = is_exported_attr(class_name)
-        module_dict = {}
         children_name_extractor = TypeshedVisitor(
-            self.ctx, self.module_name, module_dict, is_init=self.is_init
+            self.ctx, self.module_name, is_init=self.is_init
         )
-        children_name_extractor.visit(ast.Module(body=node.body))
-        children_name_dict = children_name_extractor.module_dict
+        module_dict = children_name_extractor.build(ast.Module(body=node.body))
         self.module_dict[class_name] = ClassNameInfo(
-            class_name, is_exported, node, children_name_dict
+            class_name, is_exported, node, module_dict
         )
 
     def visit_Assign(self, node: ast.Assign):
@@ -243,7 +253,7 @@ class TypeshedVisitor(ast.NodeVisitor):
             else:
                 # "import a.b" just binds the name "a"
                 name = alias.name.partition(".")[0]
-                self.module_dict[name] = ImportedModuleInfo(name, False, name)
+                self.module_dict[name] = ImportedModuleInfo(name, True, name)
 
     def visit_ImportFrom(self, node: ast.ImportFrom):
         if node.module is None:
@@ -283,8 +293,9 @@ class TypeshedVisitor(ast.NodeVisitor):
                             name, True, ".".join(source_module), name
                         )
             else:
+                is_exported: bool = not alias.name.startswith("_")
                 self.module_dict[alias.name] = PossibleImportedNameInfo(
-                    alias.name, False, ".".join(source_module), alias.name
+                    alias.name, is_exported, ".".join(source_module), alias.name
                 )
 
     def visit_Expr(self, node: ast.Expr):
