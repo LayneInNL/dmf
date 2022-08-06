@@ -22,18 +22,24 @@ class InvalidStub(Exception):
 
 
 class BasicNameInfo:
-    def __init__(self, name: str, is_exported: bool):
+    def __init__(self, name: str, is_exported: bool, module: str, full_name: str):
         self.name: str = name
         self.is_exported: bool = is_exported
+        self.module: str = module
+        self.full_name: str = full_name
 
 
 class ModuleNameInfo(BasicNameInfo):
-    def __init__(self, name: str, is_exported: bool, module_dict=None):
-        super().__init__(name, is_exported)
-        if module_dict is None:
-            self.module_dict = {}
-        else:
-            self.module_dict = module_dict
+    def __init__(
+        self,
+        name: str,
+        is_exported: bool,
+        module: str,
+        full_name: str,
+        module_dict: Dict,
+    ):
+        super().__init__(name, is_exported, module, full_name)
+        self.module_dict: Dict = module_dict
 
     def get_name(self, attr_name: str):
         if attr_name not in self.module_dict:
@@ -43,14 +49,28 @@ class ModuleNameInfo(BasicNameInfo):
 
 
 class AssignNameInfo(BasicNameInfo):
-    def __init__(self, name, is_exported, node):
-        super().__init__(name, is_exported)
-        self.node = node
+    def __init__(
+        self,
+        name: str,
+        is_exported: bool,
+        module: str,
+        full_name: str,
+        node: ast.Assign,
+    ):
+        super().__init__(name, is_exported, module, full_name)
+        self.node: ast.Assign = node
 
 
 class AnnAssignNameInfo(BasicNameInfo):
-    def __init__(self, name: str, is_exported: bool, node: ast.AnnAssign):
-        super().__init__(name, is_exported)
+    def __init__(
+        self,
+        name: str,
+        is_exported: bool,
+        module: str,
+        full_name: str,
+        node: ast.AnnAssign,
+    ):
+        super().__init__(name, is_exported, module, full_name)
         self.node: ast.AnnAssign = node
 
 
@@ -59,10 +79,12 @@ class ClassNameInfo(BasicNameInfo):
         self,
         name: str,
         is_exported: bool,
+        module: str,
+        full_name: str,
         node: ast.ClassDef,
         child_nodes: Dict[str, ...],
     ):
-        super().__init__(name, is_exported)
+        super().__init__(name, is_exported, module, full_name)
         self.node: ast.ClassDef = node
         self.child_nodes: Dict[str, ...] = child_nodes
 
@@ -72,32 +94,47 @@ class PossibleImportedNameInfo(BasicNameInfo):
         self,
         name: str,
         is_exported: bool,
+        module: str,
+        full_name: str,
         imported_module: str,
         imported_name: Optional[str],
     ):
-        super().__init__(name, is_exported)
+        super().__init__(name, is_exported, module, full_name)
         self.imported_module: str = imported_module
         self.imported_name: Optional[str] = imported_name
 
 
 class ImportedModuleInfo(BasicNameInfo):
-    def __init__(self, name: str, is_exported: bool, imported_module: str):
-        super().__init__(name, is_exported)
+    def __init__(
+        self,
+        name: str,
+        is_exported: bool,
+        module: str,
+        full_name: str,
+        imported_module: str,
+    ):
+        super().__init__(name, is_exported, module, full_name)
         self.imported_module: str = imported_module
 
 
 class ImportedNameInfo(BasicNameInfo):
     def __init__(
-        self, name: str, is_exported: bool, imported_module: str, imported_name: str
+        self,
+        name: str,
+        is_exported: bool,
+        module: str,
+        full_name: str,
+        imported_module: str,
+        imported_name: str,
     ):
-        super().__init__(name, is_exported)
+        super().__init__(name, is_exported, module, full_name)
         self.imported_module: str = imported_module
         self.imported_name: str = imported_name
 
 
 class FunctionNameInfo(BasicNameInfo):
-    def __init__(self, name: str, is_exported: bool):
-        super().__init__(name, is_exported)
+    def __init__(self, name: str, is_exported: bool, module: str, full_name: str):
+        super().__init__(name, is_exported, module, full_name)
         self.ordinaries: List[ast.FunctionDef] = []
         self.getters: List[ast.FunctionDef] = []
         self.setters: List[ast.FunctionDef] = []
@@ -136,9 +173,9 @@ def parse_module(
     module_content = path.read_text()
     module_ast = ast.parse(module_content)
 
-    visitor = TypeshedVisitor(search_context, module_name, is_init=is_init)
+    visitor = TypeshedVisitor(search_context, module_name, module_name, is_init=is_init)
     module_dict = visitor.build(module_ast)
-    module = ModuleNameInfo(module_name, True, module_dict)
+    module = ModuleNameInfo(module_name, True, module_name, module_name, module_dict)
     module_cache[module_name] = module
 
     return module
@@ -148,19 +185,25 @@ def is_exported_attr(name: str) -> bool:
     return not name.startswith("_")
 
 
+def concatenate(prefix: str, curr: str):
+    return f"{prefix}.{curr}"
+
+
 class TypeshedVisitor(ast.NodeVisitor):
     """Extract names from a stub module."""
 
     def __init__(
         self,
-        ctx: SearchContext,
+        search_context: SearchContext,
         module_name: str,
+        full_name: str,
         is_init: bool = False,
     ) -> None:
-        self.ctx = ctx
-        self.module_name = module_name
+        self.search_context = search_context
+        self.module_name: str = module_name
         self.module_path = ModulePath(tuple(module_name.split(".")))
-        self.is_init = is_init
+        self.full_name: str = full_name
+        self.is_init: bool = is_init
         self.module_dict = {}
 
     def build(self, module_ast: ast.AST):
@@ -172,7 +215,10 @@ class TypeshedVisitor(ast.NodeVisitor):
         is_exported = is_exported_attr(function_name)
         if function_name not in self.module_dict:
             self.module_dict[function_name] = FunctionNameInfo(
-                function_name, is_exported
+                function_name,
+                is_exported,
+                self.module_name,
+                f"{self.full_name}.{function_name}",
             )
         function_name_info: FunctionNameInfo = self.module_dict[function_name]
 
@@ -208,11 +254,19 @@ class TypeshedVisitor(ast.NodeVisitor):
         class_name = node.name
         is_exported = is_exported_attr(class_name)
         children_name_extractor = TypeshedVisitor(
-            self.ctx, self.module_name, is_init=self.is_init
+            self.search_context,
+            self.module_name,
+            f"{self.full_name}.{class_name}",
+            is_init=self.is_init,
         )
         module_dict = children_name_extractor.build(ast.Module(body=node.body))
         self.module_dict[class_name] = ClassNameInfo(
-            class_name, is_exported, node, module_dict
+            class_name,
+            is_exported,
+            module=self.module_name,
+            full_name=f"{self.full_name}.{class_name}",
+            node=node,
+            child_nodes=module_dict,
         )
 
     def visit_Assign(self, node: ast.Assign):
@@ -223,7 +277,11 @@ class TypeshedVisitor(ast.NodeVisitor):
                     f"Assignment should only be to a simple name: {ast.dump(node)}"
                 )
             self.module_dict[target.id] = AssignNameInfo(
-                target.id, not target.id.startswith("_"), node
+                target.id,
+                not target.id.startswith("_"),
+                module=self.module_name,
+                full_name=f"{self.full_name}.{target.id}",
+                node=node,
             )
 
     def visit_AnnAssign(self, node: ast.AnnAssign):
@@ -233,11 +291,15 @@ class TypeshedVisitor(ast.NodeVisitor):
                 f"Assignment should only be to a simple name: {ast.dump(node)}"
             )
         self.module_dict[target.id] = AnnAssignNameInfo(
-            target.id, not target.id.startswith("_"), node
+            target.id,
+            not target.id.startswith("_"),
+            module=self.module_name,
+            full_name=f"{self.full_name}.{target.id}",
+            node=node,
         )
 
     def visit_If(self, node: ast.If):
-        visitor = _LiteralEvalVisitor(self.ctx)
+        visitor = _LiteralEvalVisitor(self.search_context)
         value = visitor.visit(node.test)
         if value:
             self.visit(ast.Module(body=node.body))
@@ -248,12 +310,22 @@ class TypeshedVisitor(ast.NodeVisitor):
         for alias in node.names:
             if alias.asname is not None:
                 self.module_dict[alias.asname] = ImportedModuleInfo(
-                    alias.asname, True, alias.name
+                    alias.asname,
+                    True,
+                    module=self.module_name,
+                    full_name=concatenate(self.full_name, alias.asname),
+                    imported_module=alias.name,
                 )
             else:
                 # "import a.b" just binds the name "a"
                 name = alias.name.partition(".")[0]
-                self.module_dict[name] = ImportedModuleInfo(name, True, name)
+                self.module_dict[name] = ImportedModuleInfo(
+                    name,
+                    True,
+                    module=self.module_name,
+                    full_name=concatenate(self.full_name, name),
+                    imported_module=name,
+                )
 
     def visit_ImportFrom(self, node: ast.ImportFrom):
         if node.module is None:
@@ -276,7 +348,12 @@ class TypeshedVisitor(ast.NodeVisitor):
             if alias.asname is not None:
                 is_exported = not alias.asname.startswith("_")
                 self.module_dict[alias.asname] = PossibleImportedNameInfo(
-                    alias.asname, is_exported, ".".join(source_module), alias.name
+                    alias.asname,
+                    is_exported,
+                    module=self.module_name,
+                    full_name=concatenate(self.full_name, alias.asname),
+                    imported_module=".".join(source_module),
+                    imported_name=alias.name,
                 )
             elif alias.name == "*":
                 module = parse_module(".".join(source_module))
@@ -284,18 +361,28 @@ class TypeshedVisitor(ast.NodeVisitor):
                 if name_dict is None:
                     log.critical(
                         f"could not import {source_module} in {self.module_path} with "
-                        f"{self.ctx}"
+                        f"{self.search_context}"
                     )
                     raise ModuleNotFoundError
                 for name, info in name_dict.items():
                     if info.is_exported:
                         self.module_dict[name] = ImportedNameInfo(
-                            name, True, ".".join(source_module), name
+                            name,
+                            True,
+                            module=self.module_name,
+                            full_name=concatenate(self.full_name, name),
+                            imported_module=".".join(source_module),
+                            imported_name=name,
                         )
             else:
                 is_exported: bool = not alias.name.startswith("_")
                 self.module_dict[alias.name] = PossibleImportedNameInfo(
-                    alias.name, is_exported, ".".join(source_module), alias.name
+                    alias.name,
+                    is_exported,
+                    module=self.module_name,
+                    full_name=concatenate(self.full_name, alias.name),
+                    imported_module=".".join(source_module),
+                    imported_name=alias.name,
                 )
 
     def visit_Expr(self, node: ast.Expr):
