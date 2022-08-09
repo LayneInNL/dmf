@@ -22,11 +22,13 @@ class InvalidStub(Exception):
 
 
 class BasicNameInfo:
-    def __init__(self, name: str, is_exported: bool, module: str, full_name: str):
+    def __init__(
+        self, name: str, is_exported: bool, module_name: str, qualified_name: str
+    ):
         self.name: str = name
         self.is_exported: bool = is_exported
-        self.module: str = module
-        self.full_name: str = full_name
+        self.module_name: str = module_name
+        self.qualified_name: str = qualified_name
 
 
 class ModuleNameInfo(BasicNameInfo):
@@ -36,15 +38,15 @@ class ModuleNameInfo(BasicNameInfo):
         is_exported: bool,
         module: str,
         full_name: str,
-        module_dict: Dict,
+        nl__dict__: Dict,
     ):
         super().__init__(name, is_exported, module, full_name)
-        self.module_dict: Dict = module_dict
+        self.nl__dict__: Dict = nl__dict__
 
     def get_name(self, attr_name: str):
-        if attr_name not in self.module_dict:
+        if attr_name not in self.nl__dict__:
             raise AttributeError(attr_name)
-        name_info = self.module_dict[attr_name]
+        name_info = self.nl__dict__[attr_name]
         return name_info
 
 
@@ -357,7 +359,7 @@ class TypeshedVisitor(ast.NodeVisitor):
                 )
             elif alias.name == "*":
                 module = parse_module(".".join(source_module))
-                name_dict = module.module_dict
+                name_dict = module.nl__dict__
                 if name_dict is None:
                     log.critical(
                         f"could not import {source_module} in {self.module_path} with "
@@ -476,7 +478,7 @@ class Resolver:
         attr = module.get_name(attr_name)
         if isinstance(attr, PossibleImportedNameInfo):
             res = self.resolve_module(attr.imported_module)
-            if attr_name in res.module_dict:
+            if attr_name in res.nl__dict__:
                 return self.resolve_attribute(attr.imported_module, attr.imported_name)
             else:
                 return self.resolve_module(
@@ -496,3 +498,181 @@ class Resolver:
             return attr
         else:
             raise NotImplementedError(attr)
+
+
+class AbstractValue:
+    def __init__(self):
+        self.abstract_value = dict()
+
+    def inject(self, abstract_value):
+        self.abstract_value.update(abstract_value)
+
+
+class TypeExprResolver(ast.NodeVisitor):
+    def __init__(self, resolver: Resolver, module: str, expr: ast.expr):
+        self.resolver: Resolver = resolver
+        self.module: str = module
+        self.expr: ast.expr = expr
+
+    def resolve(self, name_info):
+        if isinstance(name_info, ModuleNameInfo):
+            return name_info
+        elif isinstance(name_info, ClassNameInfo):
+            return name_info
+        elif isinstance(name_info, FunctionNameInfo):
+            if any([name_info.getters, name_info.setters, name_info.deleters]):
+                raise NotImplementedError
+            else:
+                return name_info
+        elif isinstance(name_info, PossibleImportedNameInfo):
+            res = self.resolver.resolve_module(name_info.imported_module)
+            if name_info.imported_name in res.nl__dict__:
+                return self.resolver.resolve_attribute(
+                    name_info.imported_module, name_info.imported_name
+                )
+            else:
+                return self.resolver.resolve_module(
+                    f"{name_info.imported_module}.{name_info.imported_name}"
+                )
+        elif isinstance(name_info, ImportedModuleInfo):
+            return self.resolver.resolve_module(name_info.imported_module)
+        elif isinstance(name_info, ImportedNameInfo):
+            return self.resolver.resolve_attribute(
+                name_info.imported_module, name_info.imported_name
+            )
+
+    def visit_BoolOp(self, node: ast.BoolOp) -> Any:
+        raise NotImplementedError
+
+    def visit_BinOp(self, node: ast.BinOp) -> AbstractValue:
+        if not isinstance(node.op, ast.Or):
+            raise NotImplementedError
+        lhs_value = self.visit(node.left)
+        rhs_value = self.visit(node.right)
+        lhs_value.inject(rhs_value)
+        return lhs_value
+
+    def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
+        raise NotImplementedError
+
+    def visit_Lambda(self, node: ast.Lambda) -> Any:
+        raise NotImplementedError
+
+    def visit_IfExp(self, node: ast.IfExp) -> Any:
+        raise NotImplementedError
+
+    def visit_Dict(self, node: ast.Dict) -> Any:
+        raise NotImplementedError
+
+    def visit_Set(self, node: ast.Set) -> Any:
+        raise NotImplementedError
+
+    def visit_ListComp(self, node: ast.ListComp) -> Any:
+        raise NotImplementedError
+
+    def visit_SetComp(self, node: ast.SetComp) -> Any:
+        raise NotImplementedError
+
+    def visit_DictComp(self, node: ast.DictComp) -> Any:
+        raise NotImplementedError
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Any:
+        raise NotImplementedError
+
+    def visit_Await(self, node: ast.Await) -> Any:
+        raise NotImplementedError
+
+    def visit_Yield(self, node: ast.Yield) -> Any:
+        raise NotImplementedError
+
+    def visit_YieldFrom(self, node: ast.YieldFrom) -> Any:
+        raise NotImplementedError
+
+    def visit_Compare(self, node: ast.Compare) -> Any:
+        raise NotImplementedError
+
+    def visit_Call(self, node: ast.Call) -> Any:
+        raise NotImplementedError
+
+    def visit_Num(self, node: ast.Num) -> Any:
+        raise NotImplementedError
+
+    def visit_Str(self, node: ast.Str) -> Any:
+        raise NotImplementedError
+
+    def visit_FormattedValue(self, node: ast.FormattedValue) -> Any:
+        raise NotImplementedError
+
+    def visit_JoinedStr(self, node: ast.JoinedStr) -> Any:
+        raise NotImplementedError
+
+    def visit_Bytes(self, node: ast.Bytes) -> Any:
+        raise NotImplementedError
+
+    def visit_NameConstant(self, node: ast.NameConstant) -> Any:
+        if node.value is not None:
+            raise NotImplementedError
+
+    def visit_Ellipsis(self, node: ast.Ellipsis) -> Any:
+        raise NotImplementedError
+
+    def visit_Constant(self, node: ast.Constant) -> Any:
+        raise NotImplementedError
+
+    def visit_Attribute(self, node: ast.Attribute) -> Any:
+        raise NotImplementedError
+
+    def visit_Subscript(self, node: ast.Subscript) -> Any:
+        if not isinstance(node.value, ast.Name):
+            raise NotImplementedError
+
+        value = self.visit(node.value)
+        return value
+
+    def visit_Starred(self, node: ast.Starred) -> Any:
+        raise NotImplementedError
+
+    def visit_Name(self, node: ast.Name) -> Any:
+        id = node.id
+        if id == "bool":
+            pass
+        elif id == "int":
+            pass
+        elif id == "float":
+            pass
+        elif id == "complex":
+            pass
+        elif id == "list":
+            pass
+        elif id == "range":
+            pass
+        elif id == "any":
+            pass
+        elif id == "str":
+            pass
+        elif id == "bytes":
+            pass
+        elif id == "bytearray":
+            pass
+        elif id == "memoryview":
+            pass
+        elif id == "set":
+            pass
+        elif id == "frozenset":
+            pass
+        elif id == "dict":
+            pass
+        else:
+            module: ModuleNameInfo = module_cache[self.module]
+            module_dict = module.nl__dict__
+            if id in module_dict:
+                name_info = module_dict[id]
+
+            else:
+                raise NotImplementedError
+
+    def visit_List(self, node: ast.List) -> Any:
+        raise NotImplementedError
+
+    def visit_Tuple(self, node: ast.Tuple) -> Any:
+        raise NotImplementedError
