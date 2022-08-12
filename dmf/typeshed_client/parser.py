@@ -1,5 +1,10 @@
 """This module is responsible for parsing a stub AST into a dictionary of names."""
 from __future__ import annotations
+
+from importlib.util import resolve_name
+
+from astpretty import pprint
+
 import ast
 import logging
 from typing import (
@@ -7,12 +12,12 @@ from typing import (
     Dict,
     List,
     Optional,
-    Tuple,
-    Union,
 )
 
 from . import finder
+from .LiteralEvalVisitor import LiteralEvalVisitor
 from .finder import get_search_context, SearchContext, ModulePath
+from ..log.logger import logger
 
 log = logging.getLogger(__name__)
 
@@ -31,16 +36,17 @@ class BasicNameInfo:
         self.qualified_name: str = qualified_name
 
 
-class ModuleNameInfo(BasicNameInfo):
+class TypeshedModuleType(BasicNameInfo):
     def __init__(
         self,
         name: str,
         is_exported: bool,
-        module: str,
-        full_name: str,
+        module_name: str,
+        qualified_name: str,
         nl__dict__: Dict,
     ):
-        super().__init__(name, is_exported, module, full_name)
+        super().__init__(name, is_exported, module_name, qualified_name)
+        self.nl__uuid__ = name
         self.nl__dict__: Dict = nl__dict__
 
     def get_name(self, attr_name: str):
@@ -55,11 +61,11 @@ class AssignNameInfo(BasicNameInfo):
         self,
         name: str,
         is_exported: bool,
-        module: str,
-        full_name: str,
+        module_name: str,
+        qualified_name: str,
         node: ast.Assign,
     ):
-        super().__init__(name, is_exported, module, full_name)
+        super().__init__(name, is_exported, module_name, qualified_name)
         self.node: ast.Assign = node
 
 
@@ -76,17 +82,17 @@ class AnnAssignNameInfo(BasicNameInfo):
         self.node: ast.AnnAssign = node
 
 
-class ClassNameInfo(BasicNameInfo):
+class TypeshedClassType(BasicNameInfo):
     def __init__(
         self,
         name: str,
         is_exported: bool,
-        module: str,
-        full_name: str,
+        module_name: str,
+        qualified_name: str,
         node: ast.ClassDef,
         child_nodes: Dict[str, ...],
     ):
-        super().__init__(name, is_exported, module, full_name)
+        super().__init__(name, is_exported, module_name, qualified_name)
         self.node: ast.ClassDef = node
         self.child_nodes: Dict[str, ...] = child_nodes
 
@@ -96,12 +102,12 @@ class PossibleImportedNameInfo(BasicNameInfo):
         self,
         name: str,
         is_exported: bool,
-        module: str,
+        module_name: str,
         full_name: str,
         imported_module: str,
         imported_name: Optional[str],
     ):
-        super().__init__(name, is_exported, module, full_name)
+        super().__init__(name, is_exported, module_name, full_name)
         self.imported_module: str = imported_module
         self.imported_name: Optional[str] = imported_name
 
@@ -134,7 +140,7 @@ class ImportedNameInfo(BasicNameInfo):
         self.imported_name: str = imported_name
 
 
-class FunctionNameInfo(BasicNameInfo):
+class TypeshedFunctionType(BasicNameInfo):
     def __init__(self, name: str, is_exported: bool, module: str, full_name: str):
         super().__init__(name, is_exported, module, full_name)
         self.ordinaries: List[ast.FunctionDef] = []
@@ -155,12 +161,12 @@ class FunctionNameInfo(BasicNameInfo):
         self.deleters.append(node)
 
 
-module_cache: Dict[str, ModuleNameInfo] = {}
+module_cache: Dict[str, TypeshedModuleType] = {}
 
 
 def parse_module(
     module_name: str, search_context: SearchContext = None
-) -> ModuleNameInfo:
+) -> TypeshedModuleType:
     if module_name in module_cache:
         return module_cache[module_name]
     log.critical(f"Parsing {module_name}")
@@ -175,9 +181,11 @@ def parse_module(
     module_content = path.read_text()
     module_ast = ast.parse(module_content)
 
-    visitor = TypeshedVisitor(search_context, module_name, module_name, is_init=is_init)
+    visitor = ModuleVisitor(search_context, module_name, module_name, is_init=is_init)
     module_dict = visitor.build(module_ast)
-    module = ModuleNameInfo(module_name, True, module_name, module_name, module_dict)
+    module = TypeshedModuleType(
+        module_name, True, module_name, module_name, module_dict
+    )
     module_cache[module_name] = module
 
     return module
@@ -191,20 +199,19 @@ def concatenate(prefix: str, curr: str):
     return f"{prefix}.{curr}"
 
 
-class TypeshedVisitor(ast.NodeVisitor):
+class ModuleVisitor(ast.NodeVisitor):
     """Extract names from a stub module."""
 
     def __init__(
         self,
         search_context: SearchContext,
         module_name: str,
-        full_name: str,
+        qualified_name: str,
         is_init: bool = False,
     ) -> None:
         self.search_context = search_context
         self.module_name: str = module_name
-        self.module_path = ModulePath(tuple(module_name.split(".")))
-        self.full_name: str = full_name
+        self.qualified_name: str = qualified_name
         self.is_init: bool = is_init
         self.module_dict = {}
 
@@ -216,13 +223,13 @@ class TypeshedVisitor(ast.NodeVisitor):
         function_name = node.name
         is_exported = is_exported_attr(function_name)
         if function_name not in self.module_dict:
-            self.module_dict[function_name] = FunctionNameInfo(
+            self.module_dict[function_name] = TypeshedFunctionType(
                 function_name,
                 is_exported,
                 self.module_name,
-                f"{self.full_name}.{function_name}",
+                f"{self.qualified_name}.{function_name}",
             )
-        function_name_info: FunctionNameInfo = self.module_dict[function_name]
+        function_name_info: TypeshedFunctionType = self.module_dict[function_name]
 
         if not node.decorator_list:
             function_name_info.append_ordinary(node)
@@ -255,24 +262,24 @@ class TypeshedVisitor(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef):
         class_name = node.name
         is_exported = is_exported_attr(class_name)
-        children_name_extractor = TypeshedVisitor(
+        children_name_extractor = ModuleVisitor(
             self.search_context,
             self.module_name,
-            f"{self.full_name}.{class_name}",
+            f"{self.qualified_name}.{class_name}",
             is_init=self.is_init,
         )
         module_dict = children_name_extractor.build(ast.Module(body=node.body))
-        self.module_dict[class_name] = ClassNameInfo(
+        self.module_dict[class_name] = TypeshedClassType(
             class_name,
             is_exported,
-            module=self.module_name,
-            full_name=f"{self.full_name}.{class_name}",
+            module_name=self.module_name,
+            qualified_name=f"{self.qualified_name}.{class_name}",
             node=node,
             child_nodes=module_dict,
         )
 
     def visit_Assign(self, node: ast.Assign):
-        assert len(node.targets) == 1
+        assert len(node.targets) == 1, node
         for target in node.targets:
             if not isinstance(target, ast.Name):
                 raise InvalidStub(
@@ -281,8 +288,8 @@ class TypeshedVisitor(ast.NodeVisitor):
             self.module_dict[target.id] = AssignNameInfo(
                 target.id,
                 not target.id.startswith("_"),
-                module=self.module_name,
-                full_name=f"{self.full_name}.{target.id}",
+                module_name=self.module_name,
+                qualified_name=f"{self.qualified_name}.{target.id}",
                 node=node,
             )
 
@@ -296,12 +303,12 @@ class TypeshedVisitor(ast.NodeVisitor):
             target.id,
             not target.id.startswith("_"),
             module=self.module_name,
-            full_name=f"{self.full_name}.{target.id}",
+            full_name=f"{self.qualified_name}.{target.id}",
             node=node,
         )
 
     def visit_If(self, node: ast.If):
-        visitor = _LiteralEvalVisitor(self.search_context)
+        visitor = LiteralEvalVisitor(self.search_context)
         value = visitor.visit(node.test)
         if value:
             self.visit(ast.Module(body=node.body))
@@ -315,7 +322,7 @@ class TypeshedVisitor(ast.NodeVisitor):
                     alias.asname,
                     True,
                     module=self.module_name,
-                    full_name=concatenate(self.full_name, alias.asname),
+                    full_name=concatenate(self.qualified_name, alias.asname),
                     imported_module=alias.name,
                 )
             else:
@@ -325,44 +332,36 @@ class TypeshedVisitor(ast.NodeVisitor):
                     name,
                     True,
                     module=self.module_name,
-                    full_name=concatenate(self.full_name, name),
+                    full_name=concatenate(self.qualified_name, name),
                     imported_module=name,
                 )
 
+    def _resolve_name(self, node: ast.ImportFrom) -> str:
+        dot_number = "*" * node.level
+        module = "" if node.module is None else node.module
+        source_module = resolve_name(dot_number + module, self.module_name)
+        return source_module
+
     def visit_ImportFrom(self, node: ast.ImportFrom):
-        if node.module is None:
-            module = ()
-        else:
-            module = tuple(node.module.split("."))
-        if node.level == 0:
-            source_module = ModulePath(module)
-        elif node.level == 1:
-            if self.is_init:
-                source_module = ModulePath(self.module_path + module)
-            else:
-                source_module = ModulePath(self.module_path[:-1] + module)
-        else:
-            if self.is_init:
-                source_module = ModulePath(self.module_path[: 1 - node.level] + module)
-            else:
-                source_module = ModulePath(self.module_path[: -node.level] + module)
+        source_module = self._resolve_name(node)
+
         for alias in node.names:
             if alias.asname is not None:
                 is_exported = not alias.asname.startswith("_")
                 self.module_dict[alias.asname] = PossibleImportedNameInfo(
                     alias.asname,
                     is_exported,
-                    module=self.module_name,
-                    full_name=concatenate(self.full_name, alias.asname),
-                    imported_module=".".join(source_module),
+                    module_name=self.module_name,
+                    full_name=concatenate(self.qualified_name, alias.asname),
+                    imported_module=source_module,
                     imported_name=alias.name,
                 )
             elif alias.name == "*":
-                module = parse_module(".".join(source_module))
+                module = parse_module(source_module)
                 name_dict = module.nl__dict__
                 if name_dict is None:
                     log.critical(
-                        f"could not import {source_module} in {self.module_path} with "
+                        f"could not import {source_module} with "
                         f"{self.search_context}"
                     )
                     raise ModuleNotFoundError
@@ -372,8 +371,8 @@ class TypeshedVisitor(ast.NodeVisitor):
                             name,
                             True,
                             module=self.module_name,
-                            full_name=concatenate(self.full_name, name),
-                            imported_module=".".join(source_module),
+                            full_name=concatenate(self.qualified_name, name),
+                            imported_module=source_module,
                             imported_name=name,
                         )
             else:
@@ -381,9 +380,9 @@ class TypeshedVisitor(ast.NodeVisitor):
                 self.module_dict[alias.name] = PossibleImportedNameInfo(
                     alias.name,
                     is_exported,
-                    module=self.module_name,
-                    full_name=concatenate(self.full_name, alias.name),
-                    imported_module=".".join(source_module),
+                    module_name=self.module_name,
+                    full_name=concatenate(self.qualified_name, alias.name),
+                    imported_module=source_module,
                     imported_name=alias.name,
                 )
 
@@ -392,85 +391,13 @@ class TypeshedVisitor(ast.NodeVisitor):
             raise InvalidStub(f"Cannot handle node {ast.dump(node)}")
 
 
-_CMP_OP_TO_FUNCTION = {
-    ast.Eq: lambda x, y: x == y,
-    ast.NotEq: lambda x, y: x != y,
-    ast.Lt: lambda x, y: x < y,
-    ast.LtE: lambda x, y: x <= y,
-    ast.Gt: lambda x, y: x > y,
-    ast.GtE: lambda x, y: x >= y,
-    ast.Is: lambda x, y: x is y,
-    ast.IsNot: lambda x, y: x is not y,
-    ast.In: lambda x, y: x in y,
-    ast.NotIn: lambda x, y: x not in y,
-}
-
-
-class _LiteralEvalVisitor(ast.NodeVisitor):
-    def __init__(self, ctx: SearchContext) -> None:
-        self.ctx = ctx
-
-    def visit_Num(self, node: ast.Num) -> Union[int, float]:
-        return node.n
-
-    def visit_Str(self, node: ast.Str) -> str:
-        return node.s
-
-    def visit_Index(self, node: ast.Index) -> int:
-        return self.visit(node.value)
-
-    def visit_Tuple(self, node: ast.Tuple) -> Tuple[Any, ...]:
-        return tuple(self.visit(elt) for elt in node.elts)
-
-    def visit_Subscript(self, node: ast.Subscript) -> Any:
-        value = self.visit(node.value)
-        slc = self.visit(node.slice)
-        return value[slc]
-
-    def visit_Compare(self, node: ast.Compare) -> bool:
-        if len(node.ops) != 1:
-            raise InvalidStub(f"Cannot evaluate chained comparison {ast.dump(node)}")
-        fn = _CMP_OP_TO_FUNCTION[type(node.ops[0])]
-        return fn(self.visit(node.left), self.visit(node.comparators[0]))
-
-    def visit_BoolOp(self, node: ast.BoolOp) -> bool:
-        for val_node in node.values:
-            val = self.visit(val_node)
-            if (isinstance(node.op, ast.Or) and val) or (
-                isinstance(node.op, ast.And) and not val
-            ):
-                return val
-        return val
-
-    def visit_Slice(self, node: ast.Slice) -> slice:
-        lower = self.visit(node.lower) if node.lower is not None else None
-        upper = self.visit(node.upper) if node.upper is not None else None
-        step = self.visit(node.step) if node.step is not None else None
-        return slice(lower, upper, step)
-
-    def visit_Attribute(self, node: ast.Attribute) -> Any:
-        val = node.value
-        if not isinstance(val, ast.Name):
-            raise InvalidStub(f"Invalid code in stub: {ast.dump(node)}")
-        if val.id != "sys":
-            raise InvalidStub(
-                f"Attribute access must be on the sys module: {ast.dump(node)}"
-            )
-        if node.attr == "platform":
-            return self.ctx.platform
-        elif node.attr == "version_info":
-            return self.ctx.version
-        else:
-            raise InvalidStub(f"Invalid attribute on {ast.dump(node)}")
-
-
 class Resolver:
     def __init__(self, search_context: Optional[SearchContext] = None) -> None:
         if search_context is None:
             search_context = get_search_context()
         self.search_context = search_context
 
-    def resolve_module(self, module_name: str) -> ModuleNameInfo:
+    def resolve_module(self, module_name: str) -> TypeshedModuleType:
         return parse_module(module_name)
 
     def resolve_attribute(self, module_name: str, attr_name: str):
@@ -488,9 +415,9 @@ class Resolver:
             return self.resolve_module(attr.imported_module)
         elif isinstance(attr, ImportedNameInfo):
             return self.resolve_attribute(attr.imported_module, attr.imported_name)
-        elif isinstance(attr, ClassNameInfo):
+        elif isinstance(attr, TypeshedClassType):
             return attr
-        elif isinstance(attr, FunctionNameInfo):
+        elif isinstance(attr, TypeshedFunctionType):
             return attr
         elif isinstance(attr, AssignNameInfo):
             return attr
@@ -515,11 +442,11 @@ class TypeExprResolver(ast.NodeVisitor):
         self.expr: ast.expr = expr
 
     def resolve(self, name_info):
-        if isinstance(name_info, ModuleNameInfo):
+        if isinstance(name_info, TypeshedModuleType):
             return name_info
-        elif isinstance(name_info, ClassNameInfo):
+        elif isinstance(name_info, TypeshedClassType):
             return name_info
-        elif isinstance(name_info, FunctionNameInfo):
+        elif isinstance(name_info, TypeshedFunctionType):
             if any([name_info.getters, name_info.setters, name_info.deleters]):
                 raise NotImplementedError
             else:
@@ -663,7 +590,7 @@ class TypeExprResolver(ast.NodeVisitor):
         elif id == "dict":
             pass
         else:
-            module: ModuleNameInfo = module_cache[self.module]
+            module: TypeshedModuleType = module_cache[self.module]
             module_dict = module.nl__dict__
             if id in module_dict:
                 name_info = module_dict[id]
