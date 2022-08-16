@@ -28,7 +28,7 @@ from dmf.analysis.types import (
     LocalVar,
     builtin_namespace,
 )
-from dmf.analysis.variables import (
+from dmf.analysis.namespace import (
     Namespace_Global,
     Namespace_Nonlocal,
     Namespace_Local,

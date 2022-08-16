@@ -53,7 +53,7 @@ from dmf.analysis.types import (
     analysis_heap,
 )
 from dmf.analysis.value import Value, create_value_with_type
-from dmf.analysis.variables import (
+from dmf.analysis.namespace import (
     Namespace_Local,
     Namespace_Nonlocal,
     Namespace_Global,
@@ -62,8 +62,9 @@ from dmf.analysis.variables import (
     INIT_FLAG,
     Namespace_Helper,
 )
-from dmf.flows.temp import Unused_Name
 from dmf.log.logger import logger
+
+Unused_Name = "UNUSED_NAME"
 
 
 def record(label: int, context: Tuple):

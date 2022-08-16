@@ -22,7 +22,7 @@ from dmf.analysis.abstract_types import TypeNone, TypeInt, TypeBool
 from dmf.analysis.c3 import c3
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.value import Value, create_value_with_type
-from dmf.analysis.variables import (
+from dmf.analysis.namespace import (
     LocalVar,
 )
 

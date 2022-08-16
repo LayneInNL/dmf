@@ -17,6 +17,14 @@ from __future__ import annotations
 
 from dmf.analysis.value import Value
 
+Namespace_Local = "local"
+Namespace_Nonlocal = "nonlocal"
+Namespace_Global = "global"
+Namespace_Helper = "helper"
+POS_ARG_END = "POSITION_FLAG"
+INIT_FLAG = "INIT_FLAG"
+RETURN_FLAG = "RETURN_FLAG"
+
 
 class Var:
     def __init__(self, name: str):

@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import ast
-import logging
 import os
 from collections import defaultdict
 from typing import Dict, List, Tuple, Set, Optional, Any
@@ -23,7 +22,14 @@ from typing import Dict, List, Tuple, Set, Optional, Any
 import astor
 import graphviz as gv
 
-from . import temp
+
+class TempVariableName:
+    counter = 0
+
+    @classmethod
+    def generate(cls) -> str:
+        cls.counter += 1
+        return f"_var{cls.counter}"
 
 
 class BlockId:
@@ -255,37 +261,11 @@ class CFGVisitor(ast.NodeVisitor):
         self.cfg.sub_cfgs[func_id] = func_cfg
 
     def add_ClassCFG(self, node: ast.ClassDef):
-        self.single_special_method_check(node.body, set())
 
         class_id = self.curr_block.bid
         visitor: CFGVisitor = CFGVisitor()
         class_cfg: CFG = visitor.build(node.name, ast.Module(body=node.body))
         self.cfg.sub_cfgs[class_id] = class_cfg
-
-    def single_special_method_check(self, body: List[ast.stmt], method_set):
-        for stmt in body:
-            if isinstance(stmt, ast.FunctionDef):
-                func_name = stmt.name
-                if func_name.startswith("__") and func_name.endswith("__"):
-                    if func_name in method_set:
-                        raise NotImplementedError(
-                            "No multiple magic methods with the same name are allowed {}".format(
-                                func_name
-                            )
-                        )
-                    else:
-                        method_set.add(func_name)
-            elif isinstance(stmt, (ast.For, ast.While, ast.If)):
-                self.single_special_method_check(stmt.body, method_set)
-                self.single_special_method_check(stmt.orelse, method_set)
-            elif isinstance(stmt, ast.With):
-                self.single_special_method_check(stmt.body, method_set)
-            elif isinstance(stmt, ast.Try):
-                self.single_special_method_check(stmt.body, method_set)
-                self.single_special_method_check(stmt.orelse, method_set)
-                self.single_special_method_check(stmt.finalbody, method_set)
-            else:
-                pass
 
     def remove_empty_blocks(self, block: BasicBlock, visited: Set[int]) -> None:
         if block.bid not in visited:
@@ -396,13 +376,13 @@ class CFGVisitor(ast.NodeVisitor):
         elif isinstance(decorator, ast.Attribute):
             # @xxx.setter
             if decorator.attr == property.setter.__name__:
-                tmp_func_name = temp.RandomVariableName.gen_random_name()
+                tmp_func_name = TempVariableName.generate()
                 node.name = tmp_func_name
                 self.properties[decorator.value.id][1] = node.name
                 node.decorator_list = []
             # @xxx.deleter
             elif decorator.attr == property.deleter.__name__:
-                tmp_func_name = temp.RandomVariableName.gen_random_name()
+                tmp_func_name = TempVariableName.generate()
                 node.name = tmp_func_name
                 self.properties[decorator.value.id][2] = node.name
                 node.decorator_list = []
@@ -496,9 +476,7 @@ class CFGVisitor(ast.NodeVisitor):
                 call_node = self.curr_block
                 add_stmt(call_node, node.value)
 
-                tmp_var = ast.Name(
-                    id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
-                )
+                tmp_var = ast.Name(id=TempVariableName.generate(), ctx=ast.Store())
                 new_node = self.add_edge(call_node.bid, self.new_block().bid)
                 add_stmt(new_node, tmp_var)
                 dummy_new_node = self.add_edge(new_node.bid, self.new_block().bid)
@@ -509,7 +487,7 @@ class CFGVisitor(ast.NodeVisitor):
                     dummy_new_node.bid, self.new_block().bid
                 )
                 init_attribute_name = ast.Name(
-                    id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
+                    id=TempVariableName.generate(), ctx=ast.Store()
                 )
                 add_stmt(
                     init_attribute_node,
@@ -529,9 +507,7 @@ class CFGVisitor(ast.NodeVisitor):
                 )
                 add_stmt(init_call_node, init_call)
 
-                tmp_var = ast.Name(
-                    id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
-                )
+                tmp_var = ast.Name(id=TempVariableName.generate(), ctx=ast.Store())
                 init_return_node = self.add_edge(
                     init_call_node.bid, self.new_block().bid
                 )
@@ -559,9 +535,7 @@ class CFGVisitor(ast.NodeVisitor):
                 node.value = tmp_var
                 self.curr_block = dummy_return_node
             elif isinstance(node.value, ast.Attribute):
-                tmp_var = ast.Name(
-                    id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
-                )
+                tmp_var = ast.Name(id=TempVariableName.generate(), ctx=ast.Store())
                 call_node = self.curr_block
                 add_stmt(call_node, node.value)
                 return_node = self.add_edge(call_node.bid, self.new_block().bid)
@@ -627,8 +601,10 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if node.value:
-            new_assign: ast.Assign = ast.Assign(targets=[node.target], value=node.value)
-            self.visit(new_assign)
+            decomposed, node.value = self.decompose_expr(node.value)
+            self.populate_body(decomposed)
+            add_stmt(self.curr_block, node)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_For(self, node: ast.For) -> None:
         iter_call: ast.Call = ast.Call(
@@ -636,7 +612,7 @@ class CFGVisitor(ast.NodeVisitor):
         )
         iter_seq: List = self.visit(iter_call)
 
-        iter_name = ast.Name(id=temp.RandomVariableName.gen_random_name())
+        iter_name = ast.Name(id=TempVariableName.generate())
         new_assign = ast.Assign(
             targets=[iter_name],
             value=iter_seq[-1],
@@ -740,32 +716,32 @@ class CFGVisitor(ast.NodeVisitor):
             node.body = curr_body
             self.visit(node)
         else:
-            manager_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            manager_var = ast.Name(id=TempVariableName.generate())
             manager_assign = ast.Assign(
                 targets=[manager_var], value=node.items[0].context_expr
             )
-            manager_type_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            manager_type_var = ast.Name(id=TempVariableName.generate())
             manager_type_value = ast.Call(
                 func=ast.Name(id="type"), args=[manager_var], keywords=[]
             )
             manager_type_assign = ast.Assign(
                 targets=[manager_type_var], value=manager_type_value
             )
-            enter_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            enter_var = ast.Name(id=TempVariableName.generate())
             enter_value = ast.Attribute(
                 value=manager_type_var,
                 attr="__enter__",
                 ctx=ast.Load(),
             )
             enter_assign = ast.Assign(targets=[enter_var], value=enter_value)
-            exit_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            exit_var = ast.Name(id=TempVariableName.generate())
             exit_value = ast.Attribute(
                 value=manager_type_var,
                 attr="__exit__",
                 ctx=ast.Load(),
             )
             exit_assign = ast.Assign(targets=[exit_var], value=exit_value)
-            value_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            value_var = ast.Name(id=TempVariableName.generate())
             value_value = ast.Call(func=enter_var, args=[manager_var], keywords=[])
             value_assign = ast.Assign(targets=[value_var], value=value_value)
             preceded = [
@@ -894,7 +870,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Expr(self, node: ast.Expr) -> None:
 
-        tmp_var = temp.Unused_Name
+        tmp_var = TempVariableName.generate()
         tmp_assign = ast.Assign(
             targets=[ast.Name(id=tmp_var, ctx=ast.Store())], value=node.value
         )
@@ -950,7 +926,7 @@ class CFGVisitor(ast.NodeVisitor):
             return [], None
         seq = self.visit(expr)
         if not isinstance(seq[-1], ast.Name):
-            tmp_var = temp.RandomVariableName.gen_random_name()
+            tmp_var = TempVariableName.generate()
             ast_assign = ast.Assign(
                 targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
                 value=seq[-1],
@@ -971,7 +947,7 @@ class CFGVisitor(ast.NodeVisitor):
     #   if b:
     #     tmp=c
     def visit_BoolOp(self, node: ast.BoolOp) -> Any:
-        new_var: str = temp.RandomVariableName.gen_random_name()
+        new_var: str = TempVariableName.generate()
         assign_list = [
             ast.Assign(targets=[ast.Name(id=new_var, ctx=ast.Store())], value=value)
             for value in node.values
@@ -1001,7 +977,7 @@ class CFGVisitor(ast.NodeVisitor):
         return seq + [node]
 
     def visit_Lambda(self, node: ast.Lambda) -> Any:
-        tmp_var = temp.RandomVariableName.gen_random_name()
+        tmp_var = TempVariableName.generate()
 
         seq_args = self.visit_arguments(node.args)
         seq_ret, name = self.decompose_expr(node.body)
@@ -1018,7 +994,7 @@ class CFGVisitor(ast.NodeVisitor):
         return seq_args + [tmp_function_def, tmp_function_name]
 
     def visit_IfExp(self, node: ast.IfExp) -> Any:
-        tmp_var: str = temp.RandomVariableName.gen_random_name()
+        tmp_var: str = TempVariableName.generate()
         tmp_name: ast.Name = ast.Name(id=tmp_var, ctx=ast.Store())
         new_if: ast.If = ast.If(
             test=node.test,
@@ -1048,7 +1024,7 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_ListComp(self, node: ast.ListComp) -> Any:
 
         new_expr_sequence = []
-        listcomp_var = temp.RandomVariableName.gen_random_name()
+        listcomp_var = TempVariableName.generate()
         new_expr_sequence.append(
             ast.Assign(
                 targets=[ast.Name(id=listcomp_var, ctx=ast.Store())],
@@ -1101,7 +1077,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_SetComp(self, node: ast.SetComp) -> Any:
         new_expr_sequence = []
-        setcomp_var = temp.RandomVariableName.gen_random_name()
+        setcomp_var = TempVariableName.generate()
         new_expr_sequence.append(
             ast.Assign(
                 targets=[ast.Name(id=setcomp_var, ctx=ast.Store())],
@@ -1151,7 +1127,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_DictComp(self, node: ast.DictComp) -> Any:
         new_expr_sequence = []
-        dictcomp_var = temp.RandomVariableName.gen_random_name()
+        dictcomp_var = TempVariableName.generate()
         new_expr_sequence.append(
             ast.Assign(
                 targets=[ast.Name(id=dictcomp_var, ctx=ast.Store())],
@@ -1206,7 +1182,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Any:
         new_expr_sequence = []
-        generator_var = temp.RandomGeneratorName.gen_generator_name()
+        generator_var = TempVariableName.generate()
         new_expr_sequence.append(
             ast.FunctionDef(
                 name=generator_var,

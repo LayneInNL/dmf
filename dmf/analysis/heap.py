@@ -17,7 +17,7 @@ from typing import Dict
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.types import Instance
 from dmf.analysis.value import Value
-from dmf.analysis.variables import LocalVar
+from dmf.analysis.namespace import LocalVar
 
 
 class Heap:

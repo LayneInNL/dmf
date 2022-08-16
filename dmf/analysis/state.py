@@ -20,7 +20,7 @@ from typing import Tuple, List
 from dmf.share import analysis_modules
 from dmf.analysis.types import Heap
 from dmf.analysis.stack import Stack, Frame
-from dmf.analysis.variables import POS_ARG_END, Namespace_Local
+from dmf.analysis.namespace import POS_ARG_END, Namespace_Local
 
 State = Tuple[Stack, Heap]
 
