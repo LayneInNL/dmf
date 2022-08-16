@@ -14,33 +14,31 @@
 
 import argparse
 import os.path
-import sys
 
-# Must put it here to initialize static_importlib
-import dmf.static_importlib
-import dmf.import_lib
-
-import dmf.share
+from dmf.analysis.analysis import Analysis
 from dmf.analysis.types import ModuleType
-from dmf.log.logger import logger
+from dmf.share import create_and_update_cfg, analysis_modules
 
 parser = argparse.ArgumentParser()
 parser.add_argument("main", help="the main file path")
 
 
 def add_main_module(path):
-    analysis_main_module = ModuleType(name="__main__", package="", file=path)
-    dmf.share.analysis_modules["__main__"] = analysis_main_module
+    entry_label, exit_label = create_and_update_cfg(path)
+    main_module = ModuleType(
+        uuid="__main__", package="", entry_label=entry_label, exit_label=exit_label
+    )
+    analysis_modules["__main__"] = main_module
 
 
-def add_sys_path(path):
-    # our custom root path, simulating sys.path
-    # insert being analyzed dir into sys.path
-    # for example, dir_name = "C:\\Users\\Layne Liu\\PycharmProjects\\cfg\\dmf\\examples\\"
-    dir_name = os.path.dirname(path)
-    # insert to the beginning of sys.path
-    sys.path.insert(0, dir_name)
-    logger.debug("updated sys.path {}".format(sys.path))
+# def add_sys_path(path):
+#     # our custom root path, simulating sys.path
+#     # insert being analyzed dir into sys.path
+#     # for example, dir_name = "C:\\Users\\Layne Liu\\PycharmProjects\\cfg\\dmf\\examples\\"
+#     dir_name = os.path.dirname(path)
+#     # insert to the beginning of sys.path
+#     sys.path.insert(0, dir_name)
+#     logger.debug("updated sys.path {}".format(sys.path))
 
 
 if __name__ == "__main__":
@@ -49,16 +47,15 @@ if __name__ == "__main__":
     if not main_file_path:
         exit()
 
-    from dmf.analysis.analysis import Analysis
-
     # get main module absolute path
-    main_abs_path = os.path.abspath(main_file_path)
+    main_abs_file_path = os.path.abspath(main_file_path)
+    add_main_module(main_abs_file_path)
 
     # module name
-    main_module_name = os.path.basename(main_abs_path).rpartition(".")[0]
-    add_main_module(main_abs_path)
-    add_sys_path(main_abs_path)
+    # main_module_name = os.path.basename(main_abs_path).rpartition(".")[0]
+    # add_sys_path(main_abs_path)
 
     # load cfg of main module
+
     analysis = Analysis("__main__")
     analysis.compute_fixed_point()

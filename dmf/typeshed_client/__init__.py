@@ -1,7 +1,5 @@
 """Package for retrieving data from typeshed."""
 # from . import finder
-from dmf.typeshed_client.parser import Resolver
-
 # # Exported names
 # from .finder import (
 #     get_stub_file,

@@ -19,8 +19,8 @@ from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, List
 
 import dmf.share
+from dmf.share import analysis_modules
 from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
-from dmf.analysis.prim import NoneType
 from dmf.analysis.stack import Frame, analysis_stack
 from dmf.analysis.state import (
     compute_function_defaults,
@@ -40,19 +40,18 @@ from dmf.analysis.state import (
 from dmf.analysis.types import (
     ModuleType,
     CustomClass,
-    FunctionType,
-    MethodClass,
+    AnalysisFunction,
+    AnalysisMethod,
     dunder_lookup,
     Constructor,
     Setattr,
     mock_value,
-    SpecialMethodClass,
+    ArtificialMethod,
     Getattr,
     ListClass,
     TupleClass,
     analysis_heap,
 )
-from dmf.analysis.typeshed_types import TypeshedModule
 from dmf.analysis.value import Value, create_value_with_type
 from dmf.analysis.variables import (
     Namespace_Local,
@@ -64,7 +63,6 @@ from dmf.analysis.variables import (
     Namespace_Helper,
 )
 from dmf.flows.temp import Unused_Name
-from dmf.import_lib.util import resolve_name
 from dmf.log.logger import logger
 
 
@@ -79,15 +77,17 @@ def merge(label: int, heap, context: Tuple):
 class Analysis(AnalysisBase):
     def __init__(self, module_name: str):
         super().__init__()
-        self.entry_program_point_info: Dict = {}
+        # work list
         self.work_list: Deque[Tuple[ProgramPoint, ProgramPoint]] = deque()
+
+        self.entry_program_point_info: Dict = {}
         self.extremal_value: State = (analysis_stack, analysis_heap)
         self.analysis_list: defaultdict[ProgramPoint, State | BOTTOM] = defaultdict(
             lambda: BOTTOM
         )
         self.analysis_effect_list = {}
 
-        curr_module: ModuleType = dmf.share.analysis_modules[module_name]
+        curr_module: ModuleType = analysis_modules[module_name]
         start_lab, final_lab = curr_module.entry_label, curr_module.exit_label
         self.extremal_point: ProgramPoint = (start_lab, ())
         self.final_point: ProgramPoint = (final_lab, ())
@@ -197,7 +197,7 @@ class Analysis(AnalysisBase):
         for c in cls_value:
             instance = typ(addr, c)
             heap = new_heap.write_ins_to_heap(instance)
-            instance.nl__dict__ = heap
+            instance.tp_dict = heap
             dummy_value.inject(instance)
 
     def _lambda_special_method(
@@ -206,7 +206,7 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: SpecialMethodClass,
+        typ: ArtificialMethod,
     ):
         call_stmt = self.get_stmt_by_point(program_point)
 
@@ -231,7 +231,7 @@ class Analysis(AnalysisBase):
         value: Value = new_stack.compute_value_of_expr(call_stmt.func)
 
         for val in value:
-            if isinstance(val, MethodClass):
+            if isinstance(val, AnalysisMethod):
                 entry_lab, exit_lab = val.nl__func__.nl__gate__
                 instance = val.nl__instance__
                 new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
@@ -270,7 +270,7 @@ class Analysis(AnalysisBase):
         for val in value:
             attr_value = Getattr(val, call_stmt.attr, [])
             for attr_val in attr_value:
-                if isinstance(attr_val, MethodClass):
+                if isinstance(attr_val, AnalysisMethod):
                     entry_lab, exit_lab = attr_val.nl__func__.nl__gate__
                     instance = attr_val.nl__instance__
                     new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
@@ -316,7 +316,7 @@ class Analysis(AnalysisBase):
         for attr_type in attr_value:
             attr_value = Setattr(attr_type, attr, expr_value)
             for attr_typ in attr_value:
-                if isinstance(attr_typ, MethodClass):
+                if isinstance(attr_typ, AnalysisMethod):
                     entry_lab, exit_lab = attr_typ.nl__func__.nl__gate__
                     instance = attr_typ.nl__instance__
                     new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
@@ -385,15 +385,15 @@ class Analysis(AnalysisBase):
                 self._lambda_class(
                     program_point, old_state, new_state, dummy_value_special, typ
                 )
-            elif isinstance(typ, FunctionType):
+            elif isinstance(typ, AnalysisFunction):
                 self._lambda_function(
                     program_point, old_state, new_state, dummy_value, typ
                 )
-            elif isinstance(typ, MethodClass):
+            elif isinstance(typ, AnalysisMethod):
                 self._lambda_method(
                     program_point, old_state, new_state, dummy_value, typ
                 )
-            elif isinstance(typ, SpecialMethodClass):
+            elif isinstance(typ, ArtificialMethod):
                 self._lambda_special_method(
                     program_point, old_state, new_state, dummy_value_normal, typ
                 )
@@ -437,7 +437,7 @@ class Analysis(AnalysisBase):
         address = record(call_lab, call_ctx)
         args, _ = compute_func_args(new_state, call_stmt.args, call_stmt.keywords)
         res = typ(*args)
-        res.nl__uuid__ = address
+        res.tp_uuid = address
         dummy_value.inject(res)
 
     def _lambda_builtin_tuple(
@@ -469,7 +469,7 @@ class Analysis(AnalysisBase):
         if isinstance(new_method, Constructor):
             instance = new_method(addr, typ)
             dummy_value.inject(instance)
-        elif isinstance(new_method, FunctionType):
+        elif isinstance(new_method, AnalysisFunction):
             entry_lab, exit_lab = new_method.nl__gate__
             ret_lab, _ = self.get_special_new_return_label(call_lab)
             new_ctx = merge(call_lab, None, call_ctx)
@@ -494,7 +494,7 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: FunctionType,
+        typ: AnalysisFunction,
     ):
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = typ.nl__gate__
@@ -520,7 +520,7 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: MethodClass,
+        typ: AnalysisMethod,
     ):
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = typ.nl__func__.nl__gate__
@@ -659,7 +659,7 @@ class Analysis(AnalysisBase):
             print(target_typ, call_stmt.attr)
             attr_value = Getattr(target_typ, call_stmt.attr, None)
             for attr_typ in attr_value:
-                if isinstance(attr_typ, MethodClass):
+                if isinstance(attr_typ, AnalysisMethod):
                     instance = attr_typ.descriptor_instance
                     instance_value = create_value_with_type(instance)
                     new_stack.write_var("1", Namespace_Local, instance_value)
@@ -691,7 +691,7 @@ class Analysis(AnalysisBase):
             attr_value = Setattr(target_typ, attr, rhs_value)
             if attr_value is not None:
                 for attr_typ in attr_value:
-                    if isinstance(attr_typ, MethodClass):
+                    if isinstance(attr_typ, AnalysisMethod):
                         instance = attr_typ.descriptor_instance
                         instance_value = create_value_with_type(instance)
                         new_stack.write_var("1", Namespace_Local, instance_value)
@@ -736,7 +736,7 @@ class Analysis(AnalysisBase):
     ):
         new_stack, new_heap = new_state
         if not new_stack.top_namespace_contains(RETURN_FLAG):
-            value = create_value_with_type(NoneType())
+            value = create_value_with_type(TypeNone())
             new_stack.write_var(RETURN_FLAG, Namespace_Local, value)
 
         return new_state
@@ -903,10 +903,9 @@ class Analysis(AnalysisBase):
 
         func_module: str = new_state[0].read_module()
         value = create_value_with_type(
-            FunctionType(
+            AnalysisFunction(
                 uuid=lab,
-                name=node.name,
-                globals=func_module,
+                module=func_module,
                 code=(entry_lab, exit_lab),
             )
         )

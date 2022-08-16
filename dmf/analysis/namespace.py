@@ -14,22 +14,46 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 
 from dmf.analysis.value import Value
-from dmf.analysis.variables import SpecialVar, Var, LocalVar, NonlocalVar, GlobalVar
 
 
-class Namespace(defaultdict):
+class Var:
+    def __init__(self, name: str):
+        self.name: str = name
+
+    def __hash__(self):
+        return hash(self.name)
+
+    def __eq__(self, other: Var):
+        return self.name == other.name
+
+
+class LocalVar(Var):
     def __repr__(self):
-        return dict.__repr__(self)
+        return f"({self.name}, local)"
 
+
+class NonlocalVar(Var):
+    def __repr__(self):
+        return f"({self.name}, nonlocal)"
+
+
+class GlobalVar(Var):
+    def __repr__(self):
+        return f"({self.name}, global)"
+
+
+class SpecialVar(Var):
+    def __repr__(self):
+        return f"({self.name}, special)"
+
+
+class Namespace(dict):
     def __missing__(self, key):
-        self[key] = value = Value(top=True)
+        self[key] = value = Value(any=True)
         return value
 
-    # we use defaultdict, the default value of an unknown variable is TOP
-    # So we have to collect all variables
     def __le__(self, other):
         variables = filter(
             lambda elt: not isinstance(elt, SpecialVar),
@@ -50,7 +74,6 @@ class Namespace(defaultdict):
         return self
 
     def __contains__(self, name: str):
-        # __xxx__ and Var
         for var in self:
             if name == var.name:
                 return True

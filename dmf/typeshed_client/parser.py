@@ -1,10 +1,6 @@
 """This module is responsible for parsing a stub AST into a dictionary of names."""
 from __future__ import annotations
 
-from importlib.util import resolve_name
-
-from astpretty import pprint
-
 import ast
 import logging
 from typing import (
@@ -16,8 +12,7 @@ from typing import (
 
 from . import finder
 from .LiteralEvalVisitor import LiteralEvalVisitor
-from .finder import get_search_context, SearchContext, ModulePath
-from ..log.logger import logger
+from .finder import get_search_context, SearchContext
 
 log = logging.getLogger(__name__)
 
@@ -36,24 +31,26 @@ class BasicNameInfo:
         self.qualified_name: str = qualified_name
 
 
-class TypeshedModuleType(BasicNameInfo):
+class TypeshedModule(BasicNameInfo):
     def __init__(
         self,
         name: str,
         is_exported: bool,
         module_name: str,
         qualified_name: str,
-        nl__dict__: Dict,
+        tp_dict: Dict,
     ):
         super().__init__(name, is_exported, module_name, qualified_name)
-        self.nl__uuid__ = name
-        self.nl__dict__: Dict = nl__dict__
+        self.tp_uuid = name
+        self.tp_dict: Dict = tp_dict
 
     def get_name(self, attr_name: str):
-        if attr_name not in self.nl__dict__:
-            raise AttributeError(attr_name)
-        name_info = self.nl__dict__[attr_name]
-        return name_info
+        if attr_name not in self.tp_dict:
+            # possible it's a module
+            sub_module = f"{self.module_name}.{attr_name}"
+            return parse_module(sub_module)
+        name_info = self.tp_dict[attr_name]
+        return resolve_attribute(name_info)
 
 
 class AssignNameInfo(BasicNameInfo):
@@ -82,7 +79,7 @@ class AnnAssignNameInfo(BasicNameInfo):
         self.node: ast.AnnAssign = node
 
 
-class TypeshedClassType(BasicNameInfo):
+class TypeshedClass(BasicNameInfo):
     def __init__(
         self,
         name: str,
@@ -94,7 +91,14 @@ class TypeshedClassType(BasicNameInfo):
     ):
         super().__init__(name, is_exported, module_name, qualified_name)
         self.node: ast.ClassDef = node
-        self.child_nodes: Dict[str, ...] = child_nodes
+        self.tp_dict: Dict[str, ...] = child_nodes
+
+    def get_name(self, attr: str):
+        if attr not in self.tp_dict:
+            # possible it's a module
+            raise AttributeError(attr)
+        name_info = self.tp_dict[attr]
+        return resolve_attribute(name_info)
 
 
 class PossibleImportedNameInfo(BasicNameInfo):
@@ -140,7 +144,7 @@ class ImportedNameInfo(BasicNameInfo):
         self.imported_name: str = imported_name
 
 
-class TypeshedFunctionType(BasicNameInfo):
+class TypeshedFunction(BasicNameInfo):
     def __init__(self, name: str, is_exported: bool, module: str, full_name: str):
         super().__init__(name, is_exported, module, full_name)
         self.ordinaries: List[ast.FunctionDef] = []
@@ -161,12 +165,12 @@ class TypeshedFunctionType(BasicNameInfo):
         self.deleters.append(node)
 
 
-module_cache: Dict[str, TypeshedModuleType] = {}
+module_cache: Dict[str, TypeshedModule] = {}
 
 
 def parse_module(
     module_name: str, search_context: SearchContext = None
-) -> TypeshedModuleType:
+) -> TypeshedModule:
     if module_name in module_cache:
         return module_cache[module_name]
     log.critical(f"Parsing {module_name}")
@@ -183,9 +187,7 @@ def parse_module(
 
     visitor = ModuleVisitor(search_context, module_name, module_name, is_init=is_init)
     module_dict = visitor.build(module_ast)
-    module = TypeshedModuleType(
-        module_name, True, module_name, module_name, module_dict
-    )
+    module = TypeshedModule(module_name, True, module_name, module_name, module_dict)
     module_cache[module_name] = module
 
     return module
@@ -197,6 +199,38 @@ def is_exported_attr(name: str) -> bool:
 
 def concatenate(prefix: str, curr: str):
     return f"{prefix}.{curr}"
+
+
+def _gcd_import(name, package=None, level=0):
+    return _find_and_load(name, _gcd_import)
+
+
+def _find_and_load(module_name: str, gcd_import):
+    if module_name not in module_cache:
+        return _find_and_load_unlocked(module_name, gcd_import)
+    return module_cache[module_name]
+
+
+def _find_and_load_unlocked(name, gcd_import):
+    parent = name.rpartition(".")[0]
+    if parent:
+        if parent not in module_cache:
+            gcd_import(parent)
+        if name in module_cache:
+            return module_cache[name]
+
+    module = parse_module(name)
+    if parent:
+        parent_module = module_cache[parent]
+        parent_module.tp_dict[name.rpartition(".")[2]] = ImportedModuleInfo(
+            name=name.rpartition(".")[2],
+            is_exported=True,
+            module="test",
+            full_name="test",
+            imported_module=name,
+        )
+
+    return module
 
 
 class ModuleVisitor(ast.NodeVisitor):
@@ -223,13 +257,13 @@ class ModuleVisitor(ast.NodeVisitor):
         function_name = node.name
         is_exported = is_exported_attr(function_name)
         if function_name not in self.module_dict:
-            self.module_dict[function_name] = TypeshedFunctionType(
+            self.module_dict[function_name] = TypeshedFunction(
                 function_name,
                 is_exported,
                 self.module_name,
                 f"{self.qualified_name}.{function_name}",
             )
-        function_name_info: TypeshedFunctionType = self.module_dict[function_name]
+        function_name_info: TypeshedFunction = self.module_dict[function_name]
 
         if not node.decorator_list:
             function_name_info.append_ordinary(node)
@@ -268,14 +302,14 @@ class ModuleVisitor(ast.NodeVisitor):
             f"{self.qualified_name}.{class_name}",
             is_init=self.is_init,
         )
-        module_dict = children_name_extractor.build(ast.Module(body=node.body))
-        self.module_dict[class_name] = TypeshedClassType(
+        class_body_dict = children_name_extractor.build(ast.Module(body=node.body))
+        self.module_dict[class_name] = TypeshedClass(
             class_name,
             is_exported,
             module_name=self.module_name,
             qualified_name=f"{self.qualified_name}.{class_name}",
             node=node,
-            child_nodes=module_dict,
+            child_nodes=class_body_dict,
         )
 
     def visit_Assign(self, node: ast.Assign):
@@ -337,10 +371,16 @@ class ModuleVisitor(ast.NodeVisitor):
                 )
 
     def _resolve_name(self, node: ast.ImportFrom) -> str:
-        dot_number = "*" * node.level
-        module = "" if node.module is None else node.module
-        source_module = resolve_name(dot_number + module, self.module_name)
-        return source_module
+        if node.level == 0:
+            return node.module
+        name = "" if node.module is None else node.module
+        package = self.module_name
+        level = node.level
+        bits = package.rsplit(".", level - 1)
+        if len(bits) < level:
+            raise ValueError("attempted relative import beyond top-level package")
+        base = bits[0]
+        return "{}.{}".format(base, name) if name else base
 
     def visit_ImportFrom(self, node: ast.ImportFrom):
         source_module = self._resolve_name(node)
@@ -358,7 +398,7 @@ class ModuleVisitor(ast.NodeVisitor):
                 )
             elif alias.name == "*":
                 module = parse_module(source_module)
-                name_dict = module.nl__dict__
+                name_dict = module.tp_dict
                 if name_dict is None:
                     log.critical(
                         f"could not import {source_module} with "
@@ -391,215 +431,29 @@ class ModuleVisitor(ast.NodeVisitor):
             raise InvalidStub(f"Cannot handle node {ast.dump(node)}")
 
 
-class Resolver:
-    def __init__(self, search_context: Optional[SearchContext] = None) -> None:
-        if search_context is None:
-            search_context = get_search_context()
-        self.search_context = search_context
-
-    def resolve_module(self, module_name: str) -> TypeshedModuleType:
-        return parse_module(module_name)
-
-    def resolve_attribute(self, module_name: str, attr_name: str):
-        module = self.resolve_module(module_name)
-        attr = module.get_name(attr_name)
-        if isinstance(attr, PossibleImportedNameInfo):
-            res = self.resolve_module(attr.imported_module)
-            if attr_name in res.nl__dict__:
-                return self.resolve_attribute(attr.imported_module, attr.imported_name)
-            else:
-                return self.resolve_module(
-                    f"{attr.imported_module}.{attr.imported_name}"
-                )
-        elif isinstance(attr, ImportedModuleInfo):
-            return self.resolve_module(attr.imported_module)
-        elif isinstance(attr, ImportedNameInfo):
-            return self.resolve_attribute(attr.imported_module, attr.imported_name)
-        elif isinstance(attr, TypeshedClassType):
-            return attr
-        elif isinstance(attr, TypeshedFunctionType):
-            return attr
-        elif isinstance(attr, AssignNameInfo):
-            return attr
-        elif isinstance(attr, AnnAssignNameInfo):
-            return attr
+def resolve_attribute(attribute: BasicNameInfo):
+    if isinstance(attribute, PossibleImportedNameInfo):
+        res = parse_module(attribute.imported_module)
+        if attribute.imported_name in res.tp_dict:
+            new_attribute = res.tp_dict[attribute.imported_name]
+            return resolve_attribute(new_attribute)
         else:
-            raise NotImplementedError(attr)
-
-
-class AbstractValue:
-    def __init__(self):
-        self.abstract_value = dict()
-
-    def inject(self, abstract_value):
-        self.abstract_value.update(abstract_value)
-
-
-class TypeExprResolver(ast.NodeVisitor):
-    def __init__(self, resolver: Resolver, module: str, expr: ast.expr):
-        self.resolver: Resolver = resolver
-        self.module: str = module
-        self.expr: ast.expr = expr
-
-    def resolve(self, name_info):
-        if isinstance(name_info, TypeshedModuleType):
-            return name_info
-        elif isinstance(name_info, TypeshedClassType):
-            return name_info
-        elif isinstance(name_info, TypeshedFunctionType):
-            if any([name_info.getters, name_info.setters, name_info.deleters]):
-                raise NotImplementedError
-            else:
-                return name_info
-        elif isinstance(name_info, PossibleImportedNameInfo):
-            res = self.resolver.resolve_module(name_info.imported_module)
-            if name_info.imported_name in res.nl__dict__:
-                return self.resolver.resolve_attribute(
-                    name_info.imported_module, name_info.imported_name
-                )
-            else:
-                return self.resolver.resolve_module(
-                    f"{name_info.imported_module}.{name_info.imported_name}"
-                )
-        elif isinstance(name_info, ImportedModuleInfo):
-            return self.resolver.resolve_module(name_info.imported_module)
-        elif isinstance(name_info, ImportedNameInfo):
-            return self.resolver.resolve_attribute(
-                name_info.imported_module, name_info.imported_name
+            return parse_module(
+                f"{attribute.imported_module}.{attribute.imported_name}"
             )
-
-    def visit_BoolOp(self, node: ast.BoolOp) -> Any:
-        raise NotImplementedError
-
-    def visit_BinOp(self, node: ast.BinOp) -> AbstractValue:
-        if not isinstance(node.op, ast.Or):
-            raise NotImplementedError
-        lhs_value = self.visit(node.left)
-        rhs_value = self.visit(node.right)
-        lhs_value.inject(rhs_value)
-        return lhs_value
-
-    def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
-        raise NotImplementedError
-
-    def visit_Lambda(self, node: ast.Lambda) -> Any:
-        raise NotImplementedError
-
-    def visit_IfExp(self, node: ast.IfExp) -> Any:
-        raise NotImplementedError
-
-    def visit_Dict(self, node: ast.Dict) -> Any:
-        raise NotImplementedError
-
-    def visit_Set(self, node: ast.Set) -> Any:
-        raise NotImplementedError
-
-    def visit_ListComp(self, node: ast.ListComp) -> Any:
-        raise NotImplementedError
-
-    def visit_SetComp(self, node: ast.SetComp) -> Any:
-        raise NotImplementedError
-
-    def visit_DictComp(self, node: ast.DictComp) -> Any:
-        raise NotImplementedError
-
-    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Any:
-        raise NotImplementedError
-
-    def visit_Await(self, node: ast.Await) -> Any:
-        raise NotImplementedError
-
-    def visit_Yield(self, node: ast.Yield) -> Any:
-        raise NotImplementedError
-
-    def visit_YieldFrom(self, node: ast.YieldFrom) -> Any:
-        raise NotImplementedError
-
-    def visit_Compare(self, node: ast.Compare) -> Any:
-        raise NotImplementedError
-
-    def visit_Call(self, node: ast.Call) -> Any:
-        raise NotImplementedError
-
-    def visit_Num(self, node: ast.Num) -> Any:
-        raise NotImplementedError
-
-    def visit_Str(self, node: ast.Str) -> Any:
-        raise NotImplementedError
-
-    def visit_FormattedValue(self, node: ast.FormattedValue) -> Any:
-        raise NotImplementedError
-
-    def visit_JoinedStr(self, node: ast.JoinedStr) -> Any:
-        raise NotImplementedError
-
-    def visit_Bytes(self, node: ast.Bytes) -> Any:
-        raise NotImplementedError
-
-    def visit_NameConstant(self, node: ast.NameConstant) -> Any:
-        if node.value is not None:
-            raise NotImplementedError
-
-    def visit_Ellipsis(self, node: ast.Ellipsis) -> Any:
-        raise NotImplementedError
-
-    def visit_Constant(self, node: ast.Constant) -> Any:
-        raise NotImplementedError
-
-    def visit_Attribute(self, node: ast.Attribute) -> Any:
-        raise NotImplementedError
-
-    def visit_Subscript(self, node: ast.Subscript) -> Any:
-        if not isinstance(node.value, ast.Name):
-            raise NotImplementedError
-
-        value = self.visit(node.value)
-        return value
-
-    def visit_Starred(self, node: ast.Starred) -> Any:
-        raise NotImplementedError
-
-    def visit_Name(self, node: ast.Name) -> Any:
-        id = node.id
-        if id == "bool":
-            pass
-        elif id == "int":
-            pass
-        elif id == "float":
-            pass
-        elif id == "complex":
-            pass
-        elif id == "list":
-            pass
-        elif id == "range":
-            pass
-        elif id == "any":
-            pass
-        elif id == "str":
-            pass
-        elif id == "bytes":
-            pass
-        elif id == "bytearray":
-            pass
-        elif id == "memoryview":
-            pass
-        elif id == "set":
-            pass
-        elif id == "frozenset":
-            pass
-        elif id == "dict":
-            pass
-        else:
-            module: TypeshedModuleType = module_cache[self.module]
-            module_dict = module.nl__dict__
-            if id in module_dict:
-                name_info = module_dict[id]
-
-            else:
-                raise NotImplementedError
-
-    def visit_List(self, node: ast.List) -> Any:
-        raise NotImplementedError
-
-    def visit_Tuple(self, node: ast.Tuple) -> Any:
-        raise NotImplementedError
+    elif isinstance(attribute, ImportedModuleInfo):
+        return parse_module(attribute.imported_module)
+    elif isinstance(attribute, ImportedNameInfo):
+        module = parse_module(attribute.imported_module)
+        new_attribute = module.tp_dict[attribute.imported_name]
+        return resolve_attribute(new_attribute)
+    elif isinstance(attribute, TypeshedClass):
+        return attribute
+    elif isinstance(attribute, TypeshedFunction):
+        return attribute
+    elif isinstance(attribute, AssignNameInfo):
+        raise NotImplementedError(attribute)
+    elif isinstance(attribute, AnnAssignNameInfo):
+        return attribute
+    else:
+        raise NotImplementedError(attribute)

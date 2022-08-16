@@ -18,16 +18,6 @@ import ast
 from typing import List
 
 import dmf.share
-from dmf.analysis.prim import (
-    BUILTIN_TYPES,
-    Int,
-    NoneType,
-    Bool,
-    Str,
-    Bytes,
-    Float,
-    Complex,
-)
 from dmf.analysis.types import (
     Value,
     Namespace,
@@ -185,7 +175,7 @@ class Frame:
 
     def _find_global_namespace(self, name: str) -> Namespace:
         if name not in self.f_globals:
-            self.f_globals.write_local_value(name, Value(top=True))
+            self.f_globals.write_local_value(name, Value(any=True))
 
         return self.f_globals
 
@@ -278,22 +268,22 @@ class Stack:
         value = Value()
         if isinstance(expr, ast.Num):
             if isinstance(expr.n, int):
-                value.inject_type(Int())
+                value.inject_type(TypeInt())
             elif isinstance(expr.n, float):
-                value.inject_type(Float())
+                value.inject_type(TypeFloat())
             elif isinstance(expr.n, complex):
-                value.inject_type(Complex())
+                value.inject_type(TypeComplex())
         elif isinstance(expr, ast.NameConstant):
             if expr.value is None:
-                value.inject_type(NoneType())
+                value.inject_type(TypeNone())
             else:
-                value.inject_type(Bool())
+                value.inject_type(TypeBool())
         elif isinstance(expr, (ast.Str, ast.JoinedStr)):
-            value.inject_type(Str())
+            value.inject_type(TypeStr())
         elif isinstance(expr, ast.Bytes):
-            value.inject_type(Bytes())
+            value.inject_type(TypeBytes())
         elif isinstance(expr, ast.Compare):
-            value.inject_type(Bool())
+            value.inject_type(TypeBool())
         elif isinstance(expr, ast.Name):
             return self.read_var(expr.id)
         elif isinstance(expr, ast.Attribute):
@@ -328,8 +318,6 @@ class Stack:
             lhs_value: Value = self.compute_value_of_expr(expr.left)
             rhs_value: Value = self.compute_value_of_expr(expr.right)
             for lab1, typ1 in lhs_value:
-                if not isinstance(typ1, BUILTIN_TYPES):
-                    assert False
                 for lab2, typ2 in rhs_value:
                     try:
                         res_type = typ1.binop(dunder_method, typ2)
@@ -342,38 +330,6 @@ class Stack:
             logger.warn(expr)
             assert False, expr
         return value
-
-
-def op2dunder(operator: ast.operator):
-    magic_method = None
-    if isinstance(operator, ast.Add):
-        magic_method = "__add__"
-    elif isinstance(operator, ast.Sub):
-        magic_method = "__sub__"
-    elif isinstance(operator, ast.Mult):
-        magic_method = "__mul__"
-    elif isinstance(operator, ast.MatMult):
-        assert False
-    elif isinstance(operator, ast.Div):
-        magic_method = "__div__"
-    elif isinstance(operator, ast.Mod):
-        magic_method = "__mod__"
-    elif isinstance(operator, ast.Pow):
-        magic_method = "__pow__"
-    elif isinstance(operator, ast.LShift):
-        magic_method = "__lshift__"
-    elif isinstance(operator, ast.RShift):
-        magic_method = "__rshift__"
-    elif isinstance(operator, ast.BitOr):
-        magic_method = "__or__"
-    elif isinstance(operator, ast.BitXor):
-        magic_method = "__xor__"
-    elif isinstance(operator, ast.BitAnd):
-        magic_method = "__and__"
-    elif isinstance(operator, ast.FloorDiv):
-        magic_method = "__floordiv__"
-
-    return magic_method
 
 
 analysis_stack = Stack()

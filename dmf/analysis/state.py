@@ -17,14 +17,19 @@ import ast
 from copy import deepcopy
 from typing import Tuple, List
 
-import dmf.share
+from dmf.share import analysis_modules
 from dmf.analysis.types import Heap
-from dmf.analysis.stack import Stack
+from dmf.analysis.stack import Stack, Frame
 from dmf.analysis.variables import POS_ARG_END, Namespace_Local
 
 State = Tuple[Stack, Heap]
 
-BOTTOM = object()
+
+class StateBottom:
+    pass
+
+
+BOTTOM = StateBottom()
 
 
 def deepcopy_state(state: State) -> State:
@@ -32,11 +37,9 @@ def deepcopy_state(state: State) -> State:
     memo = {}
     new_heap = deepcopy(heap, memo)
     new_stack = deepcopy(stack, memo)
-    for name, module in dmf.share.analysis_modules.items():
+    for name, module in analysis_modules.items():
         module.namespace = deepcopy(module.namespace, memo)
-    print("old", id(dmf.analysis.types.analysis_heap))
     dmf.analysis.types.analysis_heap = new_heap
-    print("new", id(dmf.analysis.types.analysis_heap))
     dmf.analysis.stack.analysis_stack = new_stack
     return new_stack, new_heap
 

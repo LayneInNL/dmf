@@ -14,84 +14,75 @@
 
 from __future__ import annotations
 
-TOP = "VALUE_TOP"
+from typing import Union
+
+from dmf.analysis.analysis_types import Any
 
 
 class Value:
-    def __init__(self, *, top=False):
-        if top:
-            self.type_dict = TOP
+    def __init__(self, *, any=False):
+        self.types: Union[Any, dict]
+        if any:
+            self.types = Any
         else:
-            self.type_dict = {}
+            self.types = {}
 
-    def __bool__(self):
-        if isinstance(self.type_dict, dict) and self.type_dict:
+    def __le__(self, other: Value) -> bool:
+        if other.types == Any:
             return True
-        return False
-
-    def __len__(self):
-        if self.type_dict == TOP:
-            return -1
-        return len(self.type_dict)
-
-    def __le__(self, other: Value):
-        if other.type_dict == TOP:
-            return True
-        if self.type_dict == TOP:
+        if self.types == Any:
             return False
 
-        for k in self.type_dict:
-            if k not in other.type_dict:
+        for k in self.types:
+            if k not in other.types:
                 return False
-            elif not self.type_dict[k] <= other.type_dict[k]:
+            elif not self.types[k] <= other.types[k]:
                 return False
         return True
 
-    def __iadd__(self, other: Value):
-        if self.type_dict == TOP or other.type_dict == TOP:
-            self.type_dict = TOP
+    def __iadd__(self, other: Value) -> Value:
+        if self.types == Any or other.types == Any:
+            self.types = Any
             return self
 
-        for k in other.type_dict:
-            if k not in self.type_dict:
-                self.type_dict[k] = other.type_dict[k]
+        for k in other.types:
+            if k not in self.types:
+                self.types[k] = other.types[k]
             else:
-                self.type_dict[k] += other.type_dict[k]
+                self.types[k] += other.types[k]
         return self
 
     def __repr__(self):
-        return self.type_dict.__repr__()
+        return self.types.__repr__()
 
     def __iter__(self):
-        return iter(self.type_dict.values())
+        return iter(self.types.values())
 
-    def inject(self, types):
-        if isinstance(types, Value):
-            self.inject_value(types)
+    def inject_type(self, type):
+        if self.types is Any or type is Any:
+            self.types = Any
         else:
-            self.inject_type(types)
-
-    def inject_type(self, typ):
-        self.type_dict[typ.nl__uuid__] = typ
+            self.types[type.tp_uuid] = type
 
     def inject_value(self, value: Value):
-        for lab, typ in value.type_dict.items():
-            if lab not in self.type_dict:
-                self.type_dict[lab] = typ
+        if self.is_Any() or value.is_Any():
+            self.types = Any
+            return
+
+        for label, type in value.types.items():
+            if label not in self.types:
+                self.types[label] = type
             else:
-                self.type_dict[lab] += typ
+                self.types[label] += type
 
     def values(self):
-        return self.type_dict.values()
+        return self.types.values()
+
+    def is_Any(self) -> bool:
+        return self.types is Any
 
 
 def create_value_with_type(typ) -> Value:
     value = Value()
-    value.inject(typ)
-    return value
-
-
-def create_value_with_value(val) -> Value:
-    value = Value()
-    value.inject_value(val)
+    value.inject_type(typ)
     return value
