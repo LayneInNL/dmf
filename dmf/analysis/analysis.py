@@ -903,20 +903,11 @@ class Analysis(AnalysisBase):
                 tp_module=func_module,
                 tp_code=(entry_lab, exit_lab),
                 tp_defaults=defaults,
-                tp_kwdefautls=kwdefaults,
+                tp_kwdefaults=kwdefaults,
             )
         )
 
         new_state[0].write_var(node.name, Namespace_Local, value)
-        return new_state
-
-    def transfer_Pass(
-        self,
-        program_point: ProgramPoint,
-        old_state: State,
-        new_state: State,
-        stmt: ast.Pass,
-    ) -> State:
         return new_state
 
     def transfer_If(
@@ -988,4 +979,31 @@ class Analysis(AnalysisBase):
         assert isinstance(stmt.targets[0], ast.Name), stmt
         name = stmt.targets[0].id
         new_stack.delete_var(name)
+        return new_state
+
+    def transfer_Pass(
+        self,
+        program_point: ProgramPoint,
+        old_state: State,
+        new_state: State,
+        stmt: ast.Pass,
+    ) -> State:
+        return new_state
+
+    def transfer_Break(
+        self,
+        program_point: ProgramPoint,
+        old_state: State,
+        new_state: State,
+        stmt: ast.Break,
+    ) -> State:
+        return new_state
+
+    def transfer_Continue(
+        self,
+        program_point: ProgramPoint,
+        old_state: State,
+        new_state: State,
+        stmt: ast.Continue,
+    ) -> State:
         return new_state

@@ -41,7 +41,7 @@ class BlockId:
         return cls.counter
 
 
-class BasicBlock(object):
+class BasicBlock:
     def __init__(self, bid: int):
         self.bid: int = bid
         self.stmt = []
@@ -473,30 +473,34 @@ class CFGVisitor(ast.NodeVisitor):
 
         if len(new_expr_sequence) == 1:
             if isinstance(node.value, ast.Call):
+                # call node(implicit __new__)
                 call_node = self.curr_block
                 add_stmt(call_node, node.value)
 
-                tmp_var = ast.Name(id=TempVariableName.generate(), ctx=ast.Store())
+                # __new__ return node
                 new_node = self.add_edge(call_node.bid, self.new_block().bid)
-                add_stmt(new_node, tmp_var)
+                new_var = ast.Name(id=TempVariableName.generate())
+                add_stmt(new_node, new_var)
+
+                # __new__ dummy return node
                 dummy_new_node = self.add_edge(new_node.bid, self.new_block().bid)
-                add_stmt(dummy_new_node, tmp_var)
+                add_stmt(dummy_new_node, new_var)
                 self.cfg.dummy_labels.add(dummy_new_node.bid)
 
+                # __init__ attr lookup node
                 init_attribute_node = self.add_edge(
                     dummy_new_node.bid, self.new_block().bid
                 )
-                init_attribute_name = ast.Name(
-                    id=TempVariableName.generate(), ctx=ast.Store()
-                )
+                init_attribute_name = ast.Name(id=TempVariableName.generate())
                 add_stmt(
                     init_attribute_node,
                     ast.Assign(
                         targets=[init_attribute_name],
-                        value=ast.Attribute(value=tmp_var, attr="__init__"),
+                        value=ast.Attribute(value=new_var, attr="__init__"),
                     ),
                 )
 
+                # __init__ call node
                 init_call_node = self.add_edge(
                     init_attribute_node.bid, self.new_block().bid
                 )
@@ -507,17 +511,21 @@ class CFGVisitor(ast.NodeVisitor):
                 )
                 add_stmt(init_call_node, init_call)
 
-                tmp_var = ast.Name(id=TempVariableName.generate(), ctx=ast.Store())
+                # __init__ return node
                 init_return_node = self.add_edge(
                     init_call_node.bid, self.new_block().bid
                 )
-                add_stmt(init_return_node, tmp_var)
+                init_var = ast.Name(id=TempVariableName.generate(), ctx=ast.Store())
+                add_stmt(init_return_node, init_var)
+
+                # __init__ dummy return node(return node)
                 dummy_return_node = self.add_edge(
                     init_return_node.bid, self.new_block().bid
                 )
-                add_stmt(dummy_return_node, tmp_var)
+                add_stmt(dummy_return_node, init_var)
                 self.cfg.dummy_labels.add(dummy_return_node.bid)
 
+                # update call return flow
                 self.cfg.call_return_inter_flows.add(
                     (
                         call_node.bid,
@@ -529,25 +537,30 @@ class CFGVisitor(ast.NodeVisitor):
                         dummy_return_node.bid,
                     )
                 )
+                # update __new__ flow
                 self.cfg.special_init_inter_flows.add(
                     (init_call_node.bid, init_return_node.bid, dummy_return_node.bid)
                 )
-                node.value = tmp_var
+                node.value = init_var
                 self.curr_block = dummy_return_node
             elif isinstance(node.value, ast.Attribute):
-                tmp_var = ast.Name(id=TempVariableName.generate(), ctx=ast.Store())
+                # call x.y
+                descr_get_var = ast.Name(id=TempVariableName.generate())
                 call_node = self.curr_block
                 add_stmt(call_node, node.value)
+                # return xxx
                 return_node = self.add_edge(call_node.bid, self.new_block().bid)
-                add_stmt(return_node, tmp_var)
+                add_stmt(return_node, descr_get_var)
+                # dummy xxx
                 dummy_return_node = self.add_edge(return_node.bid, self.new_block().bid)
-                add_stmt(dummy_return_node, tmp_var)
+                add_stmt(dummy_return_node, descr_get_var)
                 self.cfg.dummy_labels.add(dummy_return_node.bid)
 
+                # update flow info
                 self.cfg.getter_inter_flows.add(
                     (call_node.bid, return_node.bid, dummy_return_node.bid)
                 )
-                node.value = tmp_var
+                node.value = descr_get_var
                 self.curr_block = dummy_return_node
             # else:
             #     add_stmt(self.curr_block, node)
@@ -558,23 +571,27 @@ class CFGVisitor(ast.NodeVisitor):
                 self.populate_body(expr_sequence[:-1])
                 lhs_target = expr_sequence[-1]
                 tmp_assign = ast.Assign(targets=[lhs_target], value=node.value)
-                if not isinstance(lhs_target, ast.Name):
+                if isinstance(lhs_target, ast.Attribute):
                     call_node = self.curr_block
                     add_stmt(call_node, tmp_assign)
+
                     return_node = self.add_edge(call_node.bid, self.new_block().bid)
                     add_stmt(return_node, tmp_assign)
+
                     dummy_return_node = self.add_edge(
                         return_node.bid, self.new_block().bid
                     )
                     add_stmt(dummy_return_node, tmp_assign)
-                    self.cfg.dummy_labels.add(dummy_return_node.bid)
 
+                    self.cfg.dummy_labels.add(dummy_return_node.bid)
                     self.cfg.setter_inter_flows.add(
                         (call_node.bid, return_node.bid, dummy_return_node.bid)
                     )
                     self.curr_block = dummy_return_node
-                else:
+                elif isinstance(lhs_target, (ast.Subscript, ast.Name)):
                     add_stmt(self.curr_block, tmp_assign)
+                elif isinstance(lhs_target, (ast.List, ast.Tuple)):
+                    raise NotImplementedError(lhs_target)
                 self.curr_block = self.add_edge(
                     self.curr_block.bid, self.new_block().bid
                 )
@@ -921,6 +938,8 @@ class CFGVisitor(ast.NodeVisitor):
     # new_expr_sequence stores a list of temporal statements
     # decompose_expr(expr)-> List[expr], ast.Name
 
+    # self.visit(expr) returns destructed expr. and the last element is simplified expr itself.
+
     def decompose_expr(self, expr: ast.expr) -> Tuple:
         if expr is None:
             return [], None
@@ -1264,10 +1283,10 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Any:
         if isinstance(node.func, ast.Lambda):
-            assert False
-            seq1, name = self.decompose_expr(node.func)
-            tmp_call = ast.Call(args=node.args, func=name, keywords=node.keywords)
-            return seq1 + [tmp_call]
+            raise NotImplementedError
+            # seq1, name = self.decompose_expr(node.func)
+            # tmp_call = ast.Call(args=node.args, func=name, keywords=node.keywords)
+            # return seq1 + [tmp_call]
 
         seq = []
 

@@ -107,14 +107,14 @@ class AnalysisFunction:
         tp_code: Tuple[int, int],
         tp_module: str,
         tp_defaults,
-        tp_kwdefautls,
+        tp_kwdefaults,
     ):
         self.tp_uuid: int = tp_uuid
         self.tp_code: Tuple[int, int] = tp_code
         self.tp_module: str = tp_module
         self.tp_dict: Namespace = Namespace()
         self.tp_defaults = tp_defaults
-        self.tp_kwdefaults = tp_kwdefautls
+        self.tp_kwdefaults = tp_kwdefaults
 
     def __le__(self, other: AnalysisFunction):
         return self.tp_dict <= other.tp_dict
