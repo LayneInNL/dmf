@@ -12,24 +12,20 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 from __future__ import annotations
+
 from typing import Dict
 
+from dmf.analysis.analysis_types import (
+    AnalysisInstance,
+    Namespace_Local,
+)
 from dmf.analysis.analysis_types import Namespace
-from dmf.analysis.analysis_types import AnalysisInstance, ArtificialInstance
 from dmf.analysis.value import Value
-from dmf.analysis.analysis_types import LocalVar
 
 
 class Heap:
     def __init__(self):
         self.singletons: Dict = {}
-
-    # def __deepcopy__(self, memo):
-    #     new_singletons = deepcopy(self.singletons, memo)
-    #     new_heap = object.__new__(Heap)
-    #     new_heap.singletons = new_singletons
-    #     memo[id(self)] = new_heap
-    #     return new_heap
 
     def __contains__(self, item):
         return item in self.singletons
@@ -65,20 +61,27 @@ class Heap:
     def __repr__(self):
         return "heaps: {}".format(self.singletons)
 
-    def write_ins_to_heap(self, instance: Instance) -> Namespace:
+    def write_instance_to_heap(self, instance: AnalysisInstance):
         if instance not in self.singletons:
-            self.singletons[instance] = Namespace()
-        print(id(self.singletons[instance]))
-        return self.singletons[instance]
+            self.singletons[instance.tp_uuid] = Namespace()
 
-    def write_field_to_heap(self, instance: Instance, field: str, value: Value):
-        self.singletons[instance][LocalVar(field)] = value
+    def write_field_to_instance(
+        self, instance: AnalysisInstance, field: str, value: Value
+    ):
+        assert instance.tp_uuid in self.singletons
+        tp_dict = self.singletons[instance.tp_uuid]
+        tp_dict.write_local_value(field, Namespace_Local, value)
 
-    def read_field_from_heap(self, instance: Instance, field: str):
-        return self.singletons[instance][LocalVar(field)]
+    def read_field_from_instance(self, instance: AnalysisInstance, field: str):
+        assert instance.tp_uuid in self.singletons
+        tp_dict = self.singletons[instance.tp_uuid]
+        return tp_dict.read_value(field)
 
-    def read_instance_dict(self, instance: Instance):
-        return self.singletons[instance]
+    def read_instance_dict(self, instance: AnalysisInstance):
+        return self.singletons[instance.tp_uuid]
 
-    def write_instance_dict(self, instance: Instance):
-        self.singletons[instance] = Namespace()
+    def write_instance_dict(self, instance: AnalysisInstance):
+        self.singletons[instance.tp_uuid] = Namespace()
+
+    def delete_instance_from_heap(self, instance: AnalysisInstance):
+        del self.singletons[instance.tp_uuid]

@@ -34,4 +34,4 @@
 #     Namespace_Helper,
 #     Var,
 # )
-from ._types_with_methods import *
+from ._type_operations import *

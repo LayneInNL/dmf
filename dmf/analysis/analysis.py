@@ -19,8 +19,17 @@ from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, List
 
 import dmf.share
-from dmf.analysis.analysis_types import AnalysisClass, AnalysisFunction
-from dmf.share import analysis_modules
+from dmf.analysis.analysis_types import AnalysisClass, AnalysisFunction, Constructor
+from dmf.analysis.analysis_types import (
+    Namespace_Local,
+    Namespace_Nonlocal,
+    Namespace_Global,
+    RETURN_FLAG,
+    POS_ARG_END,
+    INIT_FLAG,
+    Namespace_Helper,
+)
+from dmf.analysis.analysis_types import None_Instance
 from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
 from dmf.analysis.state import (
     compute_function_defaults,
@@ -39,31 +48,9 @@ from dmf.analysis.state import (
     Stack,
     Heap,
 )
-from dmf.analysis.analysis_types import None_Instance
-
-# from dmf.analysis.types import (
-#     CustomClass,
-#     AnalysisFunction,
-#     AnalysisMethod,
-#     dunder_lookup,
-#     Constructor,
-#     Setattr,
-#     ArtificialMethod,
-#     Getattr,
-#     ListClass,
-#     TupleClass,
-# )
 from dmf.analysis.value import Value, create_value_with_type
-from dmf.analysis.analysis_types import (
-    Namespace_Local,
-    Namespace_Nonlocal,
-    Namespace_Global,
-    RETURN_FLAG,
-    POS_ARG_END,
-    INIT_FLAG,
-    Namespace_Helper,
-)
 from dmf.log.logger import logger
+from dmf.share import analysis_modules
 
 Unused_Name = "UNUSED_NAME"
 
@@ -196,7 +183,7 @@ class Analysis(AnalysisBase):
         cls_value = new_state.compute_value_of_expr(stmt.args[0])
         for c in cls_value:
             instance = typ(addr, c)
-            heap = new_heap.write_ins_to_heap(instance)
+            heap = new_heap.write_instance_to_heap(instance)
             instance.tp_dict = heap
             dummy_value.inject(instance)
 
@@ -391,36 +378,36 @@ class Analysis(AnalysisBase):
         dummy_value_normal: Value = Value()
         dummy_value_special: Value = Value()
 
-        value: Value = new_state.compute_value_of_expr(call_stmt.func, address)
+        value: Value = new_state.compute_value_of_expr(call_stmt.func)
         # iterate all types to find which is callable
-        for typ in value:
-            if isinstance(typ, CustomClass):
+        for type in value:
+            if isinstance(type, AnalysisClass):
                 self._lambda_class(
-                    program_point, old_state, new_state, dummy_value_special, typ
+                    program_point, old_state, new_state, dummy_value_special, type
                 )
-            elif isinstance(typ, AnalysisFunction):
+            elif isinstance(type, AnalysisFunction):
                 self._lambda_function(
-                    program_point, old_state, new_state, dummy_value, typ
+                    program_point, old_state, new_state, dummy_value, type
                 )
-            elif isinstance(typ, AnalysisMethod):
+            elif isinstance(type, AnalysisMethod):
                 self._lambda_method(
-                    program_point, old_state, new_state, dummy_value, typ
+                    program_point, old_state, new_state, dummy_value, type
                 )
-            elif isinstance(typ, ArtificialMethod):
+            elif isinstance(type, ArtificialMethod):
                 self._lambda_special_method(
-                    program_point, old_state, new_state, dummy_value_normal, typ
+                    program_point, old_state, new_state, dummy_value_normal, type
                 )
-            elif isinstance(typ, Constructor):
+            elif isinstance(type, Constructor):
                 self._lambda_constructor(
-                    program_point, old_state, new_state, dummy_value_normal, typ
+                    program_point, old_state, new_state, dummy_value_normal, type
                 )
-            elif isinstance(typ, ListClass):
+            elif isinstance(type, ListClass):
                 self._lambda_builtin_list(
-                    program_point, old_state, new_state, dummy_value_normal, typ
+                    program_point, old_state, new_state, dummy_value_normal, type
                 )
-            elif isinstance(typ, TupleClass):
+            elif isinstance(type, TupleClass):
                 self._lambda_builtin_tuple(
-                    program_point, old_state, new_state, dummy_value_normal, typ
+                    program_point, old_state, new_state, dummy_value_normal, type
                 )
 
         if len(dummy_value_normal):
@@ -472,18 +459,19 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: CustomClass,
+        type: AnalysisClass,
     ):
         call_lab, call_ctx = program_point
-        _, new_heap = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
 
         addr = record(call_lab, call_ctx)
-        new_method = dunder_lookup(typ, "__new__")
+        new_method = type.tp_dict.read_magic_method_value(type, "__new__")
         if isinstance(new_method, Constructor):
-            instance = new_method(addr, typ)
-            dummy_value.inject(instance)
+            analysis_instance = new_method(addr, type)
+            new_heap.write_instance_to_heap(analysis_instance)
+            dummy_value.inject_type(analysis_instance)
         elif isinstance(new_method, AnalysisFunction):
-            entry_lab, exit_lab = new_method.nl__gate__
+            entry_lab, exit_lab = new_method.tp_code
             ret_lab, _ = self.get_special_new_return_label(call_lab)
             new_ctx = merge(call_lab, None, call_ctx)
             inter_flow = (
@@ -494,9 +482,9 @@ class Analysis(AnalysisBase):
             )
             self.inter_flows.add(inter_flow)
             self.entry_program_point_info[(entry_lab, new_ctx)] = (
-                typ,
+                type,
                 None,
-                typ.nl__module__,
+                type.tp_module,
             )
 
     # unbound func call

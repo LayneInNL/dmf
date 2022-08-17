@@ -116,6 +116,7 @@ class AnalysisFunction:
         self.tp_dict: Namespace = Namespace()
         self.tp_defaults = tp_defaults
         self.tp_kwdefaults = tp_kwdefaults
+        self.tp_class = Function_Type
 
     def __le__(self, other: AnalysisFunction):
         return self.tp_dict <= other.tp_dict
@@ -230,6 +231,9 @@ class AnalysisInstanceConstructor:
 
     def __call__(self, address, type):
         return AnalysisInstance(address, type)
+
+
+Constructor = AnalysisInstanceConstructor()
 
 
 class ArtificialInstanceConstructor:
