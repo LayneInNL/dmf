@@ -195,6 +195,11 @@ class Stack:
     def __init__(self):
         self.frames: List[Frame] = []
 
+    def init_first_frame(self, qualified_module_name: str):
+        module = dmf.share.analysis_modules[qualified_module_name]
+        global_ns = module.namespace
+        self.frames.append(Frame(f_locals=global_ns, f_back=None, f_globals=global_ns))
+
     def __le__(self, other: Stack):
         frame_pairs = zip(reversed(self.frames), reversed(other.frames))
         for frame_pair in frame_pairs:
@@ -330,6 +335,3 @@ class Stack:
             logger.warn(expr)
             assert False, expr
         return value
-
-
-analysis_stack = Stack()

@@ -189,7 +189,7 @@ class AnalysisBase:
         dmf.share.update_global_info(cfg)
         return cfg, cfg.start_block.bid, cfg.final_block.bid
 
-    def DELTA(self, program_point: ProgramPoint):
+    def generate_flow(self, program_point: ProgramPoint):
         added = []
         added += self.DELTA_basic_flow(program_point)
         added += self.DELTA_call_flow(program_point)

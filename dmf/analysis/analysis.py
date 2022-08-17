@@ -21,7 +21,7 @@ from typing import Dict, Tuple, Deque, List
 import dmf.share
 from dmf.share import analysis_modules
 from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
-from dmf.analysis.stack import Frame, analysis_stack
+from dmf.analysis.stack import Frame
 from dmf.analysis.state import (
     compute_function_defaults,
     compute_bases,
@@ -36,6 +36,8 @@ from dmf.analysis.state import (
     merge_states,
     is_bot_state,
     deepcopy_state,
+    Stack,
+    Heap,
 )
 from dmf.analysis.types import (
     ModuleType,
@@ -45,12 +47,10 @@ from dmf.analysis.types import (
     dunder_lookup,
     Constructor,
     Setattr,
-    mock_value,
     ArtificialMethod,
     Getattr,
     ListClass,
     TupleClass,
-    analysis_heap,
 )
 from dmf.analysis.value import Value, create_value_with_type
 from dmf.analysis.namespace import (
@@ -76,36 +76,29 @@ def merge(label: int, heap, context: Tuple):
 
 
 class Analysis(AnalysisBase):
-    def __init__(self, module_name: str):
+    def __init__(self, qualified_module_name: str):
         super().__init__()
         # work list
         self.work_list: Deque[Tuple[ProgramPoint, ProgramPoint]] = deque()
+        # extremal value
+        self.extremal_value: State = (Stack(), Heap())
+        # init first frame of stack of extremal value
+        self.extremal_value[0].init_first_frame(qualified_module_name)
+
+        curr_module = analysis_modules[qualified_module_name]
+        start_lab, final_lab = curr_module.entry_label, curr_module.exit_label
+        # start point
+        self.extremal_point: ProgramPoint = (start_lab, ())
+        # end point
+        self.final_point: ProgramPoint = (final_lab, ())
 
         self.entry_program_point_info: Dict = {}
-        self.extremal_value: State = (analysis_stack, analysis_heap)
         self.analysis_list: defaultdict[ProgramPoint, State | BOTTOM] = defaultdict(
             lambda: BOTTOM
         )
         self.analysis_effect_list = {}
 
-        curr_module: ModuleType = analysis_modules[module_name]
-        start_lab, final_lab = curr_module.entry_label, curr_module.exit_label
-        self.extremal_point: ProgramPoint = (start_lab, ())
-        self.final_point: ProgramPoint = (final_lab, ())
         self.analyzed_program_points = {self.extremal_point}
-
-        # init first frame
-        def init_first_frame(extremal_value, module):
-            global_ns = module.namespace
-            extremal_value.push_frame(
-                Frame(
-                    f_locals=global_ns,
-                    f_back=None,
-                    f_globals=global_ns,
-                )
-            )
-
-        init_first_frame(self.extremal_value[0], curr_module)
 
     def compute_fixed_point(self):
         self.initialize()
@@ -113,16 +106,16 @@ class Analysis(AnalysisBase):
         self.present()
 
     def initialize(self):
-        self.work_list.extendleft(self.DELTA(self.extremal_point))
+        self.work_list.extendleft(self.generate_flow(self.extremal_point))
         self.analysis_list[self.extremal_point] = self.extremal_value
 
     def _push_state_to(self, state: State, program_point: ProgramPoint):
         old: State | BOTTOM = self.analysis_list[program_point]
         if not compare_states(state, old):
-            state = merge_states(state, old)
+            state: State = merge_states(state, old)
             self.analysis_list[program_point]: State = state
-            self.LAMBDA(program_point)
-            added_program_points = self.DELTA(program_point)
+            self.detect_flow(program_point)
+            added_program_points = self.generate_flow(program_point)
             self.work_list.extendleft(added_program_points)
 
     def iterate(self):
@@ -151,7 +144,7 @@ class Analysis(AnalysisBase):
         self.transfer(self.final_point)
 
     # based on current program point, update self.IF
-    def LAMBDA(self, program_point: ProgramPoint) -> None:
+    def detect_flow(self, program_point: ProgramPoint) -> None:
         logger.debug(f"Current lambda point: {program_point}")
         old_state: State = self.analysis_list[program_point]
         new_state: State = deepcopy_state(old_state)
@@ -549,7 +542,7 @@ class Analysis(AnalysisBase):
         if is_bot_state(old_state):
             return BOTTOM
 
-        new_state = deepcopy_state(old_state)
+        new_state: State = deepcopy_state(old_state)
         if self.is_dummy_point(program_point):
             return self.transfer_dummy(program_point, old_state, new_state)
         elif self.is_call_point(program_point):

@@ -14,26 +14,26 @@
 import ast
 
 from ._types import (
-    Object,
-    Type,
-    Int,
-    Float,
-    Complex,
-    List,
-    Tuple,
-    Range,
-    Str,
-    Bytes,
-    ByteArray,
-    MemoryView,
-    Set,
-    FrozenSet,
-    Dict,
-    Module,
-    Function,
-    Method,
-    NoneType,
-    Bool,
+    Object_Type,
+    Type_Type,
+    Int_Type,
+    Float_Type,
+    Complex_Type,
+    List_Type,
+    Tuple_Type,
+    Range_Type,
+    Str_Type,
+    Bytes_Type,
+    ByteArray_Type,
+    MemoryView_Type,
+    Set_Type,
+    FrozenSet_Type,
+    Dict_Type,
+    Module_Type,
+    Function_Type,
+    Method_Type,
+    None_Type,
+    Bool_Type,
 )
 from .analysis_types import Any
 from .namespace import Namespace
@@ -250,11 +250,11 @@ def type_getattro(type, name):
             if descr_tp_get is not NotImplemented:
                 if isinstance(descr_tp_get, AnalysisFunction):
                     one_descr = AnalysisDescriptorGetFunction(
-                        tp_self=descr, tp_obj=NoneType, tp_objtype=type
+                        tp_self=descr, tp_obj=None_Type, tp_objtype=type
                     )
                     descr_value.inject_type(one_descr)
                 elif isinstance(descr_tp_get, ArtificialFunction):
-                    one_res = descr_tp_get(descr, NoneType, type)
+                    one_res = descr_tp_get(descr, None_Type, type)
                     res_value.inject_type(one_res)
                 else:
                     raise NotImplementedError
@@ -279,7 +279,7 @@ def c3(cls_obj):
 
 
 def static_c3(cls_obj):
-    if cls_obj is Object:
+    if cls_obj is Object_Type:
         return [cls_obj]
     return [cls_obj] + static_merge([static_c3(base) for base in cls_obj.tp_bases])
 
@@ -300,22 +300,22 @@ def static_merge(mro_list):
 
 
 _object_getattro = ArtificialFunction(GenericGetAttr)
-Object.tp_dict.write_local_value("__getattribute__", _object_getattro)
+Object_Type.tp_dict.write_local_value("__getattribute__", _object_getattro)
 _object_setattro = ArtificialFunction(GenericSetAttr)
-Object.tp_dict.write_local_value("__setattr__", _object_setattro)
+Object_Type.tp_dict.write_local_value("__setattr__", _object_setattro)
 _type_getattro = ArtificialFunction(type_getattro)
-Type.tp_dict.write_local_value("__getattribute__", _type_getattro)
+Type_Type.tp_dict.write_local_value("__getattribute__", _type_getattro)
 _type_setattro = ArtificialFunction(type_getattro)
-Type.tp_dict.write_local_value("__setattr__", _type_setattro)
+Type_Type.tp_dict.write_local_value("__setattr__", _type_setattro)
 
-Int_Instance = ArtificialInstance(-1, Int)
-Float_Instance = ArtificialInstance(-2, Float)
-Complex_Instance = ArtificialInstance(-3, Complex)
-Str_Instance = ArtificialInstance(-4, Str)
-Bytes_Instance = ArtificialInstance(-5, Bytes)
-ByteArray_Instance = ArtificialInstance(-6, ByteArray)
-None_Instance = ArtificialInstance(-7, NoneType)
-Bool_Instance = ArtificialInstance(-8, Bool)
+Int_Instance = ArtificialInstance(-1, Int_Type)
+Float_Instance = ArtificialInstance(-2, Float_Type)
+Complex_Instance = ArtificialInstance(-3, Complex_Type)
+Str_Instance = ArtificialInstance(-4, Str_Type)
+Bytes_Instance = ArtificialInstance(-5, Bytes_Type)
+ByteArray_Instance = ArtificialInstance(-6, ByteArray_Type)
+None_Instance = ArtificialInstance(-7, None_Type)
+Bool_Instance = ArtificialInstance(-8, Bool_Type)
 
 # Object,
 # Type,
@@ -519,7 +519,13 @@ class TypeExprVisitor(ast.NodeVisitor):
 
 
 builtin_module = parse_module("builtins")
+
 _typeshed_int = builtin_module.get_name("int")
 typeshed_int = evaluate(_typeshed_int)
 Int_Instance.tp_class = typeshed_int
-Int.tp_mro = [typeshed_int, Object]
+Int_Type.tp_mro = [typeshed_int, Object_Type]
+
+_typeshed_float = builtin_module.get_name("float")
+typeshed_float = evaluate(_typeshed_float)
+Float_Instance.tp_class = typeshed_float
+Float_Type.tp_mro = [typeshed_float, Object_Type]

@@ -33,7 +33,7 @@ class TypeType(SpecialAttributes):
         self.tp_class = self
 
 
-Type = TypeType()
+Type_Type = TypeType()
 
 
 class TypeObject(SpecialAttributes):
@@ -41,11 +41,12 @@ class TypeObject(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
+        self.tp_class = Type_Type
+        self.tp_mro = [self]
 
 
-Object = TypeObject()
-Type.tp_mro = [Type, Object]
+Object_Type = TypeObject()
+Type_Type.tp_mro = [Type_Type, Object_Type]
 
 
 class TypeInt(SpecialAttributes):
@@ -53,11 +54,11 @@ class TypeInt(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Int = TypeInt()
+Int_Type = TypeInt()
 
 
 class TypeFloat(SpecialAttributes):
@@ -65,11 +66,11 @@ class TypeFloat(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Float = TypeFloat()
+Float_Type = TypeFloat()
 
 
 class TypeComplex(SpecialAttributes):
@@ -77,11 +78,11 @@ class TypeComplex(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Complex = TypeComplex()
+Complex_Type = TypeComplex()
 
 
 class TypeList(SpecialAttributes):
@@ -89,11 +90,11 @@ class TypeList(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-List = TypeList()
+List_Type = TypeList()
 
 
 class TypeTuple(SpecialAttributes):
@@ -101,11 +102,11 @@ class TypeTuple(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Tuple = TypeTuple()
+Tuple_Type = TypeTuple()
 
 
 class TypeRange(SpecialAttributes):
@@ -113,11 +114,11 @@ class TypeRange(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Range = TypeRange()
+Range_Type = TypeRange()
 
 
 class TypeStr(SpecialAttributes):
@@ -125,11 +126,11 @@ class TypeStr(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Str = TypeStr()
+Str_Type = TypeStr()
 
 
 class TypeBytes(SpecialAttributes):
@@ -137,11 +138,11 @@ class TypeBytes(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Bytes = TypeBytes()
+Bytes_Type = TypeBytes()
 
 
 class TypeByteArray(SpecialAttributes):
@@ -149,11 +150,11 @@ class TypeByteArray(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-ByteArray = TypeByteArray()
+ByteArray_Type = TypeByteArray()
 
 
 class TypeMemoryView(SpecialAttributes):
@@ -161,11 +162,11 @@ class TypeMemoryView(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-MemoryView = TypeMemoryView()
+MemoryView_Type = TypeMemoryView()
 
 
 class TypeSet(SpecialAttributes):
@@ -173,11 +174,11 @@ class TypeSet(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Set = TypeSet()
+Set_Type = TypeSet()
 
 
 class TypeFrozenSet(SpecialAttributes):
@@ -185,11 +186,11 @@ class TypeFrozenSet(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-FrozenSet = TypeFrozenSet()
+FrozenSet_Type = TypeFrozenSet()
 
 
 class TypeDict(SpecialAttributes):
@@ -197,11 +198,11 @@ class TypeDict(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Dict = TypeDict()
+Dict_Type = TypeDict()
 
 
 class TypeModule(SpecialAttributes):
@@ -209,11 +210,11 @@ class TypeModule(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Module = TypeModule()
+Module_Type = TypeModule()
 
 
 class TypeFunction(SpecialAttributes):
@@ -221,11 +222,11 @@ class TypeFunction(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Function = TypeFunction()
+Function_Type = TypeFunction()
 
 
 class TypeMethod(SpecialAttributes):
@@ -233,11 +234,11 @@ class TypeMethod(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Method = TypeMethod()
+Method_Type = TypeMethod()
 
 
 class TypeNoneType(SpecialAttributes):
@@ -245,11 +246,11 @@ class TypeNoneType(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-NoneType = TypeNoneType()
+None_Type = TypeNoneType()
 
 
 class TypeBool(SpecialAttributes):
@@ -257,8 +258,8 @@ class TypeBool(SpecialAttributes):
         super().__init__()
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
-        self.tp_class = Type
-        self.tp_mro = [self, Object]
+        self.tp_class = Type_Type
+        self.tp_mro = [self, Object_Type]
 
 
-Bool = TypeBool()
+Bool_Type = TypeBool()
