@@ -11,9 +11,27 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-class TypeAny:
-    def __init__(self):
-        self.tp_uuid = id(self)
 
-
-Any = TypeAny()
+# from ._types_with_methods import (
+#     Any,
+#     Object_Type,
+#     None_Instance,
+#     AnalysisModule,
+#     AnalysisInstance,
+#     ArtificialInstance,
+#     AnalysisClass,
+#     Namespace,
+#     LocalVar,
+#     NonlocalVar,
+#     GlobalVar,
+#     SpecialVar,
+#     POS_ARG_END,
+#     INIT_FLAG,
+#     RETURN_FLAG,
+#     Namespace_Local,
+#     Namespace_Nonlocal,
+#     Namespace_Global,
+#     Namespace_Helper,
+#     Var,
+# )
+from ._types_with_methods import *

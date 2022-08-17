@@ -17,10 +17,11 @@ import ast
 from copy import deepcopy
 from typing import Tuple, List
 
+from dmf.analysis._types import Object_Type
 from dmf.share import analysis_modules
 from dmf.analysis.heap import Heap
 from dmf.analysis.stack import Stack, Frame
-from dmf.analysis.namespace import POS_ARG_END, Namespace_Local
+from dmf.analysis.analysis_types import POS_ARG_END, Namespace_Local
 
 State = Tuple[Stack, Heap]
 
@@ -38,9 +39,7 @@ def deepcopy_state(state: State) -> State:
     new_heap = deepcopy(heap, memo)
     new_stack = deepcopy(stack, memo)
     for name, module in analysis_modules.items():
-        module.namespace = deepcopy(module.namespace, memo)
-    dmf.analysis.types.analysis_heap = new_heap
-    dmf.analysis.stack.analysis_stack = new_stack
+        module.tp_dict = deepcopy(module.tp_dict, memo)
     return new_stack, new_heap
 
 
@@ -74,26 +73,32 @@ def compute_function_defaults(state: State, node: ast.FunctionDef):
     stack, heap = state
 
     # https: // docs.python.org / 3.11 / library / ast.html  # ast.arguments
-    args: ast.arguments = node.args
+    arguments: ast.arguments = node.args
 
     # defaults is a list of default values for arguments that can be passed positionally.
     # If there are fewer defaults, they correspond to the last n arguments.
-    args_diff_len = len(args.args) - len(args.defaults)
-    args.nl_defaults = []
-    for default in args.defaults:
+    args_diff_len = len(arguments.args) - len(arguments.defaults)
+    defaults = [None] * args_diff_len
+    for default in arguments.defaults:
         default_value = stack.compute_value_of_expr(default)
-        args.nl_defaults.append(default_value)
-    args.nl_defaults = [None] * args_diff_len + args.nl_defaults
+        defaults.append(default_value)
 
     # kw_defaults is a list of default values for keyword-only arguments.
     # If one is None, the corresponding argument is required.
-    args.nl_kw_defaults = []
-    for kw_default in args.kw_defaults:
+    kwdefaults = []
+    for kw_default in arguments.kw_defaults:
         if kw_default is None:
-            args.nl_kw_defaults.append(kw_default)
+            kwdefaults.append(kw_default)
         else:
             kw_default_value = stack.compute_value_of_expr(kw_default)
-            args.nl_kw_defaults.append(kw_default_value)
+            kwdefaults.append(kw_default_value)
+
+    if arguments.vararg:
+        raise NotImplementedError
+    if arguments.kwarg:
+        raise NotImplementedError
+
+    return defaults, kwdefaults
 
 
 def compute_bases(state: State, node: ast.ClassDef):
@@ -108,7 +113,7 @@ def compute_bases(state: State, node: ast.ClassDef):
                 base_types.append(cls)
         return base_types
     else:
-        default_base = my_object
+        default_base = Object_Type
         return [default_base]
 
 

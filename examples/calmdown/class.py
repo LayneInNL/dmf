@@ -14,10 +14,11 @@
 
 
 class Test:
-    def __init__(self):
-        pass
+    # def __init__(self):
+    #     pass
+    pass
 
 
-a = Test()
-a.x = 1
-b = a.x
+# a = Test()
+# a.x = 1
+# b = a.x

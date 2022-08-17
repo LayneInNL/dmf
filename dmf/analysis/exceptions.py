@@ -13,13 +13,5 @@
 #  limitations under the License.
 
 
-# def test():
-#     yield 1
-
-
-def test1(x):
+class MROAnyError(Exception):
     pass
-
-
-# test.x = 1
-# y = test.x

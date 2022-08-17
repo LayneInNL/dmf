@@ -14,10 +14,10 @@
 from __future__ import annotations
 from typing import Dict
 
-from dmf.analysis.namespace import Namespace
-from dmf.analysis.types import Instance
+from dmf.analysis.analysis_types import Namespace
+from dmf.analysis.analysis_types import AnalysisInstance, ArtificialInstance
 from dmf.analysis.value import Value
-from dmf.analysis.namespace import LocalVar
+from dmf.analysis.analysis_types import LocalVar
 
 
 class Heap:

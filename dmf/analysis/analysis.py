@@ -19,9 +19,9 @@ from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, List
 
 import dmf.share
+from dmf.analysis.analysis_types import AnalysisClass, AnalysisFunction
 from dmf.share import analysis_modules
 from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
-from dmf.analysis.stack import Frame
 from dmf.analysis.state import (
     compute_function_defaults,
     compute_bases,
@@ -39,21 +39,22 @@ from dmf.analysis.state import (
     Stack,
     Heap,
 )
-from dmf.analysis.types import (
-    ModuleType,
-    CustomClass,
-    AnalysisFunction,
-    AnalysisMethod,
-    dunder_lookup,
-    Constructor,
-    Setattr,
-    ArtificialMethod,
-    Getattr,
-    ListClass,
-    TupleClass,
-)
+from dmf.analysis.analysis_types import None_Instance
+
+# from dmf.analysis.types import (
+#     CustomClass,
+#     AnalysisFunction,
+#     AnalysisMethod,
+#     dunder_lookup,
+#     Constructor,
+#     Setattr,
+#     ArtificialMethod,
+#     Getattr,
+#     ListClass,
+#     TupleClass,
+# )
 from dmf.analysis.value import Value, create_value_with_type
-from dmf.analysis.namespace import (
+from dmf.analysis.analysis_types import (
     Namespace_Local,
     Namespace_Nonlocal,
     Namespace_Global,
@@ -86,7 +87,7 @@ class Analysis(AnalysisBase):
         self.extremal_value[0].init_first_frame(qualified_module_name)
 
         curr_module = analysis_modules[qualified_module_name]
-        start_lab, final_lab = curr_module.entry_label, curr_module.exit_label
+        start_lab, final_lab = curr_module.tp_entry, curr_module.tp_exit
         # start point
         self.extremal_point: ProgramPoint = (start_lab, ())
         # end point
@@ -341,7 +342,7 @@ class Analysis(AnalysisBase):
     ):
         call_lab, call_ctx = program_point
 
-        cfg, entry_lab, exit_lab = self.add_sub_cfg(call_lab)
+        entry_lab, exit_lab = self.add_sub_cfg(call_lab)
 
         return_lab = self.get_classdef_return_label(call_lab)
         self.inter_flows.add(
@@ -730,7 +731,7 @@ class Analysis(AnalysisBase):
     ):
         new_stack, new_heap = new_state
         if not new_stack.top_namespace_contains(RETURN_FLAG):
-            value = create_value_with_type(TypeNone())
+            value = create_value_with_type(None_Instance)
             new_stack.write_var(RETURN_FLAG, Namespace_Local, value)
 
         return new_state
@@ -862,7 +863,7 @@ class Analysis(AnalysisBase):
         new_stack = new_state[0]
 
         # class frame
-        frame: Frame = new_stack.top_frame()
+        f_locals = new_stack.top_frame().f_locals
         new_stack.pop_frame()
 
         # class name
@@ -872,14 +873,13 @@ class Analysis(AnalysisBase):
         value: Value = Value()
         bases = compute_bases(new_state, stmt)
         call_lab = self.get_classdef_call_label(return_lab)
-        custom_class: CustomClass = CustomClass(
-            uuid=call_lab,
-            name=cls_name,
-            module=module,
-            bases=bases,
-            dict=frame.f_locals,
+        analysis_class: AnalysisClass = AnalysisClass(
+            tp_uuid=call_lab,
+            tp_module=module,
+            tp_bases=bases,
+            tp_dict=f_locals,
         )
-        value.inject_type(custom_class)
+        value.inject_type(analysis_class)
         new_stack.write_var(cls_name, Namespace_Local, value)
         return new_state
 
@@ -891,16 +891,19 @@ class Analysis(AnalysisBase):
         node: ast.FunctionDef,
     ):
         lab, _ = program_point
-        func_cfg, entry_lab, exit_lab = self.add_sub_cfg(lab)
+        entry_lab, exit_lab = self.add_sub_cfg(lab)
 
-        compute_function_defaults(new_state, node)
+        defaults, kwdefaults = compute_function_defaults(new_state, node)
 
         func_module: str = new_state[0].read_module()
-        value = create_value_with_type(
+        value = Value()
+        value.inject_type(
             AnalysisFunction(
-                uuid=lab,
-                module=func_module,
-                code=(entry_lab, exit_lab),
+                tp_uuid=lab,
+                tp_module=func_module,
+                tp_code=(entry_lab, exit_lab),
+                tp_defaults=defaults,
+                tp_kwdefautls=kwdefaults,
             )
         )
 
@@ -908,7 +911,11 @@ class Analysis(AnalysisBase):
         return new_state
 
     def transfer_Pass(
-        self, program_point: ProgramPoint, old_state: State, new_state: State, stmt
+        self,
+        program_point: ProgramPoint,
+        old_state: State,
+        new_state: State,
+        stmt: ast.Pass,
     ) -> State:
         return new_state
 
@@ -917,7 +924,7 @@ class Analysis(AnalysisBase):
         program_point: ProgramPoint,
         old_state: State,
         new_state: State,
-        stmt,
+        stmt: ast.If,
     ) -> State:
         return new_state
 
@@ -926,7 +933,7 @@ class Analysis(AnalysisBase):
         program_point: ProgramPoint,
         old_state: State,
         new_state: State,
-        stmt,
+        stmt: ast.While,
     ) -> State:
         return new_state
 

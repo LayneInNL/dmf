@@ -16,7 +16,7 @@ import argparse
 import os.path
 
 from dmf.analysis.analysis import Analysis
-from dmf.analysis.types import ModuleType
+from dmf.analysis.analysis_types import AnalysisModule
 from dmf.share import create_and_update_cfg, analysis_modules
 
 parser = argparse.ArgumentParser()
@@ -25,8 +25,8 @@ parser.add_argument("main", help="the main file path")
 
 def add_main_module(path):
     entry_label, exit_label = create_and_update_cfg(path)
-    main_module = ModuleType(
-        uuid="__main__", package="", entry_label=entry_label, exit_label=exit_label
+    main_module = AnalysisModule(
+        tp_uuid="__main__", tp_package="", tp_entry=entry_label, tp_exit=exit_label
     )
     analysis_modules["__main__"] = main_module
 

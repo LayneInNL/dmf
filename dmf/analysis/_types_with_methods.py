@@ -11,7 +11,9 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+from __future__ import annotations
 import ast
+from typing import Tuple
 
 from ._types import (
     Object_Type,
@@ -34,9 +36,22 @@ from ._types import (
     Method_Type,
     None_Type,
     Bool_Type,
+    Namespace,
+    LocalVar,
+    NonlocalVar,
+    GlobalVar,
+    SpecialVar,
+    POS_ARG_END,
+    INIT_FLAG,
+    RETURN_FLAG,
+    Namespace_Local,
+    Namespace_Nonlocal,
+    Namespace_Global,
+    Namespace_Helper,
+    Var,
 )
-from .analysis_types import Any
-from .namespace import Namespace
+from .exceptions import MROAnyError
+from .special_types import Any
 from .value import Value
 from dmf.typeshed_client.parser import (
     parse_module,
@@ -51,11 +66,23 @@ from dmf.typeshed_client.parser import (
 
 class AnalysisModule:
     def __init__(self, tp_uuid, tp_package, tp_entry, tp_exit):
-        self.tp_uuid = tp_uuid
-        self.tp_package = tp_package
-        self.tp_dict = Namespace()
-        self.tp_entry = tp_entry
-        self.tp_exit = tp_exit
+        self.tp_uuid: str = tp_uuid
+        self.tp_package: str = tp_package
+        self.tp_dict: Namespace = Namespace()
+        self.tp_entry: int = tp_entry
+        self.tp_exit: int = tp_exit
+
+    def getattr(self, name: str):
+        if name in self.tp_dict:
+            return self.tp_dict.read_value(name)
+        raise AttributeError(name)
+
+    def __le__(self, other: AnalysisModule):
+        return self.tp_dict <= other.tp_dict
+
+    def __iadd__(self, other: AnalysisModule):
+        self.tp_dict += other.tp_dict
+        return self
 
 
 class TypeshedModule:
@@ -74,11 +101,27 @@ class TypeshedModule:
 
 
 class AnalysisFunction:
-    def __init__(self, tp_uuid, tp_code, tp_module):
-        self.tp_uuid = tp_uuid
-        self.tp_code = tp_code
-        self.tp_module = tp_module
-        self.tp_dict = Namespace()
+    def __init__(
+        self,
+        tp_uuid: int,
+        tp_code: Tuple[int, int],
+        tp_module: str,
+        tp_defaults,
+        tp_kwdefautls,
+    ):
+        self.tp_uuid: int = tp_uuid
+        self.tp_code: Tuple[int, int] = tp_code
+        self.tp_module: str = tp_module
+        self.tp_dict: Namespace = Namespace()
+        self.tp_defaults = tp_defaults
+        self.tp_kwdefaults = tp_kwdefautls
+
+    def __le__(self, other: AnalysisFunction):
+        return self.tp_dict <= other.tp_dict
+
+    def __iadd__(self, other: AnalysisFunction):
+        self.tp_dict += other.tp_dict
+        return self
 
 
 class ArtificialFunction:
@@ -129,12 +172,22 @@ class ArtificialMethod:
 
 
 class AnalysisClass:
-    def __init__(self, tp_uuid, tp_bases, tp_module):
+    def __init__(self, tp_uuid, tp_bases, tp_module, tp_dict):
         self.tp_uuid = tp_uuid
         self.tp_bases = tp_bases
-        self.tp_mro = c3(tp_bases)
+        try:
+            self.tp_mro = c3(self)
+        except MROAnyError:
+            self.tp_mro = (self, Any)
         self.tp_module = tp_module
-        self.tp_dict = Namespace()
+        self.tp_dict = tp_dict
+
+    def __le__(self, other: AnalysisClass):
+        return self.tp_dict <= other.tp_dict
+
+    def __iadd__(self, other: AnalysisModule):
+        self.tp_dict += other.tp_dict
+        return self
 
 
 class TypeshedClass:
@@ -154,6 +207,28 @@ class ArtificialInstance:
     def __init__(self, tp_uuid, tp_class):
         self.tp_uuid = tp_uuid
         self.tp_class = tp_class
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+
+class AnalysisInstanceConstructor:
+    def __init__(self):
+        pass
+
+    def __call__(self, address, type):
+        return AnalysisInstance(address, type)
+
+
+class ArtificialInstanceConstructor:
+    def __init__(self):
+        pass
+
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError
 
 
 def _py_type(obj):
@@ -273,15 +348,30 @@ def type_setattro(type, name, value):
     return GenericSetAttr(type, name, value)
 
 
+class MRO(list):
+    ...
+
+
+class CompleteMRO(MRO):
+    ...
+
+
+class InCompleteMRO(MRO):
+    ...
+
+
 def c3(cls_obj):
     mro = static_c3(cls_obj)
-    return mro
+    return mro[0], mro[1:]
 
 
 def static_c3(cls_obj):
     if cls_obj is Object_Type:
         return [cls_obj]
-    return [cls_obj] + static_merge([static_c3(base) for base in cls_obj.tp_bases])
+    elif cls_obj.tp_bases is Any:
+        raise MROAnyError
+    else:
+        return [cls_obj] + static_merge([static_c3(base) for base in cls_obj.tp_bases])
 
 
 def static_merge(mro_list):

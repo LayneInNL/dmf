@@ -17,32 +17,37 @@ from __future__ import annotations
 import ast
 from typing import List
 
-import dmf.share
-from dmf.analysis.types import (
-    Value,
-    Namespace,
-    Var,
-    CustomClass,
-    Getattr,
-    Instance,
-    LocalVar,
-    builtin_namespace,
-)
-from dmf.analysis.namespace import (
+from dmf.share import analysis_modules
+
+# from dmf.analysis.types import (
+#     Value,
+#     Namespace,
+#     Var,
+#     CustomClass,
+#     Getattr,
+#     Instance,
+#     LocalVar,
+#     builtin_namespace,
+# )
+from dmf.analysis.analysis_types import (
     Namespace_Global,
     Namespace_Nonlocal,
     Namespace_Local,
     Namespace_Helper,
+    Namespace,
+    Var,
+    LocalVar,
 )
+from dmf.analysis.value import Value
 from dmf.log.logger import logger
 
 
 class Frame:
-    def __init__(self, *, f_locals, f_back=None, f_globals):
+    def __init__(self, *, f_locals, f_back, f_globals):
         self.f_locals: Namespace[Var, Value] = f_locals
         self.f_back: Frame | None = f_back
         self.f_globals: Namespace[Var, Value] = f_globals
-        self.f_builtins: Namespace[Var, Value] = builtin_namespace
+        self.f_builtins: Namespace[Var, Value] = Namespace()
 
     # compare f_locals, f_globals and f_builtins
     # don't know how to compare f_back for now
@@ -196,8 +201,8 @@ class Stack:
         self.frames: List[Frame] = []
 
     def init_first_frame(self, qualified_module_name: str):
-        module = dmf.share.analysis_modules[qualified_module_name]
-        global_ns = module.namespace
+        module = analysis_modules[qualified_module_name]
+        global_ns = module.tp_dict
         self.frames.append(Frame(f_locals=global_ns, f_back=None, f_globals=global_ns))
 
     def __le__(self, other: Stack):
@@ -265,9 +270,7 @@ class Stack:
     def check_module_diff(self, new_module_name=None):
         curr_module_name = self.read_module()
         if curr_module_name != new_module_name:
-            self.top_frame().f_globals = dmf.share.analysis_modules[
-                new_module_name
-            ].namespace
+            self.top_frame().f_globals = analysis_modules[new_module_name].namespace
 
     def compute_value_of_expr(self, expr: ast.expr, address=None):
         value = Value()
@@ -319,18 +322,7 @@ class Stack:
                         value.inject_value(tmp)
             return value
         elif isinstance(expr, ast.BinOp):
-            dunder_method = op2dunder(expr.op)
-            lhs_value: Value = self.compute_value_of_expr(expr.left)
-            rhs_value: Value = self.compute_value_of_expr(expr.right)
-            for lab1, typ1 in lhs_value:
-                for lab2, typ2 in rhs_value:
-                    try:
-                        res_type = typ1.binop(dunder_method, typ2)
-                    except (AttributeError, TypeError):
-                        pass
-                    else:
-                        value.inject_type(res_type)
-            return value
+            raise NotImplementedError(expr)
         else:
             logger.warn(expr)
             assert False, expr

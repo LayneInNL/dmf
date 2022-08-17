@@ -187,7 +187,7 @@ class AnalysisBase:
     def add_sub_cfg(self, lab: int):
         cfg: CFG = self.sub_cfgs[lab]
         dmf.share.update_global_info(cfg)
-        return cfg, cfg.start_block.bid, cfg.final_block.bid
+        return cfg.start_block.bid, cfg.final_block.bid
 
     def generate_flow(self, program_point: ProgramPoint):
         added = []

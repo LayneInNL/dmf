@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Union
 
-from dmf.analysis.analysis_types import Any
+from dmf.analysis.special_types import Any
 
 
 class Value:

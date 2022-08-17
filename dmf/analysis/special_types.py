@@ -13,13 +13,9 @@
 #  limitations under the License.
 
 
-# def test():
-#     yield 1
+class TypeAny:
+    def __init__(self):
+        self.tp_uuid = id(self)
 
 
-def test1(x):
-    pass
-
-
-# test.x = 1
-# y = test.x
+Any = TypeAny()
