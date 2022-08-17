@@ -82,9 +82,9 @@ class Analysis(AnalysisBase):
         # work list
         self.work_list: Deque[Tuple[ProgramPoint, ProgramPoint]] = deque()
         # extremal value
-        self.extremal_value: State = (Stack(), Heap())
+        self.extremal_value: State = State(Stack(), Heap())
         # init first frame of stack of extremal value
-        self.extremal_value[0].init_first_frame(qualified_module_name)
+        self.extremal_value.stack.init_first_frame(qualified_module_name)
 
         curr_module = analysis_modules[qualified_module_name]
         start_lab, final_lab = curr_module.tp_entry, curr_module.tp_exit
@@ -160,9 +160,13 @@ class Analysis(AnalysisBase):
         # 5. special init method for our analysis
         if self.is_call_point(program_point):
             if self.is_classdef_call_point(program_point):
-                self._lambda_classdef(program_point, old_state, new_state, dummy_value)
+                self._detect_flow_classdef(
+                    program_point, old_state, new_state, dummy_value
+                )
             elif self.is_normal_call_point(program_point):
-                self._lambda_normal(program_point, old_state, new_state, dummy_value)
+                self._detect_flow_normal(
+                    program_point, old_state, new_state, dummy_value
+                )
             elif self.is_special_init_call_point(program_point):
                 self._lambda_special_init(
                     program_point, old_state, new_state, dummy_value
@@ -187,8 +191,9 @@ class Analysis(AnalysisBase):
 
         call_lab, call_ctx = program_point
         addr = record(call_lab, call_ctx)
-        new_stack, new_heap = new_state
-        cls_value = new_stack.compute_value_of_expr(stmt.args[0])
+        # new_stack, new_heap = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
+        cls_value = new_state.compute_value_of_expr(stmt.args[0])
         for c in cls_value:
             instance = typ(addr, c)
             heap = new_heap.write_ins_to_heap(instance)
@@ -222,8 +227,9 @@ class Analysis(AnalysisBase):
         ret_lab, dummy_ret_lab = self.get_special_init_return_label(call_lab)
 
         call_stmt: ast.Call = self.get_stmt_by_label(call_lab)
-        new_stack, new_heap = new_state
-        value: Value = new_stack.compute_value_of_expr(call_stmt.func)
+        new_stack, new_heap = new_state.stack, new_state.heap
+        # new_stack, new_heap = new_state
+        value: Value = new_state.compute_value_of_expr(call_stmt.func)
 
         for val in value:
             if isinstance(val, AnalysisMethod):
@@ -258,8 +264,9 @@ class Analysis(AnalysisBase):
         assert isinstance(call_stmt, ast.Attribute), call_stmt
 
         call_lab, call_ctx = program_point
-        new_stack, new_heap = new_state
-        value = new_stack.compute_value_of_expr(call_stmt.value)
+        # new_stack, new_heap = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
+        value = new_state.compute_value_of_expr(call_stmt.value)
         dummy_value = Value()
         ret_lab, dummy_ret_lab = self.get_getter_return_label(call_lab)
         for val in value:
@@ -298,7 +305,8 @@ class Analysis(AnalysisBase):
         assert len(call_stmt.targets) == 1 and isinstance(
             call_stmt.targets[0], ast.Attribute
         )
-        new_stack, new_heap = new_state
+        # new_stack, new_heap = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
 
         attribute: ast.Attribute = call_stmt.targets[0]
         attr: str = call_stmt.targets[0].attr
@@ -306,8 +314,8 @@ class Analysis(AnalysisBase):
         call_lab, call_ctx = program_point
 
         ret_lab, dummy_ret_lab = self.get_setter_return_label(call_lab)
-        attr_value = new_stack.compute_value_of_expr(attribute.value)
-        expr_value = new_stack.compute_value_of_expr(call_stmt.value)
+        attr_value = new_state.compute_value_of_expr(attribute.value)
+        expr_value = new_state.compute_value_of_expr(call_stmt.value)
         for attr_type in attr_value:
             attr_value = Setattr(attr_type, attr, expr_value)
             for attr_typ in attr_value:
@@ -333,13 +341,22 @@ class Analysis(AnalysisBase):
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     # deal with cases such as class xxx
-    def _lambda_classdef(
+    def _detect_flow_classdef(
         self,
         program_point: ProgramPoint,
         old_state: State,
         new_state: State,
         dummy_value: Value,
     ):
+        """
+        prev
+        |
+        curr(call)
+                entry
+
+                exit
+        return
+        """
         call_lab, call_ctx = program_point
 
         entry_lab, exit_lab = self.add_sub_cfg(call_lab)
@@ -356,7 +373,7 @@ class Analysis(AnalysisBase):
         self.entry_program_point_info[(entry_lab, call_ctx)] = (None, None, None)
 
     # deal with cases such as name()
-    def _lambda_normal(
+    def _detect_flow_normal(
         self,
         program_point: ProgramPoint,
         old_state: State,
@@ -368,12 +385,13 @@ class Analysis(AnalysisBase):
         assert isinstance(call_stmt, ast.Call), call_stmt
 
         call_lab, call_ctx = program_point
+        # record
         address = record(call_lab, call_ctx)
 
         dummy_value_normal: Value = Value()
         dummy_value_special: Value = Value()
 
-        value: Value = new_state[0].compute_value_of_expr(call_stmt.func, address)
+        value: Value = new_state.compute_value_of_expr(call_stmt.func, address)
         # iterate all types to find which is callable
         for typ in value:
             if isinstance(typ, CustomClass):
@@ -575,8 +593,8 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Assign,
     ) -> State:
-        new_stack, new_heap = new_state
-        rhs_value: Value = new_stack.compute_value_of_expr(stmt.value, program_point)
+        new_stack, new_heap = new_state.stack, new_state.heap
+        rhs_value: Value = new_state.compute_value_of_expr(stmt.value)
         target: ast.expr = stmt.targets[0]
         if isinstance(target, ast.Name):
             new_stack.write_var(target.id, Namespace_Local, rhs_value)
@@ -601,7 +619,8 @@ class Analysis(AnalysisBase):
     def _transfer_call_classdef(
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
-        new_stack, new_heap = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
+        # new_stack, new_heap = new_state
         new_stack.next_ns()
         return new_state
 
@@ -611,7 +630,8 @@ class Analysis(AnalysisBase):
         # Normal call has form: func_name(args, keywords)
         call_stmt: ast.Call = self.get_stmt_by_point(program_point)
         assert isinstance(call_stmt, ast.Call), call_stmt
-        new_stack, new_heap = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
+        # new_stack, new_heap = new_state
 
         # new namespace to simulate function call
         new_stack.next_ns()
@@ -635,7 +655,7 @@ class Analysis(AnalysisBase):
         for keyword in keywords:
             if keyword.arg is None:
                 raise NotImplementedError(keyword)
-            keyword_value = new_stack.compute_value_of_expr(keyword.value)
+            keyword_value = new_state.compute_value_of_expr(keyword.value)
             new_stack.write_var(keyword.arg, Namespace_Local, keyword_value)
 
         return new_state
@@ -646,10 +666,11 @@ class Analysis(AnalysisBase):
         call_stmt: ast.stmt = self.get_stmt_by_point(program_point)
         assert isinstance(call_stmt, ast.Attribute), call_stmt
 
-        new_stack, new_heap = new_state
+        # new_stack, new_heap = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
         new_stack.next_ns()
 
-        target_value = new_stack.compute_value_of_expr(call_stmt.value)
+        target_value = new_state.compute_value_of_expr(call_stmt.value)
         for target_typ in target_value:
             print(target_typ, call_stmt.attr)
             attr_value = Getattr(target_typ, call_stmt.attr, None)
@@ -674,14 +695,15 @@ class Analysis(AnalysisBase):
             call_stmt.targets[0], ast.Attribute
         )
 
-        new_stack, new_heap = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
+        # new_stack, new_heap = new_state
         new_stack.next_ns()
 
         attribute: ast.Attribute = call_stmt.targets[0]
         attr: str = call_stmt.targets[0].attr
 
-        lhs_value = new_stack.compute_value_of_expr(attribute.value)
-        rhs_value = new_stack.compute_value_of_expr(call_stmt.value)
+        lhs_value = new_state.compute_value_of_expr(attribute.value)
+        rhs_value = new_state.compute_value_of_expr(call_stmt.value)
         for target_typ in lhs_value:
             attr_value = Setattr(target_typ, attr, rhs_value)
             if attr_value is not None:
@@ -702,8 +724,9 @@ class Analysis(AnalysisBase):
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
         stmt = self.get_stmt_by_point(program_point)
-        new_stack, new_heap = new_state
+        # new_stack, new_heap = new_state
 
+        new_stack, new_heap = new_state.stack, new_state.heap
         # is self.self_info[program_point] is not None, it means
         # this is a class method call
         # we pass instance information, module name to entry labels
@@ -729,7 +752,8 @@ class Analysis(AnalysisBase):
     def transfer_exit(
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
-        new_stack, new_heap = new_state
+        # new_stack, new_heap = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
         if not new_stack.top_namespace_contains(RETURN_FLAG):
             value = create_value_with_type(None_Instance)
             new_stack.write_var(RETURN_FLAG, Namespace_Local, value)
@@ -761,7 +785,8 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Assign,
     ):
-        new_stack, new_heap = new_state
+        # new_stack, new_heap = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
         new_stack.pop_frame()
         return new_state
 
@@ -772,7 +797,8 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Name,
     ):
-        new_stack, new_heap = new_state
+        # new_stack, new_heap = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
         return_value: Value = new_stack.read_var(RETURN_FLAG)
         if new_stack.top_namespace_contains(INIT_FLAG):
             return_value = new_stack.read_var("self")
@@ -811,7 +837,7 @@ class Analysis(AnalysisBase):
             name = asname
 
         value = create_value_with_type(module)
-        new_stack = new_state[0]
+        new_stack = new_state.stack
         new_stack.write_var(name, Namespace_Local, value)
         logger.debug("Import module {}".format(module))
         return new_state
@@ -826,7 +852,7 @@ class Analysis(AnalysisBase):
         module_name = "" if stmt.module is None else stmt.module
         dot_number = "." * stmt.level
 
-        new_stack = new_state[0]
+        new_stack = new_state.stack
         package = new_stack.read_package()
 
         module_name = resolve_name(dot_number + module_name, package)
@@ -860,7 +886,7 @@ class Analysis(AnalysisBase):
         return_lab, return_ctx = program_point
         # stmt
         stmt: ast.ClassDef = self.get_stmt_by_point(program_point)
-        new_stack = new_state[0]
+        new_stack = new_state.stack
 
         # class frame
         f_locals = new_stack.top_frame().f_locals
@@ -895,7 +921,7 @@ class Analysis(AnalysisBase):
 
         defaults, kwdefaults = compute_function_defaults(new_state, node)
 
-        func_module: str = new_state[0].read_module()
+        func_module: str = new_state.stack.read_module()
         value = Value()
         value.inject_type(
             AnalysisFunction(
@@ -907,7 +933,7 @@ class Analysis(AnalysisBase):
             )
         )
 
-        new_state[0].write_var(node.name, Namespace_Local, value)
+        new_state.stack.write_var(node.name, Namespace_Local, value)
         return new_state
 
     def transfer_If(
@@ -936,7 +962,8 @@ class Analysis(AnalysisBase):
         stmt: ast.Return,
     ) -> State:
         name: str = stmt.value.id
-        new_stack, new_heap = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
+        # new_stack, new_heap = new_state
         value: Value = new_stack.read_var(name)
         new_stack.write_var(RETURN_FLAG, Namespace_Local, value)
         return new_state
@@ -949,7 +976,8 @@ class Analysis(AnalysisBase):
         stmt: ast.Global,
     ) -> State:
         name = stmt.names[0]
-        new_stack, _ = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
+        # new_stack, _ = new_state
         new_stack.write_var(name, Namespace_Global, None)
 
         return new_state
@@ -962,7 +990,8 @@ class Analysis(AnalysisBase):
         stmt: ast.Nonlocal,
     ) -> State:
         name = stmt.names[0]
-        new_stack, _ = new_state
+        new_stack, new_heap = new_state.stack, new_state.heap
+        # new_stack, _ = new_state
         new_stack.write_var(name, Namespace_Nonlocal, None)
 
         return new_state
@@ -974,7 +1003,8 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Delete,
     ) -> State:
-        new_stack = new_state[0]
+        # new_stack = new_state[0]
+        new_stack, new_heap = new_state.stack, new_state.heap
         assert len(stmt.targets) == 1, stmt
         assert isinstance(stmt.targets[0], ast.Name), stmt
         name = stmt.targets[0].id

@@ -49,6 +49,7 @@ from ._types import (
     Namespace_Global,
     Namespace_Helper,
     Var,
+    c3,
 )
 from .exceptions import MROAnyError
 from .special_types import Any
@@ -125,13 +126,20 @@ class AnalysisFunction:
 
 
 class ArtificialFunction:
-    def __init__(self, function):
-        self.tp_uuid = id(function)
-        self.tp_code = function
+    def __init__(self, tp_function):
+        self.tp_uuid = id(tp_function)
+        self.tp_code = tp_function
         self.tp_dict = Namespace()
+        self.tp_class = Function_Type
 
     def __call__(self, *args, **kwargs):
         return self.tp_code(*args, **kwargs)
+
+    def __le__(self, other: ArtificialFunction):
+        return True
+
+    def __iadd__(self, other: ArtificialFunction):
+        return self
 
 
 class TypeshedFunction:
@@ -141,11 +149,11 @@ class TypeshedFunction:
 
 
 class AnalysisMethod:
-    def __init__(self, function, instance):
-        self.tp_uuid = f"{function.tp_uuid}-{instance.tp_uuid}"
-        self.tp_function = function
-        self.tp_instance = instance
-        self.tp_module = function.tp_module
+    def __init__(self, tp_function, tp_instance):
+        self.tp_uuid = f"{tp_function.tp_uuid}-{tp_instance.tp_uuid}"
+        self.tp_function = tp_function
+        self.tp_instance = tp_instance
+        self.tp_module = tp_function.tp_module
 
 
 class AnalysisDescriptorGetFunction:
@@ -165,15 +173,16 @@ class AnalysisDescriptorSetFunction:
 
 
 class ArtificialMethod:
-    def __init__(self, function, instance):
-        self.tp_uuid = f"{function.tp_uuid}-{instance.tp_uuid}"
-        self.tp_function = function
-        self.tp_instance = instance
+    def __init__(self, tp_function, tp_instance):
+        self.tp_uuid = f"{tp_function.tp_uuid}-{tp_instance.tp_uuid}"
+        self.tp_function = tp_function
+        self.tp_instance = tp_instance
 
 
 class AnalysisClass:
     def __init__(self, tp_uuid, tp_bases, tp_module, tp_dict):
         self.tp_uuid = tp_uuid
+        self.tp_class = Type_Type
         self.tp_bases = tp_bases
         try:
             self.tp_mro = c3(self)
@@ -243,11 +252,13 @@ def _pytype_lookup(type, name):
 def _find_name_in_mro(type, name):
     res = None
 
-    mro = type.tp_mro
-    for base in mro:
-        dict = base.tp_uuid
+    self, rest_mro = type.tp_mro
+    if name in self.tp_dict:
+        return self.tp_dict.read_value(name)
+    for base in rest_mro:
+        dict = base.tp_dict
         if name in dict:
-            return dict[name]
+            return dict.read_value(name)
     return res
 
 
@@ -259,8 +270,8 @@ def GenericGetAttr(obj, name):
     if descrs is not None:
         for descr in descrs:
             descr_tp = _py_type(descr)
-            descr_tp_get = descr_tp.tp_uuid.get("__get__", NotImplemented)
-            if descr_tp_get is not NotImplemented:
+            if "__get__" in descr_tp.tp_dict:
+                descr_tp_get = descr_tp.tp_dict.read_magic_method_value("__get__")
                 if isinstance(descr_tp_get, AnalysisFunction):
                     # self = descr, obj = obj, type=tp
                     one_descr = AnalysisDescriptorGetFunction(
@@ -276,8 +287,8 @@ def GenericGetAttr(obj, name):
     if isinstance(obj, AnalysisInstance):
         raise NotImplementedError
     else:
-        if name in obj.tp_uuid:
-            one_res = obj.tp_uuid.read_value(name)
+        if name in obj.tp_dict:
+            one_res = obj.tp_dict.read_value(name)
             res_value.inject_value(one_res)
 
     if descrs is not None:
@@ -294,14 +305,15 @@ def GenericSetAttr(obj, name, value):
     if descrs is not None:
         for descr in descrs:
             descr_tp = _py_type(descr)
-            descr_tp_set = descr_tp.tp_uuid.get("__set__", NotImplemented)
-            if descr_tp_set is not NotImplemented:
+            if "__set__" in descr_tp.tp_dict:
+                descr_tp_set = descr_tp.tp_dict.read_magic_method_value("__set__")
                 if isinstance(descr_tp_set, AnalysisFunction):
                     one_descr = AnalysisDescriptorSetFunction(
                         tp_self=descr_tp, tp_obj=obj, tp_value=value
                     )
                     descr_value.inject_type(one_descr)
                 elif isinstance(descr_tp_set, ArtificialFunction):
+                    # return type is None
                     descr_tp_set(descr, obj, tp)
                 else:
                     raise NotImplementedError
@@ -309,7 +321,7 @@ def GenericSetAttr(obj, name, value):
     if isinstance(obj, AnalysisInstance):
         raise NotImplementedError
     else:
-        obj.tp_uuid.write_local_value(name, value)
+        obj.tp_dict.write_local_value(name, value)
 
     return descr_value
 
@@ -321,8 +333,8 @@ def type_getattro(type, name):
     if descrs is not None:
         for descr in descrs:
             descr_tp = _py_type(descr)
-            descr_tp_get = descr_tp.tp_uuid.get("__get__", NotImplemented)
-            if descr_tp_get is not NotImplemented:
+            if "__get__" in descr_tp.tp_dict:
+                descr_tp_get = descr_tp.tp_dcit.read_magic_method_value("__get__")
                 if isinstance(descr_tp_get, AnalysisFunction):
                     one_descr = AnalysisDescriptorGetFunction(
                         tp_self=descr, tp_obj=None_Type, tp_objtype=type
@@ -334,8 +346,8 @@ def type_getattro(type, name):
                 else:
                     raise NotImplementedError
 
-    if name in type.tp_uuid:
-        one_res = type.tp_uuid.read_value(name)
+    if name in type.tp_dict:
+        one_res = type.tp_dict.read_value(name)
         res_value.inject_value(one_res)
 
     if descrs is not None:
@@ -348,55 +360,51 @@ def type_setattro(type, name, value):
     return GenericSetAttr(type, name, value)
 
 
-class MRO(list):
-    ...
+def _setup_Object_Type():
+    _object_getattro = ArtificialFunction(tp_function=GenericGetAttr)
+    _value = Value()
+    _value.inject_type(_object_getattro)
+    Object_Type.tp_dict.write_local_value("__getattribute__", _value)
+
+    _value = Value()
+    _object_setattro = ArtificialFunction(tp_function=GenericSetAttr)
+    _value.inject_type(_object_setattro)
+    Object_Type.tp_dict.write_local_value("__setattr__", _value)
 
 
-class CompleteMRO(MRO):
-    ...
+def _setup_Type_Type():
+    _value = Value()
+    _type_getattro = ArtificialFunction(tp_function=type_getattro)
+    _value.inject_type(_type_getattro)
+    Type_Type.tp_dict.write_local_value("__getattribute__", _value)
+
+    _value = Value()
+    _type_setattro = ArtificialFunction(tp_function=type_setattro)
+    _value.inject_type(_type_setattro)
+    Type_Type.tp_dict.write_local_value("__setattr__", _value)
 
 
-class InCompleteMRO(MRO):
-    ...
+def _setup_Function_Type():
+    # self is a function object
+    # obj is class object or None
+    def __set__(self, obj, objtype):
+        if obj is None_Instance:
+            return self
+        if isinstance(self, AnalysisFunction):
+            return AnalysisMethod(tp_function=self, tp_instance=obj)
+        elif isinstance(self, ArtificialFunction):
+            return ArtificialMethod(tp_function=self, tp_instance=obj)
+        else:
+            raise NotImplementedError
+
+    _value = Value()
+    _value.inject_type(ArtificialFunction(tp_function=__set__))
+    Function_Type.tp_dict.write_local_value("__set__", _value)
 
 
-def c3(cls_obj):
-    mro = static_c3(cls_obj)
-    return mro[0], mro[1:]
-
-
-def static_c3(cls_obj):
-    if cls_obj is Object_Type:
-        return [cls_obj]
-    elif cls_obj.tp_bases is Any:
-        raise MROAnyError
-    else:
-        return [cls_obj] + static_merge([static_c3(base) for base in cls_obj.tp_bases])
-
-
-def static_merge(mro_list):
-    if not any(mro_list):
-        return []
-    for candidate, *_ in mro_list:
-        if all(candidate not in tail for _, *tail in mro_list):
-            return [candidate] + static_merge(
-                [
-                    tail if head is candidate else [head, *tail]
-                    for head, *tail in mro_list
-                ]
-            )
-    else:
-        raise TypeError("No legal mro")
-
-
-_object_getattro = ArtificialFunction(GenericGetAttr)
-Object_Type.tp_dict.write_local_value("__getattribute__", _object_getattro)
-_object_setattro = ArtificialFunction(GenericSetAttr)
-Object_Type.tp_dict.write_local_value("__setattr__", _object_setattro)
-_type_getattro = ArtificialFunction(type_getattro)
-Type_Type.tp_dict.write_local_value("__getattribute__", _type_getattro)
-_type_setattro = ArtificialFunction(type_getattro)
-Type_Type.tp_dict.write_local_value("__setattr__", _type_setattro)
+_setup_Object_Type()
+_setup_Type_Type()
+_setup_Function_Type()
 
 Int_Instance = ArtificialInstance(-1, Int_Type)
 Float_Instance = ArtificialInstance(-2, Float_Type)
@@ -619,3 +627,16 @@ _typeshed_float = builtin_module.get_name("float")
 typeshed_float = evaluate(_typeshed_float)
 Float_Instance.tp_class = typeshed_float
 Float_Type.tp_mro = [typeshed_float, Object_Type]
+
+
+def getattr(obj, name, default=None):
+    if isinstance(obj, AnalysisClass):
+        tp = _py_type(obj)
+        tp_getattribute = tp.tp_dict["__getattribute__"]
+
+    else:
+        raise NotImplementedError
+
+
+def setattr(obj, name, value):
+    ...

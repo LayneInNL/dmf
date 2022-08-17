@@ -15,15 +15,25 @@ from __future__ import annotations
 
 import ast
 from copy import deepcopy
-from typing import Tuple, List
+from typing import List
 
-from dmf.analysis._types import Object_Type
-from dmf.share import analysis_modules
+from dmf.analysis.analysis_types import (
+    POS_ARG_END,
+    Namespace_Local,
+    Object_Type,
+    Int_Instance,
+    Float_Instance,
+    Complex_Instance,
+    None_Instance,
+    Bool_Instance,
+    Str_Instance,
+    Bytes_Instance,
+)
 from dmf.analysis.heap import Heap
-from dmf.analysis.stack import Stack, Frame
-from dmf.analysis.analysis_types import POS_ARG_END, Namespace_Local
-
-State = Tuple[Stack, Heap]
+from dmf.analysis.stack import Stack
+from dmf.analysis.value import Value
+from dmf.log.logger import logger
+from dmf.share import analysis_modules
 
 
 class StateBottom:
@@ -33,14 +43,82 @@ class StateBottom:
 BOTTOM = StateBottom()
 
 
+class State:
+    def __init__(self, stack: Stack, heap: Heap):
+        self.stack: Stack = stack
+        self.heap: Heap = heap
+
+    def __repr__(self):
+        return repr(self.stack)
+
+    def __iadd__(self, other: State):
+        self.stack += other.stack
+        self.heap += other.heap
+        return self
+
+    def compute_value_of_expr(self, expr: ast.expr):
+        value = Value()
+        if isinstance(expr, ast.Num):
+            if isinstance(expr.n, int):
+                value.inject_type(Int_Instance)
+            elif isinstance(expr.n, float):
+                value.inject_type(Float_Instance)
+            elif isinstance(expr.n, complex):
+                value.inject_type(Complex_Instance)
+        elif isinstance(expr, ast.NameConstant):
+            if expr.value is None:
+                value.inject_type(None_Instance)
+            else:
+                value.inject_type(Bool_Instance)
+        elif isinstance(expr, (ast.Str, ast.JoinedStr)):
+            value.inject_type(Str_Instance)
+        elif isinstance(expr, ast.Bytes):
+            value.inject_type(Bytes_Instance)
+        elif isinstance(expr, ast.Compare):
+            value.inject_type(Bool_Instance)
+        elif isinstance(expr, ast.Name):
+            value = self.stack.read_var(expr.id)
+        elif isinstance(expr, ast.Attribute):
+            receiver_value: Value = self.compute_value_of_expr(expr.value)
+            receiver_attr: str = expr.attr
+            value: Value = Value()
+            for typ in receiver_value:
+                if isinstance(typ, CustomClass):
+                    try:
+                        tmp = Getattr(typ, receiver_attr)
+                    except AttributeError:
+                        pass
+                    else:
+                        value.inject_value(tmp)
+                elif isinstance(typ, Instance):
+                    try:
+                        tmp = Getattr(typ, receiver_attr)
+                    except AttributeError:
+                        pass
+                    else:
+                        value.inject_value(tmp)
+                elif isinstance(typ, FunctionObject):
+                    try:
+                        tmp = Getattr(typ, receiver_attr)
+                    except AttributeError:
+                        pass
+                    else:
+                        value.inject_value(tmp)
+            return value
+        elif isinstance(expr, ast.BinOp):
+            raise NotImplementedError(expr)
+        else:
+            logger.warn(expr)
+            assert False, expr
+        return value
+
+
 def deepcopy_state(state: State) -> State:
-    stack, heap = state
     memo = {}
-    new_heap = deepcopy(heap, memo)
-    new_stack = deepcopy(stack, memo)
+    new_state = deepcopy(state, memo)
     for name, module in analysis_modules.items():
         module.tp_dict = deepcopy(module.tp_dict, memo)
-    return new_stack, new_heap
+    return new_state
 
 
 def is_bot_state(state: State) -> bool:
@@ -55,7 +133,7 @@ def compare_states(lhs: State | BOTTOM, rhs: State | BOTTOM) -> bool:
     if is_bot_state(rhs):
         return False
 
-    res = lhs[0] <= rhs[0] and lhs[1] <= rhs[1]
+    res = lhs.stack <= rhs.stack and lhs.heap <= rhs.heap
     return res
 
 
@@ -63,10 +141,9 @@ def merge_states(lhs: State, rhs: State | BOTTOM) -> State:
     # if lhs is BOTTOM, we won't get here.
     if is_bot_state(rhs):
         return lhs
-    res_lhs = list(lhs)
-    res_lhs[0] += rhs[0]
-    res_lhs[1] += rhs[1]
-    return tuple(res_lhs)
+
+    lhs += rhs
+    return lhs
 
 
 def compute_function_defaults(state: State, node: ast.FunctionDef):
@@ -103,11 +180,11 @@ def compute_function_defaults(state: State, node: ast.FunctionDef):
 
 def compute_bases(state: State, node: ast.ClassDef):
     # should I use state at call label or state at return label?
-    stack, heap = state
+    stack, heap = state.stack, state.heap
     if node.bases:
         base_types = []
         for base in node.bases:
-            cls_types = stack.compute_value_of_expr(base)
+            cls_types = state.compute_value_of_expr(base)
             assert len(cls_types) == 1
             for cls in cls_types:
                 base_types.append(cls)
@@ -194,11 +271,11 @@ def compute_func_args(state: State, args: List[ast.expr], keywords: List[ast.key
 
     computed_args = []
     for arg in args:
-        val = stack.compute_value_of_expr(arg)
+        val = state.compute_value_of_expr(arg)
         computed_args.append(val)
 
     computed_keywords = {}
     for keyword in keywords:
-        val = stack.compute_value_of_expr(keyword.value)
+        val = state.compute_value_of_expr(keyword.value)
         computed_keywords[keyword.arg] = val
     return computed_args, computed_keywords

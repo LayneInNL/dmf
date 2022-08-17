@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+from dmf.analysis.exceptions import MROAnyError
+from dmf.analysis.special_types import Any
 from dmf.analysis.value import Value
 
 Namespace_Local = "local"
@@ -98,6 +100,14 @@ class Namespace(dict):
             if name == var.name:
                 return val
 
+    def read_magic_method_value(self, name: str):
+        res = self.read_value(name)
+        if not res.is_Any():
+            assert len(res.types) == 1
+        else:
+            raise NotImplementedError
+        return tuple(res.values())[0]
+
     def write_local_value(self, name: str, value: Value):
         self[LocalVar(name)] = value
 
@@ -120,7 +130,7 @@ class SpecialAttributes:
         self.tp_dict = NotImplemented
         self.tp_class = NotImplemented
         self.tp_mro = NotImplemented
-        # self.tp_bases = NotImplemented
+        self.tp_bases = NotImplemented
         # self.tp_name = NotImplemented
         # self.tp_qualname = NotImplemented
 
@@ -132,6 +142,9 @@ class TypeType(SpecialAttributes):
         self.tp_dict = Namespace()
         self.tp_class = self
 
+    def __repr__(self):
+        return "type"
+
 
 Type_Type = TypeType()
 
@@ -142,11 +155,46 @@ class TypeObject(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self]
+        self.tp_mro = self, []
+
+    def __repr__(self):
+        return "object"
 
 
 Object_Type = TypeObject()
-Type_Type.tp_mro = [Type_Type, Object_Type]
+
+
+def c3(cls_obj):
+    mro = static_c3(cls_obj)
+    return mro[0], mro[1:]
+
+
+def static_c3(cls_obj):
+    if cls_obj is Object_Type:
+        return [cls_obj]
+    elif cls_obj.tp_bases is Any:
+        raise MROAnyError
+    else:
+        return [cls_obj] + static_merge([static_c3(base) for base in cls_obj.tp_bases])
+
+
+def static_merge(mro_list):
+    if not any(mro_list):
+        return []
+    for candidate, *_ in mro_list:
+        if all(candidate not in tail for _, *tail in mro_list):
+            return [candidate] + static_merge(
+                [
+                    tail if head is candidate else [head, *tail]
+                    for head, *tail in mro_list
+                ]
+            )
+    else:
+        raise TypeError("No legal mro")
+
+
+Type_Type.tp_bases = [Object_Type]
+Type_Type.tp_mro = c3(Type_Type)
 
 
 class TypeInt(SpecialAttributes):
@@ -156,7 +204,10 @@ class TypeInt(SpecialAttributes):
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
         self.tp_bases = [Object_Type]
-        self.tp_mro = [self, Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "int"
 
 
 Int_Type = TypeInt()
@@ -168,7 +219,11 @@ class TypeFloat(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "float"
 
 
 Float_Type = TypeFloat()
@@ -180,7 +235,11 @@ class TypeComplex(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "complex"
 
 
 Complex_Type = TypeComplex()
@@ -192,7 +251,11 @@ class TypeList(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "list"
 
 
 List_Type = TypeList()
@@ -204,7 +267,11 @@ class TypeTuple(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "tuple"
 
 
 Tuple_Type = TypeTuple()
@@ -216,7 +283,11 @@ class TypeRange(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "range"
 
 
 Range_Type = TypeRange()
@@ -228,7 +299,11 @@ class TypeStr(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "str"
 
 
 Str_Type = TypeStr()
@@ -240,7 +315,11 @@ class TypeBytes(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "bytes"
 
 
 Bytes_Type = TypeBytes()
@@ -252,7 +331,11 @@ class TypeByteArray(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "bytearray"
 
 
 ByteArray_Type = TypeByteArray()
@@ -264,7 +347,11 @@ class TypeMemoryView(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "memoryview"
 
 
 MemoryView_Type = TypeMemoryView()
@@ -276,7 +363,11 @@ class TypeSet(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "set"
 
 
 Set_Type = TypeSet()
@@ -288,7 +379,11 @@ class TypeFrozenSet(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "frozenset"
 
 
 FrozenSet_Type = TypeFrozenSet()
@@ -300,7 +395,11 @@ class TypeDict(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "dict"
 
 
 Dict_Type = TypeDict()
@@ -312,7 +411,11 @@ class TypeModule(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "module"
 
 
 Module_Type = TypeModule()
@@ -324,7 +427,11 @@ class TypeFunction(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "function"
 
 
 Function_Type = TypeFunction()
@@ -336,7 +443,11 @@ class TypeMethod(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "method"
 
 
 Method_Type = TypeMethod()
@@ -348,7 +459,11 @@ class TypeNoneType(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "NoneType"
 
 
 None_Type = TypeNoneType()
@@ -360,7 +475,11 @@ class TypeBool(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = [self, Object_Type]
+        self.tp_bases = [Object_Type]
+        self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return "bool"
 
 
 Bool_Type = TypeBool()
