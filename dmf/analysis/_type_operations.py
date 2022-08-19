@@ -214,6 +214,7 @@ class ArtificialFunction(Function):
         self.tp_code = tp_function
         self.tp_dict = Namespace()
         self.tp_class = Function_Type
+        self.tp_repr = None
 
     def __call__(self, *args, **kwargs):
         return self.tp_code(*args, **kwargs)
@@ -222,6 +223,11 @@ class ArtificialFunction(Function):
         return True
 
     def __iadd__(self, other: ArtificialFunction):
+        return self
+
+    def __repr__(self):
+        if self.tp_repr is not None:
+            return self.tp_repr
         return self
 
 
@@ -248,11 +254,17 @@ class ArtificialInstance:
     def __init__(self, tp_uuid, tp_class):
         self.tp_uuid = tp_uuid
         self.tp_class = tp_class
+        self.tp_repr = None
 
     def __le__(self, other):
         return True
 
     def __iadd__(self, other):
+        return self
+
+    def __repr__(self):
+        if self.tp_repr is not None:
+            return self.tp_repr
         return self
 
 
@@ -479,13 +491,16 @@ _setup_Type_Type()
 _setup_Function_Type()
 
 Int_Instance = ArtificialInstance(-1, Int_Type)
+Int_Instance.tp_repr = "int object"
 Float_Instance = ArtificialInstance(-2, Float_Type)
+Float_Instance.tp_repr = "float object"
 Complex_Instance = ArtificialInstance(-3, Complex_Type)
 Str_Instance = ArtificialInstance(-4, Str_Type)
 Bytes_Instance = ArtificialInstance(-5, Bytes_Type)
 ByteArray_Instance = ArtificialInstance(-6, ByteArray_Type)
 None_Instance = ArtificialInstance(-7, None_Type)
 Bool_Instance = ArtificialInstance(-8, Bool_Type)
+Bool_Instance.tp_repr = "bool object"
 
 # Object,
 # Type,
@@ -751,12 +766,12 @@ def setattrs(objs, name, value) -> Value:
 
 
 def _setattr(obj, name, value) -> Value:
-    if obj.is_Any():
+    if obj is Any:
         return Value(any=True)
 
     tp = _py_type(obj)
     tp_setattr = _pytype_lookup(tp, "__setattr__")
-    if tp_setattr is None:
+    if len(tp_setattr) == 0:
         # work on class
         if isinstance(obj, Class):
             return type_setattro(obj, name, value)

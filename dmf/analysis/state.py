@@ -66,6 +66,7 @@ class State:
                 value.inject_type(Float_Instance)
             elif isinstance(expr.n, complex):
                 value.inject_type(Complex_Instance)
+            return value
         elif isinstance(expr, ast.NameConstant):
             if expr.value is None:
                 value.inject_type(None_Instance)

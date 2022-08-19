@@ -14,24 +14,65 @@
 
 
 class _TypeAny:
+    # _instance = None
+    #
+    # def __new__(cls, *args, **kwargs):
+    #     if cls._instance is None:
+    #         cls._instance = super().__new__(cls)
+    #     return cls._instance
+
     def __init__(self):
         self.tp_uuid = id(self)
+
+    def __repr__(self):
+        return "Any"
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 Any = _TypeAny()
 
 
 class _MROAny:
+
+    # _instance = None
+    #
+    # def __new__(cls, *args, **kwargs):
+    #     if cls._instance is None:
+    #         cls._instance = super().__new__(cls)
+    #     return cls._instance
+
     def __init__(self):
         self.tp_uuid = id(self)
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 MRO_Any = _MROAny()
 
 
 class _BasesAny:
+
+    # _instance = None
+    #
+    # def __new__(cls, *args, **kwargs):
+    #     if cls._instance is None:
+    #         cls._instance = super().__new__(cls)
+    #     return cls._instance
+
     def __init__(self):
         self.tp_uuid = id(self)
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 Bases_Any = _BasesAny()

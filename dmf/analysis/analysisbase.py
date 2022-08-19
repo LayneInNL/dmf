@@ -158,13 +158,13 @@ class AnalysisBase:
         raise KeyError
 
     def get_special_new_return_label(self, label):
-        for l1, l2, l3, l4, l5, l6, l7 in self.call_return_inter_flows:
+        for l1, l2, l3, l4, l5, l6, l7, l8, l9 in self.call_return_inter_flows:
             if label == l1:
                 return l2, l3
         raise KeyError
 
     def get_func_return_label(self, label):
-        for l1, l2, l3, l4, l5, l6, l7 in self.call_return_inter_flows:
+        for l1, l2, l3, l4, l5, l6, l7, l8, l9 in self.call_return_inter_flows:
             if label == l1:
                 return l6, l7
         logger.info(f"{label} not in call_return_inter_flows")

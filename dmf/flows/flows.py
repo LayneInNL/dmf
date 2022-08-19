@@ -110,7 +110,7 @@ class CFG:
         self.flows: Set[Tuple[int, int]] = set()
 
         self.call_return_inter_flows: Set[
-            Tuple[int, int, int, int, int, int, int]
+            Tuple[int, int, int, int, int, int, int, int, int]
         ] = set()
         self.classdef_inter_flows: Set[Tuple[int, int]] = set()
         self.setter_inter_flows: Set[Tuple[int, int, int]] = set()
@@ -149,20 +149,34 @@ class CFG:
                 if id3 == block.bid:
                     additional += "Dummy return from descriptor getter"
 
-            for id1, id2, id3, id4, id5, id6, id7 in self.call_return_inter_flows:
+            for (
+                id1,
+                id2,
+                id3,
+                id4,
+                id5,
+                id6,
+                id7,
+                id8,
+                id9,
+            ) in self.call_return_inter_flows:
                 if id1 == block.bid:
                     additional += "Call label"
                 if id2 == block.bid:
                     additional += "__new__ return label"
                 if id3 == block.bid:
                     additional += "Dummy __new__ return label"
-                if id4 == block.bid:
-                    additional += "__init__ attribute label"
-                if id5 == block.bid:
-                    additional += "__init__ call label"
-                if id6 == block.bid:
-                    additional += "Return label"
+                # if id4 == block.bid:
+                #     additional += "Call descriptor getter"
+                # if id5 == block.bid:
+                #     additional += "Return from descriptor getter"
+                # if id6 == block.bid:
+                #     additional += "Dummy return from descriptor getter"
                 if id7 == block.bid:
+                    additional += "__init__ call label"
+                if id8 == block.bid:
+                    additional += "Return label"
+                if id9 == block.bid:
                     additional += "Dummy return label"
             self.graph.node(str(block.bid), label=block.stmt_to_code() + additional)
             for next_bid in block.next:
@@ -294,7 +308,17 @@ class CFGVisitor(ast.NodeVisitor):
         for fst_id, snd_id in self.cfg.edges:
             self.cfg.flows.add((fst_id, snd_id))
 
-        for l1, l2, dummy, init, l4, l5, dummy2 in self.cfg.call_return_inter_flows:
+        for (
+            l1,
+            l2,
+            dummy,
+            init,
+            init_return,
+            init_dummy_return,
+            l4,
+            l5,
+            dummy2,
+        ) in self.cfg.call_return_inter_flows:
             self.cfg.flows -= {(l1, l2), (l4, l5)}
             self.cfg.call_labels.update({l1, l4})
             self.cfg.return_labels.update({l2, l5})
@@ -491,18 +515,27 @@ class CFGVisitor(ast.NodeVisitor):
                 init_attribute_node = self.add_edge(
                     dummy_new_node.bid, self.new_block().bid
                 )
-                init_attribute_name = ast.Name(id=TempVariableName.generate())
                 add_stmt(
-                    init_attribute_node,
-                    ast.Assign(
-                        targets=[init_attribute_name],
-                        value=ast.Attribute(value=new_var, attr="__init__"),
-                    ),
+                    init_attribute_node, ast.Attribute(value=new_var, attr="__init__")
                 )
+
+                # __init__ attr assigned
+                init_attribute_assign_node = self.add_edge(
+                    init_attribute_node.bid, self.new_block().bid
+                )
+                init_attribute_name = ast.Name(id=TempVariableName.generate())
+                add_stmt(init_attribute_assign_node, init_attribute_name)
+
+                # __init__ attr dummy assigned
+                init_attribute_assign_node_dummy = self.add_edge(
+                    init_attribute_assign_node.bid, self.new_block().bid
+                )
+                self.cfg.dummy_labels.add(init_attribute_assign_node_dummy.bid)
+                add_stmt(init_attribute_assign_node_dummy, init_attribute_name)
 
                 # __init__ call node
                 init_call_node = self.add_edge(
-                    init_attribute_node.bid, self.new_block().bid
+                    init_attribute_assign_node_dummy.bid, self.new_block().bid
                 )
                 init_call = ast.Call(
                     func=init_attribute_name,
@@ -515,7 +548,7 @@ class CFGVisitor(ast.NodeVisitor):
                 init_return_node = self.add_edge(
                     init_call_node.bid, self.new_block().bid
                 )
-                init_var = ast.Name(id=TempVariableName.generate(), ctx=ast.Store())
+                init_var = ast.Name(id=TempVariableName.generate())
                 add_stmt(init_return_node, init_var)
 
                 # __init__ dummy return node(return node)
@@ -532,6 +565,8 @@ class CFGVisitor(ast.NodeVisitor):
                         new_node.bid,
                         dummy_new_node.bid,
                         init_attribute_node.bid,
+                        init_attribute_assign_node.bid,
+                        init_attribute_assign_node_dummy.bid,
                         init_call_node.bid,
                         init_return_node.bid,
                         dummy_return_node.bid,
@@ -540,6 +575,13 @@ class CFGVisitor(ast.NodeVisitor):
                 # update __new__ flow
                 self.cfg.special_init_inter_flows.add(
                     (init_call_node.bid, init_return_node.bid, dummy_return_node.bid)
+                )
+                self.cfg.getter_inter_flows.add(
+                    (
+                        init_attribute_node.bid,
+                        init_attribute_assign_node.bid,
+                        init_attribute_assign_node_dummy.bid,
+                    )
                 )
                 node.value = init_var
                 self.curr_block = dummy_return_node

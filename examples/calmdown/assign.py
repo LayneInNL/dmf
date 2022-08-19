@@ -13,6 +13,8 @@
 #  limitations under the License.
 if True:
     x = 1
+# elif False:
+#     x = False
 else:
-    x = False
+    x = 1.0
 b = x

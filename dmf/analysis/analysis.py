@@ -19,7 +19,14 @@ from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, List
 
 import dmf.share
-from dmf.analysis._type_operations import Constructor, _getattr, AnalysisInstance
+from dmf.analysis._type_operations import (
+    Constructor,
+    _getattr,
+    AnalysisInstance,
+    _setattr,
+    AnalysisDescriptorGetFunction,
+    AnalysisDescriptorSetFunction,
+)
 from dmf.analysis._types import Type_Type
 from dmf.analysis.analysis_types import (
     Namespace_Local,
@@ -226,14 +233,14 @@ class Analysis(AnalysisBase):
 
         for val in value:
             if isinstance(val, AnalysisMethod):
-                entry_lab, exit_lab = val.nl__func__.nl__gate__
-                instance = val.nl__instance__
+                entry_lab, exit_lab = val.tp_function.tp_code
+                instance = val.tp_instance
                 new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
 
                 self.entry_program_point_info[(entry_lab, new_ctx)] = (
                     instance,
                     INIT_FLAG,
-                    val.nl__module__,
+                    val.tp_module,
                 )
 
                 inter_flow = (
@@ -244,7 +251,7 @@ class Analysis(AnalysisBase):
                 )
                 self.inter_flows.add(inter_flow)
             else:
-                dummy_value.inject(val)
+                dummy_value.inject_type(val)
 
         dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
@@ -257,23 +264,26 @@ class Analysis(AnalysisBase):
         assert isinstance(call_stmt, ast.Attribute), call_stmt
 
         call_lab, call_ctx = program_point
-        # new_stack, new_heap = new_state
         new_stack, new_heap = new_state.stack, new_state.heap
+        # abstract value of stmt.value
         value = new_state.compute_value_of_expr(call_stmt.value)
         dummy_value = Value()
         ret_lab, dummy_ret_lab = self.get_getter_return_label(call_lab)
         for val in value:
-            attr_value = Getattr(val, call_stmt.attr, [])
-            for attr_val in attr_value:
+            res, descr_res = _getattr(val, call_stmt.attr)
+            dummy_value.inject_value(res)
+            if call_stmt.attr == "__init__" and len(descr_res) == 0:
+                dummy_value.inject_type(val)
+            for attr_val in descr_res:
                 if isinstance(attr_val, AnalysisMethod):
-                    entry_lab, exit_lab = attr_val.nl__func__.nl__gate__
-                    instance = attr_val.nl__instance__
+                    entry_lab, exit_lab = attr_val.tp_function.tp_code
+                    instance = attr_val.tp_instance
                     new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
 
                     self.entry_program_point_info[(entry_lab, new_ctx)] = (
                         instance,
                         None,
-                        attr_val.nl__module__,
+                        attr_val.tp_module,
                     )
 
                     inter_flow = (
@@ -283,8 +293,6 @@ class Analysis(AnalysisBase):
                         (ret_lab, call_ctx),
                     )
                     self.inter_flows.add(inter_flow)
-                else:
-                    dummy_value.inject_type(attr_val)
 
         dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
@@ -307,20 +315,20 @@ class Analysis(AnalysisBase):
         call_lab, call_ctx = program_point
 
         ret_lab, dummy_ret_lab = self.get_setter_return_label(call_lab)
-        attr_value = new_state.compute_value_of_expr(attribute.value)
+        types = new_state.compute_value_of_expr(attribute.value)
         expr_value = new_state.compute_value_of_expr(call_stmt.value)
-        for attr_type in attr_value:
-            attr_value = Setattr(attr_type, attr, expr_value)
-            for attr_typ in attr_value:
+        for type in types:
+            descr_sets = _setattr(type, attr, expr_value)
+            for attr_typ in descr_sets:
                 if isinstance(attr_typ, AnalysisMethod):
-                    entry_lab, exit_lab = attr_typ.nl__func__.nl__gate__
-                    instance = attr_typ.nl__instance__
+                    entry_lab, exit_lab = attr_typ.tp_function.tp_code
+                    instance = attr_typ.tp_instance
                     new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
 
                     self.entry_program_point_info[(entry_lab, new_ctx)] = (
                         instance,
                         None,
-                        attr_typ.nl__module__,
+                        attr_typ.tp_module,
                     )
 
                     inter_flow = (
@@ -673,18 +681,16 @@ class Analysis(AnalysisBase):
 
         target_value = new_state.compute_value_of_expr(call_stmt.value)
         for target_typ in target_value:
-            print(target_typ, call_stmt.attr)
-            attr_value = Getattr(target_typ, call_stmt.attr, None)
+            _, attr_value = _getattr(target_typ, call_stmt.attr)
             for attr_typ in attr_value:
-                if isinstance(attr_typ, AnalysisMethod):
-                    instance = attr_typ.descriptor_instance
+                if isinstance(attr_typ, AnalysisDescriptorGetFunction):
+                    instance = attr_typ.tp_obj
                     instance_value = create_value_with_type(instance)
                     new_stack.write_var("1", Namespace_Local, instance_value)
-                    owner = attr_typ.descriptor_owner
+                    owner = attr_typ.tp_objtype
                     owner_value = create_value_with_type(owner)
                     new_stack.write_var("2", Namespace_Local, owner_value)
                     new_stack.write_var(POS_ARG_END, Namespace_Helper, 2)
-
         return new_state
 
     def _transfer_call_setter(
@@ -706,17 +712,16 @@ class Analysis(AnalysisBase):
         lhs_value = new_state.compute_value_of_expr(attribute.value)
         rhs_value = new_state.compute_value_of_expr(call_stmt.value)
         for target_typ in lhs_value:
-            attr_value = Setattr(target_typ, attr, rhs_value)
-            if attr_value is not None:
-                for attr_typ in attr_value:
-                    if isinstance(attr_typ, AnalysisMethod):
-                        instance = attr_typ.descriptor_instance
-                        instance_value = create_value_with_type(instance)
-                        new_stack.write_var("1", Namespace_Local, instance_value)
-                        value = attr_typ.descriptor_value
-                        value_value = create_value_with_type(value)
-                        new_stack.write_var("2", Namespace_Local, value_value)
-                        new_stack.write_var(POS_ARG_END, Namespace_Helper, 2)
+            descr_sets = _setattr(target_typ, attr, rhs_value)
+            for attr_typ in descr_sets:
+                if isinstance(attr_typ, AnalysisDescriptorSetFunction):
+                    instance = attr_typ.tp_obj
+                    instance_value = create_value_with_type(instance)
+                    new_stack.write_var("1", Namespace_Local, instance_value)
+                    value = attr_typ.tp_value
+                    value_value = create_value_with_type(value)
+                    new_stack.write_var("2", Namespace_Local, value_value)
+                    new_stack.write_var(POS_ARG_END, Namespace_Helper, 2)
 
         return new_state
 

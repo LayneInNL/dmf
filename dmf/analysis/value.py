@@ -20,7 +20,7 @@ from dmf.analysis.special_types import Any
 
 
 class Value:
-    threshold = 2
+    threshold = 1
 
     @classmethod
     def make_any(cls) -> Value:
@@ -34,17 +34,19 @@ class Value:
             self.types = {}
 
     def __len__(self):
-        if self.types is Any:
-            return 1024
+        if self.is_Any():
+            return self.threshold + 1
         else:
             return len(self.types)
 
     def __le__(self, other: Value) -> bool:
-        if other.types == Any:
+        if other.is_Any():
             return True
-        if self.types == Any:
+        if self.is_Any():
             return False
-
+        # print(other.is_Any(), self.is_Any(), self.types)
+        # print(other.types, id(self.types), id(Any))
+        # print(type(self.types), type(Any))
         for k in self.types:
             if k not in other.types:
                 return False
@@ -53,8 +55,8 @@ class Value:
         return True
 
     def __iadd__(self, other: Value) -> Value:
-        if self.types == Any or other.types == Any:
-            self.types = Any
+        if self.is_Any() or other.is_Any():
+            self.transform_to_Any()
             return self
 
         for k in other.types:
@@ -62,8 +64,9 @@ class Value:
                 self.types[k] = other.types[k]
             else:
                 self.types[k] += other.types[k]
+
         if len(self.types) > self.threshold:
-            self.types = Any
+            self.transform_to_Any()
         return self
 
     def __repr__(self):
@@ -73,14 +76,19 @@ class Value:
         return iter(self.types.values())
 
     def inject_type(self, type):
-        if self.types is Any or type is Any:
-            self.types = Any
+        # insert Any
+        if type is Any:
+            self.transform_to_Any()
+        elif self.is_Any():
+            return
+        elif len(self.types) > self.threshold:
+            self.transform_to_Any()
         else:
             self.types[type.tp_uuid] = type
 
     def inject_value(self, value: Value):
         if self.is_Any() or value.is_Any():
-            self.types = Any
+            self.transform_to_Any()
             return
 
         for label, type in value.types.items():
@@ -89,11 +97,17 @@ class Value:
             else:
                 self.types[label] += type
 
+        if len(self.types) > self.threshold:
+            self.transform_to_Any()
+
     def values(self):
         return self.types.values()
 
     def is_Any(self) -> bool:
         return self.types is Any
+
+    def transform_to_Any(self):
+        self.types = Any
 
 
 def create_value_with_type(typ) -> Value:

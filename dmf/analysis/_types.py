@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from dmf.analysis.exceptions import MROAnyError
-from dmf.analysis.special_types import Any, MRO_Any, Bases_Any
+from dmf.analysis.special_types import MRO_Any, Bases_Any
 from dmf.analysis.value import Value
 
 Namespace_Local = "local"
