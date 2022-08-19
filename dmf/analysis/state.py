@@ -17,6 +17,7 @@ import ast
 from copy import deepcopy
 from typing import List
 
+from dmf.analysis._type_operations import AnalysisClass, _getattr, AnalysisInstance
 from dmf.analysis.analysis_types import (
     POS_ARG_END,
     Namespace_Local,
@@ -82,28 +83,20 @@ class State:
             receiver_value: Value = self.compute_value_of_expr(expr.value)
             receiver_attr: str = expr.attr
             value: Value = Value()
-            for typ in receiver_value:
-                if isinstance(typ, CustomClass):
-                    try:
-                        tmp = Getattr(typ, receiver_attr)
-                    except AttributeError:
-                        pass
-                    else:
-                        value.inject_value(tmp)
-                elif isinstance(typ, Instance):
-                    try:
-                        tmp = Getattr(typ, receiver_attr)
-                    except AttributeError:
-                        pass
-                    else:
-                        value.inject_value(tmp)
-                elif isinstance(typ, FunctionObject):
-                    try:
-                        tmp = Getattr(typ, receiver_attr)
-                    except AttributeError:
-                        pass
-                    else:
-                        value.inject_value(tmp)
+            for type in receiver_value:
+                if isinstance(type, AnalysisClass):
+                    res, descrs = _getattr(type, receiver_attr)
+                    value.inject_value(res)
+                elif isinstance(type, AnalysisInstance):
+                    res, descrs = _getattr(type, receiver_attr)
+                    value.inject_value(res)
+                # elif isinstance(type, FunctionObject):
+                #     try:
+                #         tmp = Getattr(type, receiver_attr)
+                #     except AttributeError:
+                #         pass
+                #     else:
+                #         value.inject_value(tmp)
             return value
         elif isinstance(expr, ast.BinOp):
             raise NotImplementedError(expr)

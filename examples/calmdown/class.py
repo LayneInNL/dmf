@@ -19,6 +19,8 @@ class Test:
     pass
 
 
-# a = Test()
+a = Test()
+a.x = 1
+y = a.x
 # a.x = 1
 # b = a.x

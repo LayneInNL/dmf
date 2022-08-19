@@ -20,12 +20,24 @@ from dmf.analysis.special_types import Any
 
 
 class Value:
+    threshold = 2
+
+    @classmethod
+    def make_any(cls) -> Value:
+        return cls(any=True)
+
     def __init__(self, *, any=False):
         self.types: Union[Any, dict]
         if any:
             self.types = Any
         else:
             self.types = {}
+
+    def __len__(self):
+        if self.types is Any:
+            return 1024
+        else:
+            return len(self.types)
 
     def __le__(self, other: Value) -> bool:
         if other.types == Any:
@@ -50,6 +62,8 @@ class Value:
                 self.types[k] = other.types[k]
             else:
                 self.types[k] += other.types[k]
+        if len(self.types) > self.threshold:
+            self.types = Any
         return self
 
     def __repr__(self):

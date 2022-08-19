@@ -61,9 +61,10 @@ class Heap:
     def __repr__(self):
         return "heaps: {}".format(self.singletons)
 
-    def write_instance_to_heap(self, instance: AnalysisInstance):
-        if instance not in self.singletons:
-            self.singletons[instance.tp_uuid] = Namespace()
+    def write_instance_to_heap(self, heap_uuid: str):
+        if heap_uuid not in self.singletons:
+            self.singletons[heap_uuid] = Namespace()
+        return self.singletons[heap_uuid]
 
     def write_field_to_instance(
         self, instance: AnalysisInstance, field: str, value: Value

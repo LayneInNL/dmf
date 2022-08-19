@@ -13,9 +13,25 @@
 #  limitations under the License.
 
 
-class TypeAny:
+class _TypeAny:
     def __init__(self):
         self.tp_uuid = id(self)
 
 
-Any = TypeAny()
+Any = _TypeAny()
+
+
+class _MROAny:
+    def __init__(self):
+        self.tp_uuid = id(self)
+
+
+MRO_Any = _MROAny()
+
+
+class _BasesAny:
+    def __init__(self):
+        self.tp_uuid = id(self)
+
+
+Bases_Any = _BasesAny()

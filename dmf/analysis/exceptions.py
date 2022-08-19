@@ -15,3 +15,7 @@
 
 class MROAnyError(Exception):
     pass
+
+
+class AnalysisAttributeError(Exception):
+    pass

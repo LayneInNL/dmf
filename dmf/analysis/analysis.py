@@ -19,7 +19,8 @@ from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, List
 
 import dmf.share
-from dmf.analysis.analysis_types import AnalysisClass, AnalysisFunction, Constructor
+from dmf.analysis._type_operations import Constructor, _getattr, AnalysisInstance
+from dmf.analysis._types import Type_Type
 from dmf.analysis.analysis_types import (
     Namespace_Local,
     Namespace_Nonlocal,
@@ -28,8 +29,14 @@ from dmf.analysis.analysis_types import (
     POS_ARG_END,
     INIT_FLAG,
     Namespace_Helper,
+    None_Instance,
+    ArtificialFunction,
+    AnalysisFunction,
+    AnalysisClass,
+    ArtificialMethod,
+    AnalysisMethod,
+    TypeshedModule,
 )
-from dmf.analysis.analysis_types import None_Instance
 from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
 from dmf.analysis.state import (
     compute_function_defaults,
@@ -74,7 +81,7 @@ class Analysis(AnalysisBase):
         self.extremal_value.stack.init_first_frame(qualified_module_name)
 
         curr_module = analysis_modules[qualified_module_name]
-        start_lab, final_lab = curr_module.tp_entry, curr_module.tp_exit
+        start_lab, final_lab = curr_module.tp_code
         # start point
         self.extremal_point: ProgramPoint = (start_lab, ())
         # end point
@@ -172,20 +179,19 @@ class Analysis(AnalysisBase):
         typ: Constructor,
     ):
         # correspond to object.__new__(cls)
+        # it has the form of temp_func(cls)
 
         stmt = self.get_stmt_by_point(program_point)
-        assert isinstance(stmt, ast.Call) and len(stmt.args) == 1
+        assert len(stmt.args) == 1
 
         call_lab, call_ctx = program_point
         addr = record(call_lab, call_ctx)
-        # new_stack, new_heap = new_state
         new_stack, new_heap = new_state.stack, new_state.heap
-        cls_value = new_state.compute_value_of_expr(stmt.args[0])
-        for c in cls_value:
-            instance = typ(addr, c)
-            heap = new_heap.write_instance_to_heap(instance)
-            instance.tp_dict = heap
-            dummy_value.inject(instance)
+        types = new_state.compute_value_of_expr(stmt.args[0])
+        for cls in types:
+            instance = typ(addr, cls)
+            new_heap.write_instance_to_heap(instance)
+            dummy_value.inject_type(instance)
 
     def _lambda_special_method(
         self,
@@ -382,7 +388,7 @@ class Analysis(AnalysisBase):
         # iterate all types to find which is callable
         for type in value:
             if isinstance(type, AnalysisClass):
-                self._lambda_class(
+                self._detect_flow_class(
                     program_point, old_state, new_state, dummy_value_special, type
                 )
             elif isinstance(type, AnalysisFunction):
@@ -401,59 +407,61 @@ class Analysis(AnalysisBase):
                 self._lambda_constructor(
                     program_point, old_state, new_state, dummy_value_normal, type
                 )
-            elif isinstance(type, ListClass):
-                self._lambda_builtin_list(
-                    program_point, old_state, new_state, dummy_value_normal, type
-                )
-            elif isinstance(type, TupleClass):
-                self._lambda_builtin_tuple(
-                    program_point, old_state, new_state, dummy_value_normal, type
-                )
+            # elif isinstance(type, ListClass):
+            #     self._lambda_builtin_list(
+            #         program_point, old_state, new_state, dummy_value_normal, type
+            #     )
+            # elif isinstance(type, TupleClass):
+            #     self._lambda_builtin_tuple(
+            #         program_point, old_state, new_state, dummy_value_normal, type
+            #     )
 
         if len(dummy_value_normal):
             _, dummy_ret_lab = self.get_func_return_label(call_lab)
             dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-            new_state[0].write_var(
+            new_state.stack.write_var(
                 dummy_ret_stmt.id, Namespace_Local, dummy_value_normal
             )
             self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
         if len(dummy_value_special):
             _, dummy_ret_lab = self.get_special_new_return_label(call_lab)
             dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-            new_state[0].write_var(dummy_stmt.id, Namespace_Local, dummy_value_special)
+            new_state.stack.write_var(
+                dummy_stmt.id, Namespace_Local, dummy_value_special
+            )
             self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
-    def _lambda_builtin_list(
-        self,
-        program_point: ProgramPoint,
-        old_state: State,
-        new_state: State,
-        dummy_value: Value,
-        typ: ListClass,
-    ):
-        call_lab, call_ctx = program_point
-        call_stmt = self.get_stmt_by_point(program_point)
-
-        address = record(call_lab, call_ctx)
-        args, _ = compute_func_args(new_state, call_stmt.args, call_stmt.keywords)
-        res = typ(*args)
-        res.tp_uuid = address
-        dummy_value.inject(res)
-
-    def _lambda_builtin_tuple(
-        self,
-        program_point: ProgramPoint,
-        old_state: State,
-        new_state: State,
-        dummy_value: Value,
-        typ: TupleClass,
-    ):
-        self._lambda_builtin_list(program_point, old_state, new_state, dummy_value, typ)
+    # def _lambda_builtin_list(
+    #     self,
+    #     program_point: ProgramPoint,
+    #     old_state: State,
+    #     new_state: State,
+    #     dummy_value: Value,
+    #     typ: ListClass,
+    # ):
+    #     call_lab, call_ctx = program_point
+    #     call_stmt = self.get_stmt_by_point(program_point)
+    #
+    #     address = record(call_lab, call_ctx)
+    #     args, _ = compute_func_args(new_state, call_stmt.args, call_stmt.keywords)
+    #     res = typ(*args)
+    #     res.tp_uuid = address
+    #     dummy_value.inject(res)
+    #
+    # def _lambda_builtin_tuple(
+    #     self,
+    #     program_point: ProgramPoint,
+    #     old_state: State,
+    #     new_state: State,
+    #     dummy_value: Value,
+    #     typ: TupleClass,
+    # ):
+    #     self._lambda_builtin_list(program_point, old_state, new_state, dummy_value, typ)
 
     # deal with class initialization
     # find __new__ and __init__ method
     # then use it to create class instance
-    def _lambda_class(
+    def _detect_flow_class(
         self,
         program_point: ProgramPoint,
         old_state: State,
@@ -465,27 +473,32 @@ class Analysis(AnalysisBase):
         new_stack, new_heap = new_state.stack, new_state.heap
 
         addr = record(call_lab, call_ctx)
-        new_method = type.tp_dict.read_magic_method_value(type, "__new__")
-        if isinstance(new_method, Constructor):
-            analysis_instance = new_method(addr, type)
-            new_heap.write_instance_to_heap(analysis_instance)
+        new_method, new_method_descr = _getattr(type, "__new__")
+        assert len(new_method_descr) == 0, new_method_descr
+        if len(new_method) == 0:
+            tp_uuid = f"{addr}-{type.tp_uuid}"
+            tp_dict = new_heap.write_instance_to_heap(tp_uuid)
+            analysis_instance = AnalysisInstance(
+                tp_uuid=tp_uuid, tp_dict=tp_dict, tp_class=Type_Type
+            )
             dummy_value.inject_type(analysis_instance)
-        elif isinstance(new_method, AnalysisFunction):
-            entry_lab, exit_lab = new_method.tp_code
-            ret_lab, _ = self.get_special_new_return_label(call_lab)
-            new_ctx = merge(call_lab, None, call_ctx)
-            inter_flow = (
-                (call_lab, call_ctx),
-                (entry_lab, new_ctx),
-                (exit_lab, new_ctx),
-                (ret_lab, call_ctx),
-            )
-            self.inter_flows.add(inter_flow)
-            self.entry_program_point_info[(entry_lab, new_ctx)] = (
-                type,
-                None,
-                type.tp_module,
-            )
+        else:
+            for new in new_method:
+                entry_lab, exit_lab = new.tp_code
+                ret_lab, _ = self.get_special_new_return_label(call_lab)
+                new_ctx = merge(call_lab, None, call_ctx)
+                inter_flow = (
+                    (call_lab, call_ctx),
+                    (entry_lab, new_ctx),
+                    (exit_lab, new_ctx),
+                    (ret_lab, call_ctx),
+                )
+                self.inter_flows.add(inter_flow)
+                self.entry_program_point_info[(entry_lab, new_ctx)] = (
+                    type,
+                    None,
+                    type.tp_module,
+                )
 
     # unbound func call
     # func()
@@ -723,7 +736,7 @@ class Analysis(AnalysisBase):
             value = create_value_with_type(instance)
             new_stack.write_var(str(0), Namespace_Local, value)
         if init_flag:
-            new_stack.write_var(INIT_FLAG, Namespace_Helper, mock_value)
+            new_stack.write_var(INIT_FLAG, Namespace_Helper, object)
         if module_name:
             new_stack.check_module_diff(module_name)
 
@@ -872,6 +885,7 @@ class Analysis(AnalysisBase):
     ):
         # return stuff
         return_lab, return_ctx = program_point
+        call_lab = self.get_classdef_call_label(return_lab)
         # stmt
         stmt: ast.ClassDef = self.get_stmt_by_point(program_point)
         new_stack = new_state.stack
@@ -892,6 +906,7 @@ class Analysis(AnalysisBase):
             tp_module=module,
             tp_bases=bases,
             tp_dict=f_locals,
+            tp_code=(call_lab, return_lab),
         )
         value.inject_type(analysis_class)
         new_stack.write_var(cls_name, Namespace_Local, value)
