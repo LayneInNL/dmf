@@ -62,6 +62,7 @@ from dmf.analysis.state import (
     Heap,
 )
 from dmf.analysis.value import Value, create_value_with_type
+from dmf.importer import import_module
 from dmf.log.logger import logger
 
 Unused_Name = "UNUSED_NAME"
@@ -145,10 +146,6 @@ class Analysis(AnalysisBase):
 
     # based on current program point, update self.IF
     def detect_flow(self, program_point: ProgramPoint) -> None:
-        logger.debug(f"Current lambda point: {program_point}")
-        old_state: State = self.analysis_list[program_point]
-        new_state: State = deepcopy_state(old_state)
-        dummy_value: Value = Value()
 
         # function calls and descriptors will produce dummy value and inter-procedural flows
         # call labels includes:
@@ -158,22 +155,31 @@ class Analysis(AnalysisBase):
         # 4. __set__
         # 5. special init method for our analysis
         if self.is_call_point(program_point):
+            logger.debug(f"Current lambda point: {program_point}")
+            # curr_state is the previous program point
+            next_state: State = self.analysis_list[program_point]
+            dummy_value: Value = Value()
+            next_next_state: State = deepcopy_state(next_state)
             if self.is_classdef_call_point(program_point):
                 self._detect_flow_classdef(
-                    program_point, old_state, new_state, dummy_value
+                    program_point, next_state, next_next_state, dummy_value
                 )
             elif self.is_normal_call_point(program_point):
                 self._detect_flow_normal(
-                    program_point, old_state, new_state, dummy_value
+                    program_point, next_state, next_next_state, dummy_value
                 )
             elif self.is_special_init_call_point(program_point):
                 self._lambda_special_init(
-                    program_point, old_state, new_state, dummy_value
+                    program_point, next_state, next_next_state, dummy_value
                 )
             elif self.is_getter_call_point(program_point):
-                self._lambda_getter(program_point, old_state, new_state, dummy_value)
+                self._lambda_getter(
+                    program_point, next_state, next_next_state, dummy_value
+                )
             elif self.is_setter_call_point(program_point):
-                self._lambda_setter(program_point, old_state, new_state, dummy_value)
+                self._lambda_setter(
+                    program_point, next_state, next_next_state, dummy_value
+                )
 
     def _lambda_constructor(
         self,
@@ -571,7 +577,6 @@ class Analysis(AnalysisBase):
         old_state: State = self.analysis_list[program_point]
         if is_bot_state(old_state):
             return BOTTOM
-
         new_state: State = deepcopy_state(old_state)
         if self.is_dummy_point(program_point):
             return self.transfer_dummy(program_point, old_state, new_state)
@@ -827,19 +832,18 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Import,
     ):
-        assert len(stmt.names) == 1
         name = stmt.names[0].name
         asname = stmt.names[0].asname
-        module = self._import_a_module(name)
         if asname is None:
-            name = name.partition(".")[0]
-            module = self._import_a_module(name)
+            # name = name.partition(".")[0]
+            module = import_module(name)
         else:
             name = asname
+            module = import_module(name)
 
-        value = create_value_with_type(module)
-        new_stack = new_state.stack
-        new_stack.write_var(name, Namespace_Local, value)
+        value = Value()
+        value.inject_type(module)
+        new_state.stack.write_var(name, Namespace_Local, value)
         logger.debug("Import module {}".format(module))
         return new_state
 
@@ -851,34 +855,27 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.ImportFrom,
     ):
-        module_name = "" if stmt.module is None else stmt.module
-        dot_number = "." * stmt.level
+        package = None
+        if stmt.level > 0:
+            package: str = new_state.stack.read_package()
 
         new_stack = new_state.stack
-        package = new_stack.read_package()
-
-        module_name = resolve_name(dot_number + module_name, package)
-        module = self._import_a_module(module_name)
-        logger.debug("ImportFrom module {}".format(module))
+        logger.debug("ImportFrom module {}".format(stmt.module))
+        module = import_module(stmt.module, package, stmt.level)
 
         for alias in stmt.names:
             name = alias.name
             asname = alias.asname
-            try:
-                attr = module.getattr(name)
-            except AttributeError:
-                sub_module_name = f"{module_name}.{name}"
-                sub_module = self._import_a_module(sub_module_name)
-                attr = sub_module
-                if asname is None:
-                    new_stack.write_var(name, Namespace_Local, attr)
-                else:
-                    new_stack.write_var(asname, Namespace_Local, attr)
+            direct_res, descr_gets = _getattr(module, name)
+            assert len(descr_gets) == 0
+            if len(direct_res) == 0:
+                sub_module_name = f"{stmt.module}.{name}"
+                sub_module = import_module(sub_module_name, package, stmt.level)
+                direct_res.inject_type(sub_module)
+            if asname is None:
+                new_stack.write_var(name, Namespace_Local, direct_res)
             else:
-                if asname is None:
-                    new_stack.write_var(name, Namespace_Local, attr)
-                else:
-                    new_stack.write_var(asname, Namespace_Local, attr)
+                new_stack.write_var(asname, Namespace_Local, direct_res)
         return new_state
 
     def transfer_return_classdef(

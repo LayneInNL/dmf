@@ -90,6 +90,7 @@ class AnalysisModule(ObjectLevel):
         self.tp_uuid: str = tp_uuid
         self.tp_package: str = tp_package
         self.tp_dict: Namespace = Namespace()
+        self.tp_dict.write_special_value("__package__", self.tp_package)
         self.tp_code = tp_code
 
     def getattr(self, name: str):
@@ -811,6 +812,15 @@ def _getattr(obj, name) -> Tuple[Value, Value]:
             return GenericGetAttr(obj, name)
         elif isinstance(obj, AnalysisFunction):
             return GenericGetAttr(obj, name)
+        elif isinstance(obj, AnalysisModule):
+            try:
+                res = obj.getattr(name)
+            except AttributeError:
+                return Value(), Value()
+            else:
+                direct_res = Value()
+                direct_res.inject_value(res)
+                return direct_res, Value()
         else:
             raise NotImplementedError
     else:

@@ -116,7 +116,7 @@ def find_loader(name, path=None):
     return spec.loader
 
 
-def import_module(name, package=None):
+def import_module(name, package=None, level=0):
     """Import a module.
 
     The 'package' argument is required when performing a relative import. It
@@ -124,19 +124,7 @@ def import_module(name, package=None):
     relative import to an absolute import.
 
     """
-    level = 0
-    if name.startswith("."):
-        if not package:
-            msg = (
-                "the 'package' argument is required to perform a relative "
-                "import for {!r}"
-            )
-            raise TypeError(msg.format(name))
-        for character in name:
-            if character != ".":
-                break
-            level += 1
-    return _bootstrap._gcd_import(name[level:], package, level)
+    return _bootstrap._gcd_import(name, package, level)
 
 
 _RELOADING = {}

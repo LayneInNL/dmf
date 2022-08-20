@@ -225,7 +225,7 @@ class Stack:
     def read_module(self):
         return self.top_frame().f_globals.read_value("__name__")
 
-    def read_package(self):
+    def read_package(self) -> str:
         return self.top_frame().f_globals.read_value("__package__")
 
     def read_var(self, var: str):

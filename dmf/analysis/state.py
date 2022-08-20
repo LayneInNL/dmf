@@ -109,9 +109,18 @@ class State:
 
 def deepcopy_state(state: State) -> State:
     memo = {}
+    if "imported" in sys.analysis_modules:
+        print(
+            id(state.stack.frames[0].f_locals),
+            id(sys.analysis_modules["imported"].tp_dict),
+        )
     new_state = deepcopy(state, memo)
-    for name, module in sys.analysis_modules.items():
-        module.tp_dict = deepcopy(module.tp_dict, memo)
+    sys.analysis_modules = deepcopy(sys.analysis_modules, memo)
+    if "imported" in sys.analysis_modules:
+        print(
+            id(new_state.stack.frames[0].f_locals),
+            id(sys.analysis_modules["imported"].tp_dict),
+        )
     return new_state
 
 

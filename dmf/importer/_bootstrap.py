@@ -929,7 +929,6 @@ def _find_spec(name, path, target=None):
     # is_reload = name in sys.modules
     is_reload = name in sys.fake_analysis_modules
     for finder in meta_path:
-        print(finder)
         with _ImportLockContext():
             try:
                 find_spec = finder.find_spec
@@ -1212,8 +1211,6 @@ def _install_external_importers():
     """Install importers that require external filesystem access"""
     global _bootstrap_external
     import _frozen_importlib_external
-
-    print(_frozen_importlib_external)
 
     _bootstrap_external = _frozen_importlib_external
     _frozen_importlib_external._install(sys.modules[__name__])
