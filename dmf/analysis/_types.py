@@ -121,10 +121,13 @@ class SpecialAttributes:
         self.tp_uuid = NotImplemented
         self.tp_dict = NotImplemented
         self.tp_class = NotImplemented
-        self.tp_mro = NotImplemented
         self.tp_bases = NotImplemented
         # self.tp_name = NotImplemented
         # self.tp_qualname = NotImplemented
+
+
+class Function:
+    pass
 
 
 class TypeType(SpecialAttributes):
@@ -137,6 +140,11 @@ class TypeType(SpecialAttributes):
     def __repr__(self):
         return "type"
 
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
 
 Type_Type = TypeType()
 
@@ -147,10 +155,16 @@ class TypeObject(SpecialAttributes):
         self.tp_uuid = id(self)
         self.tp_dict = Namespace()
         self.tp_class = Type_Type
-        self.tp_mro = self, []
+        self.tp_mro_curr = self
+        self.tp_mro_rest = []
 
     def __repr__(self):
         return "object"
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 Object_Type = TypeObject()
@@ -207,6 +221,11 @@ class TypeInt(SpecialAttributes):
     def __repr__(self):
         return "int"
 
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
 
 Int_Type = TypeInt()
 
@@ -222,6 +241,11 @@ class TypeFloat(SpecialAttributes):
 
     def __repr__(self):
         return "float"
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 Float_Type = TypeFloat()
@@ -239,6 +263,11 @@ class TypeComplex(SpecialAttributes):
     def __repr__(self):
         return "complex"
 
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
 
 Complex_Type = TypeComplex()
 
@@ -254,6 +283,11 @@ class TypeList(SpecialAttributes):
 
     def __repr__(self):
         return "list"
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 List_Type = TypeList()
@@ -271,6 +305,11 @@ class TypeTuple(SpecialAttributes):
     def __repr__(self):
         return "tuple"
 
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
 
 Tuple_Type = TypeTuple()
 
@@ -286,6 +325,11 @@ class TypeRange(SpecialAttributes):
 
     def __repr__(self):
         return "range"
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 Range_Type = TypeRange()
@@ -303,6 +347,11 @@ class TypeStr(SpecialAttributes):
     def __repr__(self):
         return "str"
 
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
 
 Str_Type = TypeStr()
 
@@ -318,6 +367,11 @@ class TypeBytes(SpecialAttributes):
 
     def __repr__(self):
         return "bytes"
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 Bytes_Type = TypeBytes()
@@ -335,6 +389,11 @@ class TypeByteArray(SpecialAttributes):
     def __repr__(self):
         return "bytearray"
 
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
 
 ByteArray_Type = TypeByteArray()
 
@@ -350,6 +409,11 @@ class TypeMemoryView(SpecialAttributes):
 
     def __repr__(self):
         return "memoryview"
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 MemoryView_Type = TypeMemoryView()
@@ -367,6 +431,11 @@ class TypeSet(SpecialAttributes):
     def __repr__(self):
         return "set"
 
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
 
 Set_Type = TypeSet()
 
@@ -382,6 +451,11 @@ class TypeFrozenSet(SpecialAttributes):
 
     def __repr__(self):
         return "frozenset"
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 FrozenSet_Type = TypeFrozenSet()
@@ -399,6 +473,11 @@ class TypeDict(SpecialAttributes):
     def __repr__(self):
         return "dict"
 
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
 
 Dict_Type = TypeDict()
 
@@ -415,11 +494,16 @@ class TypeModule(SpecialAttributes):
     def __repr__(self):
         return "module"
 
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
 
 Module_Type = TypeModule()
 
 
-class TypeFunction(SpecialAttributes):
+class TypeFunction(SpecialAttributes, Function):
     def __init__(self):
         super().__init__()
         self.tp_uuid = id(self)
@@ -429,7 +513,12 @@ class TypeFunction(SpecialAttributes):
         self.tp_mro_curr, self.tp_mro_rest = c3(self)
 
     def __repr__(self):
-        return "function"
+        return "class 'function'"
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 Function_Type = TypeFunction()
@@ -447,6 +536,11 @@ class TypeMethod(SpecialAttributes):
     def __repr__(self):
         return "method"
 
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
 
 Method_Type = TypeMethod()
 
@@ -463,6 +557,11 @@ class TypeNoneType(SpecialAttributes):
     def __repr__(self):
         return "NoneType"
 
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
 
 None_Type = TypeNoneType()
 
@@ -478,6 +577,11 @@ class TypeBool(SpecialAttributes):
 
     def __repr__(self):
         return "bool"
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 Bool_Type = TypeBool()

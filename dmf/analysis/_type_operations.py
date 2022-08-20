@@ -13,6 +13,7 @@
 #  limitations under the License.
 from __future__ import annotations
 import ast
+import builtins
 from typing import Tuple
 
 from ._types import (
@@ -50,6 +51,7 @@ from ._types import (
     Namespace_Helper,
     Var,
     c3,
+    Function,
 )
 from .exceptions import MROAnyError, AnalysisAttributeError
 from .special_types import Any
@@ -64,20 +66,15 @@ from dmf.typeshed_client.parser import (
     AssignNameInfo,
 )
 
+
 # Every entity in Python is an object.
-class Object:
-    def __init__(self, tp_class, tp_bases):
+class ObjectLevel:
+    def __init__(self, tp_class):
         self.tp_class = tp_class
-        self.tp_bases = tp_bases
-        self.tp_mro = c3(self)
-
-
-class Analysis:
-    pass
 
 
 # object has class type
-class Class:
+class ClassLevel:
     pass
 
 
@@ -86,12 +83,9 @@ class Instance:
     pass
 
 
-class Function:
-    pass
-
-
-class AnalysisModule:
+class AnalysisModule(ObjectLevel):
     def __init__(self, tp_uuid, tp_package, tp_code):
+        super().__init__(tp_class=Module_Type)
         self.tp_uuid: str = tp_uuid
         self.tp_package: str = tp_package
         self.tp_dict: Namespace = Namespace()
@@ -110,7 +104,29 @@ class AnalysisModule:
         return self
 
 
-class AnalysisFunction(Function):
+class TypeshedModule(ObjectLevel):
+    def __init__(self, _typeshed_module: _TypeshedModule):
+        super().__init__(tp_class=Module_Type)
+        self.tp_uuid = _typeshed_module.tp_uuid
+        self.tp_dict = _typeshed_module.tp_dict
+        self.tp_module = _typeshed_module.module_name
+
+    def getattr(self, attr_name: str):
+        if attr_name not in self.tp_dict:
+            # possible it's a module
+            sub_module = f"{self.tp_module}.{attr_name}"
+            return parse_module(sub_module)
+        name_info = self.tp_dict[attr_name]
+        return resolve_attribute(name_info)
+
+    def __len__(self):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+
+class AnalysisFunction(ObjectLevel):
     def __init__(
         self,
         tp_uuid: int,
@@ -119,13 +135,13 @@ class AnalysisFunction(Function):
         tp_defaults,
         tp_kwdefaults,
     ):
+        super().__init__(Function_Type)
         self.tp_uuid: int = tp_uuid
         self.tp_code: Tuple[int, int] = tp_code
         self.tp_module: str = tp_module
         self.tp_dict: Namespace = Namespace()
         self.tp_defaults = tp_defaults
         self.tp_kwdefaults = tp_kwdefaults
-        self.tp_class = Function_Type
 
     def __le__(self, other: AnalysisFunction):
         return self.tp_dict <= other.tp_dict
@@ -134,6 +150,38 @@ class AnalysisFunction(Function):
         self.tp_dict += other.tp_dict
         return self
 
+    def __repr__(self):
+        return str(self.tp_uuid)
+
+
+class ArtificialFunction(ObjectLevel):
+    def __init__(self, tp_function):
+        super().__init__(Function_Type)
+        self.tp_uuid = id(tp_function)
+        self.tp_code = tp_function
+        self.tp_dict = Namespace()
+        self.tp_repr = None
+
+    def __call__(self, *args, **kwargs):
+        return self.tp_code(*args, **kwargs)
+
+    def __le__(self, other: ArtificialFunction):
+        return True
+
+    def __iadd__(self, other: ArtificialFunction):
+        return self
+
+    def __repr__(self):
+        if self.tp_repr is not None:
+            return self.tp_repr
+        return str(self.tp_uuid)
+
+
+class TypeshedFunction:
+    def __init__(self, tp_uuid, tp_oridinaries):
+        self.tp_uuid = tp_uuid
+        self.tp_ordinaries = tp_oridinaries
+
 
 class AnalysisMethod:
     def __init__(self, tp_function, tp_instance):
@@ -141,6 +189,34 @@ class AnalysisMethod:
         self.tp_function = tp_function
         self.tp_instance = tp_instance
         self.tp_module = tp_function.tp_module
+
+    def __le__(self):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __repr__(self):
+        return self.tp_uuid
+
+
+class ArtificialMethod:
+    def __init__(self, tp_function, tp_instance):
+        self.tp_uuid = f"{tp_function.tp_uuid}-{tp_instance.tp_uuid}"
+        self.tp_function = tp_function
+        self.tp_instance = tp_instance
+
+    def __call__(self, *args, **kwargs):
+        return self.tp_function(self.tp_instance, *args, **kwargs)
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __repr__(self):
+        return self.tp_uuid
 
 
 class AnalysisDescriptorGetFunction:
@@ -159,7 +235,7 @@ class AnalysisDescriptorSetFunction:
         self.tp_value = tp_value
 
 
-class AnalysisClass(Class):
+class AnalysisClass(ClassLevel):
     def __init__(self, tp_uuid, tp_bases, tp_module, tp_dict, tp_code):
         self.tp_uuid = tp_uuid
         self.tp_class = Type_Type
@@ -180,6 +256,20 @@ class AnalysisClass(Class):
         return self
 
 
+class TypeshedClass:
+    def __init__(self, tp_uuid, tp_dict, tp_module):
+        self.tp_uuid = tp_uuid
+        self.tp_dict = tp_dict
+        self.tp_module = tp_module
+        self.tp_mro_curr, self.tp_mro_rest = self, [Object_Type]
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+
 class AnalysisInstance(Instance):
     def __init__(self, tp_uuid, tp_dict, tp_class):
         self.tp_uuid = tp_uuid
@@ -191,63 +281,6 @@ class AnalysisInstance(Instance):
 
     def __iadd__(self, other):
         return self
-
-
-class TypeshedModule:
-    def __init__(self, _typeshed_module: _TypeshedModule):
-        self.tp_uuid = _typeshed_module.tp_uuid
-        self.tp_dict = _typeshed_module.tp_dict
-        self.tp_module = _typeshed_module.module_name
-
-    def get_name(self, attr_name: str):
-        if attr_name not in self.tp_dict:
-            # possible it's a module
-            sub_module = f"{self.tp_module}.{attr_name}"
-            return parse_module(sub_module)
-        name_info = self.tp_dict[attr_name]
-        return resolve_attribute(name_info)
-
-
-class ArtificialFunction(Function):
-    def __init__(self, tp_function):
-        self.tp_uuid = id(tp_function)
-        self.tp_code = tp_function
-        self.tp_dict = Namespace()
-        self.tp_class = Function_Type
-        self.tp_repr = None
-
-    def __call__(self, *args, **kwargs):
-        return self.tp_code(*args, **kwargs)
-
-    def __le__(self, other: ArtificialFunction):
-        return True
-
-    def __iadd__(self, other: ArtificialFunction):
-        return self
-
-    def __repr__(self):
-        if self.tp_repr is not None:
-            return self.tp_repr
-        return self
-
-
-class TypeshedFunction:
-    def __init__(self, tp_uuid, tp_oridinaries):
-        self.tp_uuid = tp_uuid
-        self.tp_ordinaries = tp_oridinaries
-
-
-class ArtificialMethod:
-    def __init__(self, tp_function, tp_instance):
-        self.tp_uuid = f"{tp_function.tp_uuid}-{tp_instance.tp_uuid}"
-        self.tp_function = tp_function
-        self.tp_instance = tp_instance
-
-
-class TypeshedClass:
-    def __init__(self, tp_uuid, tp_dict):
-        self.tp_uuid = tp_uuid
-        self.tp_dict = tp_dict
 
 
 class ArtificialInstance:
@@ -298,12 +331,27 @@ def _py_type(obj):
 
 def _pytype_lookup(type, name):
     res = _find_name_in_mro(type, name)
-    return res
+    if res is None:
+        return Value()
+    else:
+        return res
+
+
+def _pytype_lookup_set(type, name, value):
+    res = _find_name_in_mro(type, name)
+
+    # no class variable called name
+    if res is None:
+        type.tp_dict.write_local_value(name, value)
+        return type.tp_dict.read_value(name)
+    # class variable exists, return this one
+    else:
+        res.inject_value(value)
+        return res
 
 
 def _find_name_in_mro(type, name) -> Value:
-    res = Value()
-
+    res = None
     tp_mro_curr, tp_mro_rest = type.tp_mro_curr, type.tp_mro_rest
     # name in tp_mro_curr
     if name in tp_mro_curr.tp_dict:
@@ -374,7 +422,8 @@ def GenericSetAttr(obj, name, value):
     descr_value = Value()
 
     tp = _py_type(obj)
-    descrs = _pytype_lookup(tp, name)
+    # look up class dict
+    descrs = _pytype_lookup_set(tp, name, value)
     if descrs.is_Any():
         return Value.make_any()
     for descr in descrs:
@@ -394,10 +443,8 @@ def GenericSetAttr(obj, name, value):
             else:
                 raise NotImplementedError
 
-    if isinstance(obj, AnalysisInstance):
-        obj.tp_dict.write_local_value(name, value)
-    else:
-        obj.tp_dict.write_local_value(name, value)
+    # instance dict assignment
+    obj.tp_dict.write_local_value(name, value)
 
     return descr_value
 
@@ -442,7 +489,6 @@ def type_setattro(type, name, value):
 
 
 def _setup_Object_Type():
-    pass
     # _object_getattro = ArtificialFunction(tp_function=GenericGetAttr)
     # _value = Value()
     # _value.inject_type(_object_getattro)
@@ -452,6 +498,15 @@ def _setup_Object_Type():
     # _object_setattro = ArtificialFunction(tp_function=GenericSetAttr)
     # _value.inject_type(_object_setattro)
     # Object_Type.tp_dict.write_local_value("__setattr__", _value)
+
+    _value = Value()
+
+    def __init__(self):
+        return self
+
+    _object_init = ArtificialFunction(tp_function=__init__)
+    _value.inject_type(_object_init)
+    Object_Type.tp_dict.write_local_value("__init__", _value)
 
 
 def _setup_Type_Type():
@@ -520,7 +575,7 @@ def evaluate(name_info):
     if isinstance(name_info, _TypeshedModule):
         return TypeshedModule(name_info)
     elif isinstance(name_info, _TypeshedClass):
-        return TypeshedClass(name_info.qualified_name, name_info.tp_dict)
+        return TypeshedClass(name_info.qualified_name, name_info.tp_dict, "builtins")
     elif isinstance(name_info, _TypeshedFunction):
         if name_info.ordinaries:
             return TypeshedFunction(name_info.qualified_name, name_info.ordinaries)
@@ -708,12 +763,12 @@ builtin_module = parse_module("builtins")
 _typeshed_int = builtin_module.get_name("int")
 typeshed_int = evaluate(_typeshed_int)
 Int_Instance.tp_class = typeshed_int
-Int_Type.tp_mro = [typeshed_int, Object_Type]
+Int_Type.tp_mro_curr, Int_Type.tp_mro_rest = typeshed_int, [Object_Type]
 
 _typeshed_float = builtin_module.get_name("float")
 typeshed_float = evaluate(_typeshed_float)
 Float_Instance.tp_class = typeshed_float
-Float_Type.tp_mro = [typeshed_float, Object_Type]
+Float_Type.tp_mro_curr, Float_Type.tp_mro_rest = typeshed_float, [Object_Type]
 
 # simulate builtins.getattr, but operate on a set of objects
 def getattrs(objs: Value, name, default=None) -> Tuple[Value, Value]:
@@ -743,9 +798,11 @@ def _getattr(obj, name) -> Tuple[Value, Value]:
     tp_getattributes = _pytype_lookup(tp, "__getattribute__")
     if len(tp_getattributes) == 0:
         # work on class
-        if isinstance(obj, Class):
+        if isinstance(obj, ClassLevel):
             return type_getattro(obj, name)
         elif isinstance(obj, Instance):
+            return GenericGetAttr(obj, name)
+        elif isinstance(obj, AnalysisFunction):
             return GenericGetAttr(obj, name)
         else:
             raise NotImplementedError
@@ -773,11 +830,13 @@ def _setattr(obj, name, value) -> Value:
     tp_setattr = _pytype_lookup(tp, "__setattr__")
     if len(tp_setattr) == 0:
         # work on class
-        if isinstance(obj, Class):
+        if isinstance(obj, ClassLevel):
             return type_setattro(obj, name, value)
         elif isinstance(obj, Instance):
             return GenericSetAttr(obj, name, value)
+        elif isinstance(obj, AnalysisFunction):
+            return GenericSetAttr(obj, name, value)
         else:
-            raise NotImplementedError
+            raise NotImplementedError(f"setattr({obj},{name},{value})")
     else:
         return Value(any=True)

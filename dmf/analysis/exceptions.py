@@ -19,3 +19,7 @@ class MROAnyError(Exception):
 
 class AnalysisAttributeError(Exception):
     pass
+
+
+class TypeshedModuleAttributeError(Exception):
+    pass

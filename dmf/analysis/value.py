@@ -44,9 +44,6 @@ class Value:
             return True
         if self.is_Any():
             return False
-        # print(other.is_Any(), self.is_Any(), self.types)
-        # print(other.types, id(self.types), id(Any))
-        # print(type(self.types), type(Any))
         for k in self.types:
             if k not in other.types:
                 return False

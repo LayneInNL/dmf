@@ -14,13 +14,6 @@
 
 
 class _TypeAny:
-    # _instance = None
-    #
-    # def __new__(cls, *args, **kwargs):
-    #     if cls._instance is None:
-    #         cls._instance = super().__new__(cls)
-    #     return cls._instance
-
     def __init__(self):
         self.tp_uuid = id(self)
 
@@ -37,14 +30,6 @@ Any = _TypeAny()
 
 
 class _MROAny:
-
-    # _instance = None
-    #
-    # def __new__(cls, *args, **kwargs):
-    #     if cls._instance is None:
-    #         cls._instance = super().__new__(cls)
-    #     return cls._instance
-
     def __init__(self):
         self.tp_uuid = id(self)
 
@@ -58,14 +43,6 @@ MRO_Any = _MROAny()
 
 
 class _BasesAny:
-
-    # _instance = None
-    #
-    # def __new__(cls, *args, **kwargs):
-    #     if cls._instance is None:
-    #         cls._instance = super().__new__(cls)
-    #     return cls._instance
-
     def __init__(self):
         self.tp_uuid = id(self)
 

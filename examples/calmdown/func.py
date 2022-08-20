@@ -21,6 +21,6 @@ def test1(x):
     pass
 
 
-a = test1(1)
-# test.x = 1
-# y = test.x
+# a = test1(1)
+test1.x = 1
+y = test1.x

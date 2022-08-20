@@ -68,7 +68,7 @@ from dmf.share import analysis_modules
 
 Unused_Name = "UNUSED_NAME"
 
-
+# points-to analysis
 def record(label: int, context: Tuple):
     return label
 
@@ -216,6 +216,8 @@ class Analysis(AnalysisBase):
         res = typ(*args, **keywords)
         dummy_value.inject(res)
 
+    # deal with calling __init__ implicitly during class initialization.
+    # this will only happen when xxx = Class().
     def _lambda_special_init(
         self,
         program_point: ProgramPoint,
@@ -272,13 +274,13 @@ class Analysis(AnalysisBase):
         for val in value:
             res, descr_res = _getattr(val, call_stmt.attr)
             dummy_value.inject_value(res)
-            if call_stmt.attr == "__init__" and len(descr_res) == 0:
-                dummy_value.inject_type(val)
+            # if call_stmt.attr == "__init__" and len(descr_res) == 0:
+            #     dummy_value.inject_type(val)
             for attr_val in descr_res:
                 if isinstance(attr_val, AnalysisMethod):
                     entry_lab, exit_lab = attr_val.tp_function.tp_code
                     instance = attr_val.tp_instance
-                    new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
+                    new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
 
                     self.entry_program_point_info[(entry_lab, new_ctx)] = (
                         instance,
@@ -293,6 +295,8 @@ class Analysis(AnalysisBase):
                         (ret_lab, call_ctx),
                     )
                     self.inter_flows.add(inter_flow)
+                elif isinstance(attr_val, ArtificialMethod):
+                    dummy_value.inject_type(attr_val)
 
         dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
@@ -487,7 +491,7 @@ class Analysis(AnalysisBase):
             tp_uuid = f"{addr}-{type.tp_uuid}"
             tp_dict = new_heap.write_instance_to_heap(tp_uuid)
             analysis_instance = AnalysisInstance(
-                tp_uuid=tp_uuid, tp_dict=tp_dict, tp_class=Type_Type
+                tp_uuid=tp_uuid, tp_dict=tp_dict, tp_class=type
             )
             dummy_value.inject_type(analysis_instance)
         else:
@@ -848,6 +852,7 @@ class Analysis(AnalysisBase):
         logger.debug("Import module {}".format(module))
         return new_state
 
+    # from xxx import yyy, zzz as aaa
     def transfer_ImportFrom(
         self,
         program_point: ProgramPoint,

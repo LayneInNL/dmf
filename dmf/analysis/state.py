@@ -141,7 +141,7 @@ def merge_states(lhs: State, rhs: State | BOTTOM) -> State:
 
 
 def compute_function_defaults(state: State, node: ast.FunctionDef):
-    stack, heap = state
+    stack, _ = state.stack, state.heap
 
     # https: // docs.python.org / 3.11 / library / ast.html  # ast.arguments
     arguments: ast.arguments = node.args
@@ -190,7 +190,7 @@ def compute_bases(state: State, node: ast.ClassDef):
 
 def parse_positional_args(start_pos: int, arguments: ast.arguments, state: State):
     args_flag = [False for _ in arguments.args]
-    stack = state[0]
+    stack = state.stack
     f_locals = stack.top_frame().f_locals
     positional_len: int = f_locals.read_value(POS_ARG_END)
     real_pos_len = positional_len - start_pos + 1
@@ -218,7 +218,7 @@ def parse_positional_args(start_pos: int, arguments: ast.arguments, state: State
 
 
 def parse_keyword_args(arg_flags, arguments: ast.arguments, state: State):
-    stack = state[0]
+    stack = state.stack
     f_locals = stack.top_frame().f_locals
 
     # keyword arguments
