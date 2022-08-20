@@ -14,21 +14,8 @@
 
 from __future__ import annotations
 
-import ast
+import sys
 from typing import List
-
-from dmf.share import analysis_modules
-
-# from dmf.analysis.types import (
-#     Value,
-#     Namespace,
-#     Var,
-#     CustomClass,
-#     Getattr,
-#     Instance,
-#     LocalVar,
-#     builtin_namespace,
-# )
 from dmf.analysis.analysis_types import (
     Namespace_Global,
     Namespace_Nonlocal,
@@ -201,7 +188,7 @@ class Stack:
         self.frames: List[Frame] = []
 
     def init_first_frame(self, qualified_module_name: str):
-        module = analysis_modules[qualified_module_name]
+        module = sys.analysis_modules[qualified_module_name]
         global_ns = module.tp_dict
         self.frames.append(Frame(f_locals=global_ns, f_back=None, f_globals=global_ns))
 
@@ -270,4 +257,4 @@ class Stack:
     def check_module_diff(self, new_module_name=None):
         curr_module_name = self.read_module()
         if curr_module_name != new_module_name:
-            self.top_frame().f_globals = analysis_modules[new_module_name].namespace
+            self.top_frame().f_globals = sys.analysis_modules[new_module_name].namespace

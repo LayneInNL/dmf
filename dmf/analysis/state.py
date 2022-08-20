@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import ast
+import sys
 from copy import deepcopy
 from typing import List
 
@@ -34,7 +35,6 @@ from dmf.analysis.heap import Heap
 from dmf.analysis.stack import Stack
 from dmf.analysis.value import Value
 from dmf.log.logger import logger
-from dmf.share import analysis_modules
 
 
 class StateBottom:
@@ -110,7 +110,7 @@ class State:
 def deepcopy_state(state: State) -> State:
     memo = {}
     new_state = deepcopy(state, memo)
-    for name, module in analysis_modules.items():
+    for name, module in sys.analysis_modules.items():
         module.tp_dict = deepcopy(module.tp_dict, memo)
     return new_state
 

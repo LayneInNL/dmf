@@ -15,10 +15,10 @@
 from __future__ import annotations
 
 import ast
+import sys
 from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, List
 
-import dmf.share
 from dmf.analysis._type_operations import (
     Constructor,
     _getattr,
@@ -27,7 +27,6 @@ from dmf.analysis._type_operations import (
     AnalysisDescriptorGetFunction,
     AnalysisDescriptorSetFunction,
 )
-from dmf.analysis._types import Type_Type
 from dmf.analysis.analysis_types import (
     Namespace_Local,
     Namespace_Nonlocal,
@@ -64,7 +63,6 @@ from dmf.analysis.state import (
 )
 from dmf.analysis.value import Value, create_value_with_type
 from dmf.log.logger import logger
-from dmf.share import analysis_modules
 
 Unused_Name = "UNUSED_NAME"
 
@@ -87,7 +85,7 @@ class Analysis(AnalysisBase):
         # init first frame of stack of extremal value
         self.extremal_value.stack.init_first_frame(qualified_module_name)
 
-        curr_module = analysis_modules[qualified_module_name]
+        curr_module = sys.analysis_modules[qualified_module_name]
         start_lab, final_lab = curr_module.tp_code
         # start point
         self.extremal_point: ProgramPoint = (start_lab, ())
@@ -822,13 +820,6 @@ class Analysis(AnalysisBase):
         new_stack.write_var(stmt.id, Namespace_Local, return_value)
         return new_state
 
-    def _import_a_module(self, name):
-        module = dmf.share.import_module(name)
-        if isinstance(module, dict):
-            name_tuple = tuple(name.split("."))
-            module = TypeshedModule(name_tuple, module)
-        return module
-
     def transfer_Import(
         self,
         program_point: ProgramPoint,
@@ -1050,3 +1041,6 @@ class Analysis(AnalysisBase):
         stmt: ast.Continue,
     ) -> State:
         return new_state
+
+
+sys.Analysis = Analysis

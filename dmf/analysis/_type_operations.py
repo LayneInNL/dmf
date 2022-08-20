@@ -14,6 +14,7 @@
 from __future__ import annotations
 import ast
 import builtins
+import sys
 from typing import Tuple
 
 from ._types import (
@@ -102,6 +103,12 @@ class AnalysisModule(ObjectLevel):
     def __iadd__(self, other: AnalysisModule):
         self.tp_dict += other.tp_dict
         return self
+
+    def __repr__(self):
+        return f"module object {self.tp_uuid}"
+
+
+sys.AnalysisModule = AnalysisModule
 
 
 class TypeshedModule(ObjectLevel):

@@ -11,9 +11,9 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import sys
 from typing import Set, Tuple, Dict
 
-import dmf.share
 from dmf.flows import CFG
 from dmf.flows.flows import BasicBlock
 from dmf.log.logger import logger
@@ -23,19 +23,19 @@ ProgramPoint = Tuple[int, Tuple]
 
 class AnalysisBase:
     def __init__(self):
-        self.flows: Set[Tuple[int, int]] = dmf.share.flows
+        self.flows: Set[Tuple[int, int]] = sys.analysis_flows
+        self.blocks: Dict[int, BasicBlock] = sys.analysis_blocks
+        self.sub_cfgs: Dict[int, CFG] = sys.analysis_cfgs
 
-        self.dummy_labels = dmf.share.dummy_labels
-        self.call_labels = dmf.share.call_labels
-        self.return_labels = dmf.share.return_labels
-        self.call_return_inter_flows = dmf.share.call_return_inter_flows
-        self.classdef_inter_flows = dmf.share.classdef_inter_flows
-        self.setter_inter_flows = dmf.share.setter_inter_flows
-        self.getter_inter_flows = dmf.share.getter_inter_flows
-        self.special_init_flows = dmf.share.special_init_inter_flows
+        self.dummy_labels = sys.dummy_labels
+        self.call_labels = sys.call_labels
+        self.return_labels = sys.return_labels
+        self.call_return_inter_flows = sys.call_flow_tuples
+        self.classdef_inter_flows = sys.classdef_flow_tuples
+        self.setter_inter_flows = sys.setter_flow_tuples
+        self.getter_inter_flows = sys.getter_flow_tuples
+        self.special_init_flows = sys.special_init_inter_flows
 
-        self.blocks: Dict[int, BasicBlock] = dmf.share.blocks
-        self.sub_cfgs: Dict[int, CFG] = dmf.share.sub_cfgs
         self.inter_flows: Set[
             Tuple[ProgramPoint, ProgramPoint, ProgramPoint, ProgramPoint]
         ] = set()
@@ -186,7 +186,7 @@ class AnalysisBase:
 
     def add_sub_cfg(self, lab: int):
         cfg: CFG = self.sub_cfgs[lab]
-        dmf.share.update_global_info(cfg)
+        sys.merge_cfg_info(cfg)
         return cfg.start_block.bid, cfg.final_block.bid
 
     def generate_flow(self, program_point: ProgramPoint):
