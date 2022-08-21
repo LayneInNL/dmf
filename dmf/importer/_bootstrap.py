@@ -23,6 +23,17 @@ work. One should use importlib as the public-facing version of this module.
 # Bootstrap-related code ######################################################
 import _thread, _warnings, _weakref
 
+# https://stackoverflow.com/questions/2790828/python-cant-pickle-module-objects-error
+# use duck typing to avoid this
+class FakeModule:
+    def __init__(self, __name__, __package__, __path__, __spec__, __file__):
+        self.__name__ = __name__
+        self.__package__ = __package__
+        self.__path__ = __path__
+        self.__spec__ = __spec__
+        self.__file__ = __file__
+
+
 _bootstrap_external = None
 
 
@@ -604,7 +615,20 @@ def module_from_spec(spec):
     if module is None:
         module = _new_module(spec.name)
     _init_module_attrs(spec, module)
-    return module
+    if hasattr(module, "__path__"):
+        fake_module = FakeModule(
+            module.__name__,
+            module.__package__,
+            module.__path__,
+            module.__spec__,
+            module.__file__,
+        )
+    else:
+        fake_module = FakeModule(
+            module.__name__, module.__package__, None, module.__spec__, module.__file__
+        )
+    # return module
+    return fake_module
 
 
 def _module_repr_from_spec(spec):

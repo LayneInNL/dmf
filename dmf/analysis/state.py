@@ -16,7 +16,7 @@ from __future__ import annotations
 import ast
 import sys
 from copy import deepcopy
-from typing import List
+from typing import List, Dict
 
 from dmf.analysis._type_operations import AnalysisClass, _getattr, AnalysisInstance
 from dmf.analysis.analysis_types import (
@@ -45,9 +45,17 @@ BOTTOM = StateBottom()
 
 
 class State:
-    def __init__(self, stack: Stack, heap: Heap):
+    def __init__(
+        self,
+        stack: Stack,
+        heap: Heap,
+        analysis_modules: Dict,
+        fake_analysis_modules: Dict,
+    ):
         self.stack: Stack = stack
         self.heap: Heap = heap
+        self.analysis_modules: Dict = analysis_modules
+        self.fake_analysis_modules: Dict = fake_analysis_modules
 
     def __repr__(self):
         return repr(self.stack)
@@ -109,18 +117,9 @@ class State:
 
 def deepcopy_state(state: State) -> State:
     memo = {}
-    if "imported" in sys.analysis_modules:
-        print(
-            id(state.stack.frames[0].f_locals),
-            id(sys.analysis_modules["imported"].tp_dict),
-        )
     new_state = deepcopy(state, memo)
-    sys.analysis_modules = deepcopy(sys.analysis_modules, memo)
-    if "imported" in sys.analysis_modules:
-        print(
-            id(new_state.stack.frames[0].f_locals),
-            id(sys.analysis_modules["imported"].tp_dict),
-        )
+    sys.analysis_modules = new_state.analysis_modules
+    sys.fake_analysis_modules = new_state.fake_analysis_modules
     return new_state
 
 

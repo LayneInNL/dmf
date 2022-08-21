@@ -82,7 +82,9 @@ class Analysis(AnalysisBase):
         # work list
         self.work_list: Deque[Tuple[ProgramPoint, ProgramPoint]] = deque()
         # extremal value
-        self.extremal_value: State = State(Stack(), Heap())
+        self.extremal_value: State = State(
+            Stack(), Heap(), sys.analysis_modules, sys.fake_analysis_modules
+        )
         # init first frame of stack of extremal value
         self.extremal_value.stack.init_first_frame(qualified_module_name)
 
