@@ -26,6 +26,9 @@ from dmf.analysis._type_operations import (
     _setattr,
     AnalysisDescriptorGetFunction,
     AnalysisDescriptorSetFunction,
+    import_a_module,
+    getattrs,
+    setattrs,
 )
 from dmf.analysis.analysis_types import (
     Namespace_Local,
@@ -62,7 +65,6 @@ from dmf.analysis.state import (
     Heap,
 )
 from dmf.analysis.value import Value, create_value_with_type
-from dmf.importer import import_module
 from dmf.log.logger import logger
 
 Unused_Name = "UNUSED_NAME"
@@ -277,21 +279,26 @@ class Analysis(AnalysisBase):
         value = new_state.compute_value_of_expr(call_stmt.value)
         dummy_value = Value()
         ret_lab, dummy_ret_lab = self.get_getter_return_label(call_lab)
-        for val in value:
-            res, descr_res = _getattr(val, call_stmt.attr)
-            dummy_value.inject_value(res)
-            # if call_stmt.attr == "__init__" and len(descr_res) == 0:
-            #     dummy_value.inject_type(val)
-            for attr_val in descr_res:
-                if isinstance(attr_val, AnalysisMethod):
-                    entry_lab, exit_lab = attr_val.tp_function.tp_code
-                    instance = attr_val.tp_instance
+        direct_res, descr_gets = getattrs(value, call_stmt.attr)
+
+        # if any of two is Any, the result is Any, the flow is not constructed
+        if direct_res.is_Any() or descr_gets.is_Any():
+            dummy_value = Value().make_any()
+            dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+            new_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
+            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
+        else:
+            dummy_value.inject(direct_res)
+            for descr_get in descr_gets:
+                if isinstance(descr_get, AnalysisMethod):
+                    entry_lab, exit_lab = descr_get.tp_function.tp_code
+                    instance = descr_get.tp_instance
                     new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
 
                     self.entry_program_point_info[(entry_lab, new_ctx)] = (
                         instance,
                         None,
-                        attr_val.tp_module,
+                        descr_get.tp_module,
                     )
 
                     inter_flow = (
@@ -301,12 +308,12 @@ class Analysis(AnalysisBase):
                         (ret_lab, call_ctx),
                     )
                     self.inter_flows.add(inter_flow)
-                elif isinstance(attr_val, ArtificialMethod):
-                    dummy_value.inject_type(attr_val)
+                elif isinstance(descr_get, ArtificialMethod):
+                    dummy_value.inject(descr_get)
 
-        dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-        new_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
-        self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
+            dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+            new_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
+            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     def _lambda_setter(
         self, program_point, old_state: State, new_state: State, dummy_value: Value
@@ -316,38 +323,40 @@ class Analysis(AnalysisBase):
         assert len(call_stmt.targets) == 1 and isinstance(
             call_stmt.targets[0], ast.Attribute
         )
-        # new_stack, new_heap = new_state
-        new_stack, new_heap = new_state.stack, new_state.heap
-
         attribute: ast.Attribute = call_stmt.targets[0]
         attr: str = call_stmt.targets[0].attr
 
         call_lab, call_ctx = program_point
 
         ret_lab, dummy_ret_lab = self.get_setter_return_label(call_lab)
-        types = new_state.compute_value_of_expr(attribute.value)
-        expr_value = new_state.compute_value_of_expr(call_stmt.value)
-        for type in types:
-            descr_sets = _setattr(type, attr, expr_value)
-            for attr_typ in descr_sets:
-                if isinstance(attr_typ, AnalysisMethod):
-                    entry_lab, exit_lab = attr_typ.tp_function.tp_code
-                    instance = attr_typ.tp_instance
-                    new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
+        objs = new_state.compute_value_of_expr(attribute.value)
+        value = new_state.compute_value_of_expr(call_stmt.value)
 
-                    self.entry_program_point_info[(entry_lab, new_ctx)] = (
-                        instance,
-                        None,
-                        attr_typ.tp_module,
-                    )
+        descr_sets = setattrs(objs, attr, value)
+        if descr_sets.is_Any():
+            dummy_value.transform_to_Any()
 
-                    inter_flow = (
-                        (call_lab, call_ctx),
-                        (entry_lab, new_ctx),
-                        (exit_lab, new_ctx),
-                        (ret_lab, call_ctx),
-                    )
-                    self.inter_flows.add(inter_flow)
+        for descr_set in descr_sets:
+            if isinstance(descr_set, AnalysisMethod):
+                entry_lab, exit_lab = descr_set.tp_function.tp_code
+                instance = descr_set.tp_instance
+                new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
+
+                self.entry_program_point_info[(entry_lab, new_ctx)] = (
+                    instance,
+                    None,
+                    descr_set.tp_module,
+                )
+
+                inter_flow = (
+                    (call_lab, call_ctx),
+                    (entry_lab, new_ctx),
+                    (exit_lab, new_ctx),
+                    (ret_lab, call_ctx),
+                )
+                self.inter_flows.add(inter_flow)
+            else:
+                raise NotImplementedError
 
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
@@ -490,14 +499,14 @@ class Analysis(AnalysisBase):
         call_lab, call_ctx = program_point
         new_stack, new_heap = new_state.stack, new_state.heap
 
-        addr = record(call_lab, call_ctx)
+        tp_address = record(call_lab, call_ctx)
         new_method, new_method_descr = _getattr(type, "__new__")
         assert len(new_method_descr) == 0, new_method_descr
         if len(new_method) == 0:
-            tp_uuid = f"{addr}-{type.tp_uuid}"
+            tp_uuid = f"{tp_address}-{type.tp_uuid}"
             tp_dict = new_heap.write_instance_to_heap(tp_uuid)
             analysis_instance = AnalysisInstance(
-                tp_uuid=tp_uuid, tp_dict=tp_dict, tp_class=type
+                tp_uuid=tp_uuid, tp_dict=tp_dict, tp_class=type, tp_address=tp_address
             )
             dummy_value.inject_type(analysis_instance)
         else:
@@ -837,15 +846,17 @@ class Analysis(AnalysisBase):
         name = stmt.names[0].name
         asname = stmt.names[0].asname
         if asname is None:
-            # name = name.partition(".")[0]
-            module = import_module(name)
+            # execute normal import
+            import_a_module(name)
+            # get top-level name
+            name = name.partition(".")[0]
+            # but we only want top-level name
+            module = import_a_module(name)
         else:
             name = asname
-            module = import_module(name)
+            module = import_a_module(name)
 
-        value = Value()
-        value.inject_type(module)
-        new_state.stack.write_var(name, Namespace_Local, value)
+        new_state.stack.write_var(name, Namespace_Local, module)
         logger.debug("Import module {}".format(module))
         return new_state
 
@@ -863,21 +874,22 @@ class Analysis(AnalysisBase):
 
         new_stack = new_state.stack
         logger.debug("ImportFrom module {}".format(stmt.module))
-        module = import_module(stmt.module, package, stmt.level)
+        modules: Value = import_a_module(stmt.module, package, stmt.level)
 
         for alias in stmt.names:
             name = alias.name
             asname = alias.asname
-            direct_res, descr_gets = _getattr(module, name)
-            assert len(descr_gets) == 0
-            if len(direct_res) == 0:
-                sub_module_name = f"{stmt.module}.{name}"
-                sub_module = import_module(sub_module_name, package, stmt.level)
-                direct_res.inject_type(sub_module)
-            if asname is None:
-                new_stack.write_var(name, Namespace_Local, direct_res)
-            else:
-                new_stack.write_var(asname, Namespace_Local, direct_res)
+            for module in modules:
+                direct_res, descr_gets = _getattr(module, name)
+                assert len(descr_gets) == 0
+                if len(direct_res) == 0:
+                    sub_module_name = f"{stmt.module}.{name}"
+                    sub_module = import_a_module(sub_module_name, package, stmt.level)
+                    direct_res.inject(sub_module)
+                if asname is None:
+                    new_stack.write_var(name, Namespace_Local, direct_res)
+                else:
+                    new_stack.write_var(asname, Namespace_Local, direct_res)
         return new_state
 
     def transfer_return_classdef(

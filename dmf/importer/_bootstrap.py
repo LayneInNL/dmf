@@ -1035,7 +1035,8 @@ def _find_and_load_unlocked(name, import_):
         # Set the module as an attribute on its parent.
         # parent_module = sys.modules[parent]
         parent_module = sys.analysis_modules[parent]
-        setattr(parent_module, name.rpartition(".")[2], module)
+        # setattr(parent_module, name.rpartition(".")[2], module)
+        parent_module.tp_dict.write_local_value(name.rpartition(".")[2], module)
     return module
 
 

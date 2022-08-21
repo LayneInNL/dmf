@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Union
 
 from dmf.analysis.special_types import Any
@@ -72,6 +73,12 @@ class Value:
     def __iter__(self):
         return iter(self.types.values())
 
+    def inject(self, other):
+        if isinstance(other, Value):
+            self.inject_value(other)
+        else:
+            self.inject_type(other)
+
     def inject_type(self, type):
         # insert Any
         if type is Any:
@@ -105,6 +112,9 @@ class Value:
 
     def transform_to_Any(self):
         self.types = Any
+
+
+sys.Value = Value
 
 
 def create_value_with_type(typ) -> Value:

@@ -11,14 +11,4 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-# from import_dir.importfrom import z
-# import import_dir.imported
-#
-# a = import_dir.imported.y
-# from import_dir import importfrom
-#
-# res = importfrom.z
-
-import io
-
-res = io.SEEK_CUR
+y = False

@@ -66,6 +66,7 @@ from dmf.typeshed_client.parser import (
     AnnAssignNameInfo,
     AssignNameInfo,
 )
+from ..importer import import_module
 
 
 # Every entity in Python is an object.
@@ -123,15 +124,25 @@ class TypeshedModule(ObjectLevel):
         if attr_name not in self.tp_dict:
             # possible it's a module
             sub_module = f"{self.tp_module}.{attr_name}"
-            return parse_module(sub_module)
+            try:
+                submodule = parse_module(sub_module)
+            except:
+                raise AttributeError(attr_name)
+            else:
+                value = Value()
+                value.inject(submodule)
+                return value
         name_info = self.tp_dict[attr_name]
-        return resolve_attribute(name_info)
+        return evaluate(resolve_attribute(name_info))
 
     def __len__(self):
         return True
 
     def __iadd__(self, other):
         return self
+
+    def __repr__(self):
+        return f"typeshed module object {self.tp_uuid}"
 
 
 class AnalysisFunction(ObjectLevel):
@@ -279,10 +290,11 @@ class TypeshedClass:
 
 
 class AnalysisInstance(Instance):
-    def __init__(self, tp_uuid, tp_dict, tp_class):
+    def __init__(self, tp_uuid, tp_dict, tp_class, tp_address):
         self.tp_uuid = tp_uuid
         self.tp_dict = tp_dict
         self.tp_class = tp_class
+        self.tp_address = tp_address
 
     def __le__(self, other):
         return True
@@ -705,10 +717,9 @@ class TypeExprVisitor(ast.NodeVisitor):
 
     def visit_Subscript(self, node: ast.Subscript):
         if not isinstance(node.value, ast.Name):
-            raise NotImplementedError
+            raise NotImplementedError(node)
 
-        value = self.visit(node.value)
-        return value
+        return self.visit(ast.Name(id="Any"))
 
     def visit_Starred(self, node: ast.Starred):
         raise NotImplementedError
@@ -717,31 +728,31 @@ class TypeExprVisitor(ast.NodeVisitor):
         value = Value()
         id = node.id
         if id == "bool":
-            value.inject_type(Bool_Instance)
+            value.inject(Bool_Instance)
             return value
         elif id == "int":
-            value.inject_type(Int_Instance)
+            value.inject(Int_Instance)
             return value
         elif id == "float":
-            value.inject_type(Float_Instance)
+            value.inject(Float_Instance)
             return value
         elif id == "complex":
-            value.inject_type(Complex_Instance)
+            value.inject(Complex_Instance)
         elif id == "list":
             raise NotImplementedError
         elif id == "range":
             raise NotImplementedError
         elif id == "Any":
-            value.inject_type(Any)
+            value.inject(Any)
             return value
         elif id == "str":
-            value.inject_type(Str_Instance)
+            value.inject(Str_Instance)
             return value
         elif id == "bytes":
-            value.inject_type(Bytes_Instance)
+            value.inject(Bytes_Instance)
             return value
         elif id == "bytearray":
-            value.inject_type(ByteArray_Instance)
+            value.inject(ByteArray_Instance)
             return value
         elif id == "memoryview":
             raise NotImplementedError
@@ -752,10 +763,14 @@ class TypeExprVisitor(ast.NodeVisitor):
         elif id == "dict":
             raise NotImplementedError
         else:
+            return self.visit(ast.Name(id="Any"))
+            # check if it's in module
             module: _TypeshedModule = parse_module(self.module)
             if id in module.tp_dict:
                 name_info = module.get_name(id)
-                return evaluate(name_info)
+                res = evaluate(name_info)
+                value.inject(res)
+                return value
             else:
                 raise NotImplementedError
 
@@ -780,20 +795,25 @@ Float_Type.tp_mro_curr, Float_Type.tp_mro_rest = typeshed_float, [Object_Type]
 
 # simulate builtins.getattr, but operate on a set of objects
 def getattrs(objs: Value, name, default=None) -> Tuple[Value, Value]:
+    # if objs is Any, just return two Anys
     if objs.is_Any():
         return Value(any=True), Value(any=True)
 
-    res = Value()
-    descrs = Value()
+    # direct results
+    direct_res = Value()
+    # possible descriptor getters
+    descr_gets = Value()
+
     for obj in objs:
-        curr_res, curr_descrs = _getattr(obj, name)
-        res += curr_res
-        descrs += curr_descrs
+        curr_direct_res, curr_descr_gets = _getattr(obj, name)
+        direct_res += curr_direct_res
+        descr_gets += curr_descr_gets
 
+    # add default to direct_res
     if default is not None:
-        res.inject_type(default)
+        direct_res.inject(default)
 
-    return res, descrs
+    return direct_res, descr_gets
 
 
 def _getattr(obj, name) -> Tuple[Value, Value]:
@@ -818,9 +838,16 @@ def _getattr(obj, name) -> Tuple[Value, Value]:
             except AttributeError:
                 return Value(), Value()
             else:
-                direct_res = Value()
-                direct_res.inject_value(res)
-                return direct_res, Value()
+                return res, Value()
+        elif isinstance(obj, TypeshedModule):
+            try:
+                res = obj.getattr(name)
+            except AttributeError:
+                return Value(), Value()
+            else:
+                direct_res, descr_gets = Value(), Value()
+                direct_res.inject(res)
+                return direct_res, descr_gets
         else:
             raise NotImplementedError
     else:
@@ -828,15 +855,16 @@ def _getattr(obj, name) -> Tuple[Value, Value]:
 
 
 def setattrs(objs, name, value) -> Value:
+    # if objs is Any, return Any
     if objs.is_Any():
         return Value.make_any()
 
-    descrs = Value()
+    descr_sets = Value()
     for obj in objs:
-        curr_descrs = _setattr(obj, name)
-        descrs += curr_descrs
+        curr_descr_sets = _setattr(obj, name, value)
+        descr_sets += curr_descr_sets
 
-    return descrs
+    return descr_sets
 
 
 def _setattr(obj, name, value) -> Value:
@@ -857,3 +885,36 @@ def _setattr(obj, name, value) -> Value:
             raise NotImplementedError(f"setattr({obj},{name},{value})")
     else:
         return Value(any=True)
+
+
+def _resolve_name(name, package, level):
+    """Resolve a relative module name to an absolute one."""
+    bits = package.rsplit(".", level - 1)
+    if len(bits) < level:
+        raise ValueError("attempted relative import beyond top-level package")
+    base = bits[0]
+    return "{}.{}".format(base, name) if name else base
+
+
+def import_a_module_from_typeshed(name):
+    module = parse_module(name)
+    typeshed_module = TypeshedModule(module)
+    return typeshed_module
+
+
+def import_a_module(name, package=None, level=0) -> Value:
+    import isort
+
+    # package is needed
+    if level > 0:
+        name = _resolve_name(name, package, level)
+    category = isort.place_module(name)
+
+    value = Value()
+    if category == "STDLIB":
+        module = import_a_module_from_typeshed(name)
+    else:
+        module = import_module(name)
+
+    value.inject(module)
+    return value

@@ -23,6 +23,8 @@ sys.analysis_meta_path = []
 sys.analysis_path_hooks = []
 # mimic sys.modules, as fake ones
 sys.analysis_modules = {}
+# mimic sys.modules, but used for typeshed
+sys.analysis_typeshed_modules = {}
 # mimic sys.modules
 sys.fake_analysis_modules = {}
 # mimic flows

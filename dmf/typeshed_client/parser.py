@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import sys
 from typing import (
     Any,
     Dict,
@@ -165,14 +166,14 @@ class TypeshedFunction(BasicNameInfo):
         self.deleters.append(node)
 
 
-module_cache: Dict[str, TypeshedModule] = {}
+sys.analysis_typeshed_modules: Dict[str, TypeshedModule] = {}
 
 
 def parse_module(
     module_name: str, search_context: SearchContext = None
 ) -> TypeshedModule:
-    if module_name in module_cache:
-        return module_cache[module_name]
+    if module_name in sys.analysis_typeshed_modules:
+        return sys.analysis_typeshed_modules[module_name]
     log.critical(f"Parsing {module_name}")
     if search_context is None:
         search_context = get_search_context()
@@ -188,7 +189,7 @@ def parse_module(
     visitor = ModuleVisitor(search_context, module_name, module_name, is_init=is_init)
     module_dict = visitor.build(module_ast)
     module = TypeshedModule(module_name, True, module_name, module_name, module_dict)
-    module_cache[module_name] = module
+    sys.analysis_typeshed_modules[module_name] = module
 
     return module
 
@@ -206,22 +207,22 @@ def _gcd_import(name, package=None, level=0):
 
 
 def _find_and_load(module_name: str, gcd_import):
-    if module_name not in module_cache:
+    if module_name not in sys.analysis_typeshed_modules:
         return _find_and_load_unlocked(module_name, gcd_import)
-    return module_cache[module_name]
+    return sys.analysis_typeshed_modules[module_name]
 
 
 def _find_and_load_unlocked(name, gcd_import):
     parent = name.rpartition(".")[0]
     if parent:
-        if parent not in module_cache:
+        if parent not in sys.analysis_typeshed_modules:
             gcd_import(parent)
-        if name in module_cache:
-            return module_cache[name]
+        if name in sys.analysis_typeshed_modules:
+            return sys.analysis_typeshed_modules[name]
 
     module = parse_module(name)
     if parent:
-        parent_module = module_cache[parent]
+        parent_module = sys.analysis_typeshed_modules[parent]
         parent_module.tp_dict[name.rpartition(".")[2]] = ImportedModuleInfo(
             name=name.rpartition(".")[2],
             is_exported=True,
