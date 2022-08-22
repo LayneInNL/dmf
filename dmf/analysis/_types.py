@@ -101,12 +101,15 @@ class Namespace(dict):
                 return val
 
     def write_local_value(self, name: str, value: Value):
+        if name not in self:
+            self[LocalVar(name)] = Value()
+
         if not isinstance(value, Value):
             _value = Value()
             _value.inject_type(value)
             self[LocalVar(name)] = _value
         else:
-            self[LocalVar(name)] = value
+            self[LocalVar(name)].inject(value)
 
     def write_nonlocal_value(self, name: str, ns: Namespace):
         self[NonlocalVar(name)] = ns

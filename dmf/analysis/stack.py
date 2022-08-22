@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import sys
 from typing import List
+
+from dmf.analysis._type_operations import builtin_namespace
 from dmf.analysis.analysis_types import (
     Namespace_Global,
     Namespace_Nonlocal,
@@ -26,7 +28,6 @@ from dmf.analysis.analysis_types import (
     LocalVar,
 )
 from dmf.analysis.value import Value
-from dmf.log.logger import logger
 
 
 class Frame:
@@ -34,7 +35,9 @@ class Frame:
         self.f_locals: Namespace[Var, Value] = f_locals
         self.f_back: Frame | None = f_back
         self.f_globals: Namespace[Var, Value] = f_globals
-        self.f_builtins: Namespace[Var, Value] = Namespace()
+        self.f_builtins: Namespace[Var, Value] = sys.analysis_modules[
+            "builtins"
+        ].tp_dict
 
     # compare f_locals, f_globals and f_builtins
     # don't know how to compare f_back for now

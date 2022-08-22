@@ -13,14 +13,18 @@
 #  limitations under the License.
 
 
-class Test:
-    # def __init__(self):
-    #     pass
-    pass
+class property:
+    def __init__(self, fget=None, fset=None, fdel=None, doc=None):
+        self.fget = fget
+        self.fset = fset
+        self.fdel = fdel
+        self.doc = doc
 
+    def __get__(self, instance, owner):
+        return self.fget(instance)
 
-a = Test()
-# a.x = 1
-# y = a.x
-# a.x = 1
-# b = a.x
+    def __set__(self, instance, value):
+        return self.fset(instance, value)
+
+    def __delete__(self, instance):
+        return self.fdel(instance)

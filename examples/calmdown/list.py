@@ -27,7 +27,8 @@
 x = list()
 x.append(1)
 x.append(False)
-x.remove(2)
-x.extend(None)
+# x.append(False)
+# x.remove(2)
+# x.extend(None)
 
-y = tuple()
+# y = tuple()

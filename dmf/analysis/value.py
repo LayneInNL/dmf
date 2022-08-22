@@ -21,7 +21,7 @@ from dmf.analysis.special_types import Any
 
 
 class Value:
-    threshold = 1
+    threshold = 2
 
     @classmethod
     def make_any(cls) -> Value:
@@ -68,6 +68,7 @@ class Value:
         return self
 
     def __repr__(self):
+        print(self.types)
         return self.types.__repr__()
 
     def __iter__(self):

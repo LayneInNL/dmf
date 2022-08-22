@@ -38,7 +38,13 @@ from dmf.log.logger import logger
 
 
 class StateBottom:
-    pass
+    def __repr__(self):
+        return "Bottom"
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
 
 BOTTOM = StateBottom()
@@ -159,7 +165,7 @@ def compute_function_defaults(state: State, node: ast.FunctionDef):
     args_diff_len = len(arguments.args) - len(arguments.defaults)
     defaults = [None] * args_diff_len
     for default in arguments.defaults:
-        default_value = stack.compute_value_of_expr(default)
+        default_value = state.compute_value_of_expr(default)
         defaults.append(default_value)
 
     # kw_defaults is a list of default values for keyword-only arguments.
@@ -182,7 +188,6 @@ def compute_function_defaults(state: State, node: ast.FunctionDef):
 
 def compute_bases(state: State, node: ast.ClassDef):
     # should I use state at call label or state at return label?
-    stack, heap = state.stack, state.heap
     if node.bases:
         base_types = []
         for base in node.bases:
@@ -239,7 +244,7 @@ def parse_keyword_args(arg_flags, arguments: ast.arguments, state: State):
 
 
 def parse_default_args(arg_flags, arguments: ast.arguments, state: State):
-    stack = state[0]
+    stack = state.stack
     for idx, elt in enumerate(arg_flags):
         if not elt:
             arg_name = arguments.args[idx].arg
@@ -253,7 +258,7 @@ def parse_default_args(arg_flags, arguments: ast.arguments, state: State):
 
 
 def parse_kwonly_args(arguments: ast.arguments, state: State):
-    stack = state[0]
+    stack = state.stack
     f_locals = stack.top_frame().f_locals
     for idx, kwonly_arg in enumerate(arguments.kwonlyargs):
         kwonly_arg_name = kwonly_arg.arg
@@ -269,7 +274,6 @@ def parse_kwonly_args(arguments: ast.arguments, state: State):
 
 
 def compute_func_args(state: State, args: List[ast.expr], keywords: List[ast.keyword]):
-    stack, heap = state
 
     computed_args = []
     for arg in args:

@@ -11,6 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import os.path
 import sys
 
 from dmf.flows import construct_CFG
@@ -77,8 +78,9 @@ sys.synthesis_cfg = synthesis_cfg
 #     "C:\\Users\\Layne Liu\\PycharmProjects\\thesis\\dmf\\examples\\calmdown"
 # )
 
-import main
-
-# import dmf.importer
+# import main
 #
+# import dmf.importer
+# builtin_path = "./resources/builtins.py"
+# abs_builtin_path = os.path.abspath(builtin_path)
 # dmf.importer.import_module("assign")

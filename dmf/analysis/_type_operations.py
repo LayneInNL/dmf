@@ -191,8 +191,6 @@ class ArtificialFunction(ObjectLevel):
         return self
 
     def __repr__(self):
-        if self.tp_repr is not None:
-            return self.tp_repr
         return str(self.tp_uuid)
 
 
@@ -275,6 +273,36 @@ class AnalysisClass(ClassLevel):
         return self
 
 
+class ArtificialClass:
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return self
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+
+class ListArtificialClass(ArtificialClass):
+    def __init__(self):
+        self.tp_uuid = "list"
+        self.tp_dict = Namespace()
+        self.tp_class = Type_Type
+        self.tp_bases = [Type_Type]
+        self.tp_mro_curr, self.tp_mro_rest = c3(self)
+
+    def __call__(self, tp_address, tp_heap):
+        tp_uuid = f"{tp_address}-{tp_heap}"
+        tp_dict = tp_heap.write_instance_to_heap(tp_uuid)
+        return ArtificialInstance(tp_uuid=tp_uuid, tp_class=self, tp_dict=tp_dict)
+
+
+List_Type = ListArtificialClass()
+
+
 class TypeshedClass:
     def __init__(self, tp_uuid, tp_dict, tp_module):
         self.tp_uuid = tp_uuid
@@ -304,10 +332,13 @@ class AnalysisInstance(Instance):
 
 
 class ArtificialInstance:
-    def __init__(self, tp_uuid, tp_class):
+    def __init__(self, tp_uuid: str, tp_class, tp_dict=None):
         self.tp_uuid = tp_uuid
         self.tp_class = tp_class
-        self.tp_repr = None
+        if tp_dict is None:
+            self.tp_dict = Namespace()
+        else:
+            self.tp_dict = tp_dict
 
     def __le__(self, other):
         return True
@@ -316,17 +347,24 @@ class ArtificialInstance:
         return self
 
     def __repr__(self):
-        if self.tp_repr is not None:
+        if hasattr(self, "tp_repr"):
             return self.tp_repr
-        return self
+        return self.tp_dict.__repr__()
 
 
 class Constructor:
     def __init__(self):
         self.tp_uuid = id(self)
+        self.tp_class = Function_Type
 
-    def __call__(self, tp_uuid, tp_dict):
-        return AnalysisInstance(tp_uuid, tp_dict)
+    def __call__(self, tp_address, tp_class, tp_heap):
+        tp_uuid = f"{tp_address}-{tp_class.tp_uuid}"
+        tp_dict = tp_heap.write_instance_to_heap(tp_uuid)
+        analysis_instance = AnalysisInstance(
+            tp_uuid=tp_uuid, tp_dict=tp_dict, tp_class=tp_class, tp_address=tp_address
+        )
+
+        return analysis_instance
 
     def __deepcopy__(self, memo):
         if id(self) not in memo:
@@ -525,8 +563,12 @@ def _setup_Object_Type():
         return self
 
     _object_init = ArtificialFunction(tp_function=__init__)
-    _value.inject_type(_object_init)
+    _value.inject(_object_init)
     Object_Type.tp_dict.write_local_value("__init__", _value)
+
+    _value = Value()
+    _value.inject(constructor)
+    Object_Type.tp_dict.write_local_value("__new__", _value)
 
 
 def _setup_Type_Type():
@@ -561,9 +603,21 @@ def _setup_Function_Type():
     # Function_Type.tp_dict.write_local_value("__set__", _value)
 
 
+def _setup_List_Type():
+    def append(self, x):
+        self.tp_dict.write_local_value("internal", x)
+        return None_Instance
+
+    artificial_function = ArtificialFunction(tp_function=append)
+    value = Value()
+    value.inject(artificial_function)
+    List_Type.tp_dict.write_local_value("append", value)
+
+
 _setup_Object_Type()
 _setup_Type_Type()
 _setup_Function_Type()
+_setup_List_Type()
 
 Int_Instance = ArtificialInstance(-1, Int_Type)
 Int_Instance.tp_repr = "int object"
@@ -574,6 +628,7 @@ Str_Instance = ArtificialInstance(-4, Str_Type)
 Bytes_Instance = ArtificialInstance(-5, Bytes_Type)
 ByteArray_Instance = ArtificialInstance(-6, ByteArray_Type)
 None_Instance = ArtificialInstance(-7, None_Type)
+None_Instance.tp_repr = "None"
 Bool_Instance = ArtificialInstance(-8, Bool_Type)
 Bool_Instance.tp_repr = "bool object"
 
@@ -793,6 +848,7 @@ typeshed_float = evaluate(_typeshed_float)
 Float_Instance.tp_class = typeshed_float
 Float_Type.tp_mro_curr, Float_Type.tp_mro_rest = typeshed_float, [Object_Type]
 
+
 # simulate builtins.getattr, but operate on a set of objects
 def getattrs(objs: Value, name, default=None) -> Tuple[Value, Value]:
     # if objs is Any, just return two Anys
@@ -832,6 +888,8 @@ def _getattr(obj, name) -> Tuple[Value, Value]:
             return GenericGetAttr(obj, name)
         elif isinstance(obj, AnalysisFunction):
             return GenericGetAttr(obj, name)
+        elif isinstance(obj, ArtificialInstance):
+            return GenericGetAttr(obj, name)
         elif isinstance(obj, AnalysisModule):
             try:
                 res = obj.getattr(name)
@@ -869,7 +927,7 @@ def setattrs(objs, name, value) -> Value:
 
 def _setattr(obj, name, value) -> Value:
     if obj is Any:
-        return Value(any=True)
+        return Value.make_any()
 
     tp = _py_type(obj)
     tp_setattr = _pytype_lookup(tp, "__setattr__")
@@ -918,3 +976,9 @@ def import_a_module(name, package=None, level=0) -> Value:
 
     value.inject(module)
     return value
+
+
+builtin_namespace = Namespace()
+list_value = Value()
+list_value.inject(List_Type)
+builtin_namespace.write_local_value("list", list_value)
