@@ -18,9 +18,14 @@
 
 
 def test1(x):
-    pass
+    def test1():
+        return x
+
+    return test1
 
 
+res = test1(2)
+real_res = res()
 # a = test1(1)
-test1.x = 1
-y = test1.x
+# test1.x = 1
+# y = test1.x

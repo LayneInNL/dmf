@@ -89,7 +89,7 @@ class Value:
         elif len(self.types) > self.threshold:
             self.transform_to_Any()
         else:
-            self.types[type.tp_uuid] = type
+            self.types[type.tp_qualname] = type
 
     def inject_value(self, value: Value):
         if self.is_Any() or value.is_Any():
@@ -116,6 +116,16 @@ class Value:
 
 
 sys.Value = Value
+
+
+def type_2_value(type) -> Value:
+    if not isinstance(type, Value):
+        value = Value()
+        assert hasattr(type, "tp_uuid"), type
+        value.inject(type)
+        return value
+    else:
+        return type
 
 
 def create_value_with_type(typ) -> Value:

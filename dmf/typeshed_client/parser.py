@@ -202,38 +202,6 @@ def concatenate(prefix: str, curr: str):
     return f"{prefix}.{curr}"
 
 
-def _gcd_import(name, package=None, level=0):
-    return _find_and_load(name, _gcd_import)
-
-
-def _find_and_load(module_name: str, gcd_import):
-    if module_name not in sys.analysis_typeshed_modules:
-        return _find_and_load_unlocked(module_name, gcd_import)
-    return sys.analysis_typeshed_modules[module_name]
-
-
-def _find_and_load_unlocked(name, gcd_import):
-    parent = name.rpartition(".")[0]
-    if parent:
-        if parent not in sys.analysis_typeshed_modules:
-            gcd_import(parent)
-        if name in sys.analysis_typeshed_modules:
-            return sys.analysis_typeshed_modules[name]
-
-    module = parse_module(name)
-    if parent:
-        parent_module = sys.analysis_typeshed_modules[parent]
-        parent_module.tp_dict[name.rpartition(".")[2]] = ImportedModuleInfo(
-            name=name.rpartition(".")[2],
-            is_exported=True,
-            module="test",
-            full_name="test",
-            imported_module=name,
-        )
-
-    return module
-
-
 class ModuleVisitor(ast.NodeVisitor):
     """Extract names from a stub module."""
 
