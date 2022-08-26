@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import sys
+from types import FunctionType
 from typing import List, Tuple
 
 import astor
@@ -25,6 +26,30 @@ from dmf.analysis.namespace import Namespace
 from dmf.analysis.special_types import MRO_Any, Bases_Any
 from dmf.analysis.typeshed import get_stub_file
 from dmf.analysis.value import Value, type_2_value
+
+
+class ArtificialFunction:
+    def __init__(self, tp_function, tp_addon=None):
+        self.tp_uuid: str = str(id(tp_function))
+        self.tp_code: FunctionType = tp_function
+        self.tp_dict: Namespace = Namespace()
+        if tp_addon is not None:
+            self.tp_addon = tp_addon
+
+    def __call__(self, *args, **kwargs):
+        return self.tp_code(*args, **kwargs)
+
+    def __le__(self, other: ArtificialFunction):
+        return True
+
+    def __iadd__(self, other: ArtificialFunction):
+        return self
+
+    def __repr__(self):
+        if hasattr(self, "tp_addon"):
+            return self.tp_addon
+        return self.tp_uuid
+
 
 # ArtificialClass = builtins.type
 class ArtificialClass:
@@ -44,6 +69,7 @@ class ArtificialClass:
 
 # create a type
 Type_Type = ArtificialClass("builtins.type")
+Type_Type_Value = type_2_value(Type_Type)
 # tp_class is a set of types
 Type_Type.tp_class = type_2_value(Type_Type)
 
@@ -57,9 +83,10 @@ def __init__(self, tp_qualname: str):
 
 ArtificialClass.__init__ = __init__
 
-Object_Type = ArtificialClass("object")
+Object_Type = ArtificialClass("builtins.object")
+Object_Type_Value = type_2_value(Object_Type)
 Object_Type.tp_bases = []
-Object_Type.tp_class = type_2_value(Type_Type)
+Object_Type.tp_class = Type_Type_Value
 Type_Type.tp_bases = [[Object_Type]]
 
 
@@ -113,7 +140,7 @@ def static_merge(mro_list) -> List:
         raise TypeError("No legal mro")
 
 
-# Type_Type.tp_bases = [[Bases_Any]]
+# Type_Type.tp_bases = [[Bases_Any], [Object_Type]]
 Type_Type.tp_mro = c3(Type_Type)
 Object_Type.tp_mro = c3(Object_Type)
 
@@ -122,16 +149,50 @@ def __init__(self, tp_qualname: str):
     self.tp_uuid: str = tp_qualname
     self.tp_qualname: str = tp_qualname
     self.tp_dict: Namespace = Namespace()
-    self.tp_class = Type_Type
-    self.tp_bases = [Object_Type]
+    self.tp_class = Type_Type_Value
+    self.tp_bases = [Type_Type_Value.value_2_list()]
     self.tp_mro = c3(self)
 
 
 ArtificialClass.__init__ = __init__
 
 
-List_Type = ArtificialClass("list")
-Tuple_Type = ArtificialClass("tuple")
+class ListArtificialClass(ArtificialClass):
+    # def __init__(self, iterable=None):
+    #     if iterable is not None:
+    #         self.tp_dict.write_local_value("internal", iterable)
+    #
+
+    def __call__(self, tp_address, tp_class, tp_heap):
+        tp_dict = tp_heap.write_instance_to_heap(tp_address)
+        return AnalysisInstance(tp_address, tp_class, tp_dict)
+
+
+List_Type = ListArtificialClass("builtins.list")
+
+
+def _setup_List_Type():
+    def __init__(self, iterable=None):
+        pass
+
+    def append(self, x):
+        value = Value()
+        value.inject(x)
+
+        if "internal" in self.tp_dict:
+            prev_value = self.tp_dict.read_value("internal")
+            value.inject(prev_value)
+        self.tp_dict.write_local_value("internal", value)
+        return type_2_value(None_Instance)
+
+    arti_append = ArtificialFunction(tp_function=append, tp_addon="list.append")
+    arti_append_value = type_2_value(arti_append)
+    List_Type.tp_dict.write_local_value(append.__name__, arti_append_value)
+
+
+_setup_List_Type()
+
+Tuple_Type = ArtificialClass("builtins.tuple")
 Range_Type = ArtificialClass("range")
 Set_Type = ArtificialClass("set")
 FrozenSet_Type = ArtificialClass("frozenset")
@@ -263,8 +324,8 @@ class TypeshedClass(Typeshed):
     def __init__(self, tp_name, tp_module, tp_qualname, tp_dict):
         super().__init__(tp_name, tp_module, tp_qualname)
         self.tp_dict = tp_dict
-        self.tp_class = Type_Type
-        self.tp_bases = [Bases_Any]
+        self.tp_class = Type_Type_Value
+        self.tp_bases = [[Bases_Any]]
         self.tp_mro = c3(self)
 
 
@@ -555,30 +616,9 @@ def resolve_typeshed_type(attribute):
         raise NotImplementedError(attribute)
 
 
-class ArtificialFunction:
-    def __init__(self, tp_function):
-        super().__init__(Function_Type)
-        self.tp_uuid = id(tp_function)
-        self.tp_code = tp_function
-        self.tp_dict = Namespace()
-        self.tp_repr = None
-
-    def __call__(self, *args, **kwargs):
-        return self.tp_code(*args, **kwargs)
-
-    def __le__(self, other: ArtificialFunction):
-        return True
-
-    def __iadd__(self, other: ArtificialFunction):
-        return self
-
-    def __repr__(self):
-        return str(self.tp_uuid)
-
-
 class AnalysisMethod:
     def __init__(self, tp_function, tp_instance):
-        self.tp_uuid = f"{tp_function.tp_qualname}-{tp_instance.tp_qualname}"
+        self.tp_uuid = f"{tp_function.tp_uuid}-{tp_instance.tp_uuid}"
         self.tp_function = tp_function
         self.tp_instance = tp_instance
         self.tp_module = tp_function.tp_module
@@ -595,7 +635,7 @@ class AnalysisMethod:
 
 class ArtificialMethod:
     def __init__(self, tp_function, tp_instance):
-        self.tp_uuid = f"{tp_function.tp_qualname}-{tp_instance.tp_qualname}"
+        self.tp_uuid = f"{tp_function.tp_uuid}-{tp_instance.tp_uuid}"
         self.tp_function = tp_function
         self.tp_instance = tp_instance
 
@@ -614,8 +654,8 @@ class ArtificialMethod:
 
 class AnalysisDescriptorGetFunction:
     def __init__(self, tp_self, tp_obj, tp_objtype):
-        self.tp_uuid = f"{tp_self.tp_qualname}-{tp_obj.tp_qualname}"
-        self.tp_self = tp_self
+        self.tp_uuid = f"{tp_self.tp_uuid}-getter"
+        self.tp_self = type_2_value(tp_self)
         self.tp_obj = tp_obj
         self.tp_objtype = tp_objtype
 
@@ -628,69 +668,18 @@ class AnalysisDescriptorSetFunction:
         self.tp_value = tp_value
 
 
-class ArtificialClass:
-    def __deepcopy__(self, memo):
-        if id(self) not in memo:
-            memo[id(self)] = self
-        return self
-
-    def __le__(self, other):
-        return True
-
-    def __iadd__(self, other):
-        return self
-
-
-class ListArtificialClass(ArtificialClass):
-    def __init__(self):
-        self.tp_uuid = "builtins.list"
-        self.tp_dict = Namespace()
-        self.tp_class = Type_Type
-        self.tp_bases = [Type_Type]
-        self.tp_mro = c3(self)
-
-    # def __call__(self, tp_address, tp_heap):
-    #     tp_uuid = f"{tp_address}-{tp_heap}"
-    #     tp_dict = tp_heap.write_instance_to_heap(tp_uuid)
-    #     return ArtificialInstance(tp_uuid=tp_uuid, tp_class=self, tp_dict=tp_dict)
-
-
-List_Type = ListArtificialClass()
-
-
 class AnalysisInstance:
-    def __init__(self, tp_uuid, tp_dict, tp_class, tp_address):
-        self.tp_uuid = tp_uuid
-        self.tp_dict = tp_dict
-        self.tp_class = tp_class
+    def __init__(self, tp_address, tp_class, tp_dict):
+        self.tp_uuid = tp_address
         self.tp_address = tp_address
-
-    def __le__(self, other):
-        return True
-
-    def __iadd__(self, other):
-        return self
-
-
-class ArtificialInstance:
-    def __init__(self, tp_uuid: str, tp_class, tp_dict=None):
-        self.tp_uuid = tp_uuid
         self.tp_class = tp_class
-        if tp_dict is None:
-            self.tp_dict = Namespace()
-        else:
-            self.tp_dict = tp_dict
+        self.tp_dict = tp_dict
 
     def __le__(self, other):
         return True
 
     def __iadd__(self, other):
         return self
-
-    def __repr__(self):
-        if hasattr(self, "tp_repr"):
-            return self.tp_repr
-        return self.tp_dict.__repr__()
 
 
 class Constructor:
@@ -702,7 +691,7 @@ class Constructor:
         tp_uuid = f"{tp_address}-{tp_class.tp_qualname}"
         tp_dict = tp_heap.write_instance_to_heap(tp_uuid)
         analysis_instance = AnalysisInstance(
-            tp_uuid=tp_uuid, tp_dict=tp_dict, tp_class=tp_class, tp_address=tp_address
+            tp_address=tp_uuid, tp_dict=tp_dict, tp_class=tp_class
         )
 
         return analysis_instance
@@ -729,17 +718,6 @@ def _setup_Object_Type():
     Object_Type.tp_dict.write_local_value("__new__", value)
 
 
-def _setup_List_Type():
-    def __init__(self, iterable=None):
-        if iterable is not None:
-            self.tp_dict.write_local_value("internal", iterable)
-
-    def append(self, x):
-        value = self.tp_dict.read_value("internal")
-        value.inject(x)
-        return None_Type
-
-
 # typeshed instance
 class TypeshedInstance(Typeshed):
     def __init__(self, tp_name, tp_module, tp_qualname, tp_class):
@@ -757,6 +735,10 @@ for builtin_module in _builtin_module:
 builtin_module_dict: Namespace = builtin_module.tp_dict
 Int_Type: Value = builtin_module_dict.read_value("int")
 Int_Instance = TypeshedInstance("int", "builtins", "builtins-int", Int_Type)
+Typeshed_List_Type: Value = builtin_module_dict.read_value("list")
+List_Type.tp_fallback = Typeshed_List_Type
+builtin_module_dict.write_local_value("list", type_2_value(List_Type))
+None_Instance = TypeshedInstance("None", "builtins", "builtins-None", None_Type)
 
 
 class TypeExprVisitor(ast.NodeVisitor):
@@ -892,3 +874,206 @@ def evaluate(typeshed_value):
         raise NotImplementedError
     else:
         raise NotImplementedError
+
+
+def _py_type(obj) -> Value:
+    return obj.tp_class
+
+
+def _pytype_lookup(obj_type, name) -> Value:
+    res = _find_name_in_mro(obj_type, name)
+    return res
+
+
+def _find_name_in_mro(obj_type, name) -> Value:
+    all_mro_value = Value()
+    tp_mros = obj_type.tp_mro
+    for tp_mro in tp_mros:
+        for cls in tp_mro:
+            if cls is Bases_Any:
+                return Value.make_any()
+            else:
+                # tp_dict could belong to AnalysisClass, ArtificialClass and
+                # TypeshedClass
+                if name not in cls.tp_dict:
+                    if hasattr(cls, "tp_fallback"):
+                        fallback_clses = cls.tp_fallback
+                        assert len(fallback_clses) == 1
+                        fallback_cls = fallback_clses.value_2_list()[0]
+                        if name in fallback_cls.tp_dict:
+                            curr_mro_value = fallback_cls.tp_dict.read_value(name)
+                            all_mro_value.inject(curr_mro_value)
+                            break
+
+                else:
+                    curr_mro_value = cls.tp_dict.read_value(name)
+                    all_mro_value.inject(curr_mro_value)
+                    break
+
+    return all_mro_value
+
+
+# simulate builtins.getattr, but operate on a set of objects
+def getattrs(objs: Value, name: str, default=None) -> Tuple[Value, Value]:
+    # if objs is Any, just return two Anys
+    if objs.is_Any():
+        return Value(any=True), Value(any=True)
+
+    # direct results
+    direct_res = Value()
+    # possible descriptor getters
+    descr_gets = Value()
+
+    for obj in objs:
+        curr_direct_res, curr_descr_gets = _getattr(obj, name)
+        direct_res += curr_direct_res
+        descr_gets += curr_descr_gets
+
+    # add default to direct_res
+    if default is not None:
+        direct_res.inject(default)
+
+    return direct_res, descr_gets
+
+
+def _getattr(obj, name) -> Tuple[Value, Value]:
+
+    obj_types = _py_type(obj)
+    for obj_type in obj_types:
+        # get the __getattribute__ of this obj
+        tp_getattributes = _pytype_lookup(obj_type, "__getattribute__")
+        if len(tp_getattributes) == 0:
+            if isinstance(obj, AnalysisInstance):
+                return GenericGetAttr(obj, name)
+            elif isinstance(obj, ArtificialClass):
+                return type_getattro(obj, name)
+            # work on class
+            if isinstance(obj, ClassLevel):
+                return type_getattro(obj, name)
+            elif isinstance(obj, Instance):
+                return GenericGetAttr(obj, name)
+            elif isinstance(obj, AnalysisFunction):
+                return GenericGetAttr(obj, name)
+            elif isinstance(obj, ArtificialInstance):
+                return GenericGetAttr(obj, name)
+            elif isinstance(obj, AnalysisModule):
+                try:
+                    res = obj.getattr(name)
+                except AttributeError:
+                    return Value(), Value()
+                else:
+                    return res, Value()
+            elif isinstance(obj, TypeshedModule):
+                try:
+                    res = obj.getattr(name)
+                except AttributeError:
+                    return Value(), Value()
+                else:
+                    direct_res, descr_gets = Value(), Value()
+                    direct_res.inject(res)
+                    return direct_res, descr_gets
+            else:
+                raise NotImplementedError
+        else:
+            return Value.make_any(), Value.make_any()
+
+
+def GenericGetAttr(obj, name):
+    # two preset return values
+    res_value, descr_value = Value(), Value()
+
+    # get types of obj
+    obj_types = _py_type(obj)
+
+    # traverse types
+    for obj_type in obj_types:
+        # try finding descriptors
+        descrs = _pytype_lookup(obj_type, name)
+        if descrs.is_Any():
+            return Value.make_any(), Value.make_any()
+
+        # traverse descrs
+        for descr in descrs:
+            if isinstance(descr, AnalysisFunction):
+                one_descr = AnalysisMethod(tp_function=descr, tp_instance=obj)
+                descr_value.inject(one_descr)
+            elif isinstance(descr, ArtificialFunction):
+                one_descr = ArtificialMethod(tp_function=descr, tp_instance=obj)
+                descr_value.inject(one_descr)
+            else:
+                # types of descriptor
+                descr_types = _py_type(descr)
+                if descr_types.is_Any():
+                    return Value.make_any(), Value.make_any()
+
+                for descr_type in descr_types:
+                    descr_tp_gets = _pytype_lookup(descr_type, "__get__")
+                    if descr_tp_gets.is_Any():
+                        return Value.make_any(), Value.make_any()
+
+                    for descr_tp_get in descr_tp_gets:
+                        # descr_tp_get must be AnalysisFunction
+                        if isinstance(descr_tp_get, AnalysisFunction):
+                            # self = descr, obj = obj, type=tp
+                            one_descr = AnalysisDescriptorGetFunction(
+                                tp_self=descr,
+                                tp_obj=type_2_value(obj),
+                                tp_objtype=obj_types,
+                            )
+                            descr_value.inject(one_descr)
+                        else:
+                            raise NotImplementedError
+
+        tp_dict = obj.tp_dict
+        if name in obj.tp_dict:
+            one_res = tp_dict.read_value(name)
+            res_value.inject(one_res)
+
+        res_value.inject(descrs)
+
+        return res_value, descr_value
+
+
+def type_getattro(type, name) -> Tuple[Value, Value]:
+    res_value, descr_value = Value(), Value()
+
+    descrs = _pytype_lookup(type, name)
+    if descrs.is_Any():
+        return Value.make_any(), Value.make_any()
+
+    for descr in descrs:
+        # the __get__ of function is id.
+        if isinstance(descr, (AnalysisFunction, ArtificialFunction)):
+            res_value.inject(descr)
+        elif isinstance(descr, TypeshedFunction):
+            typeshed_value = evaluate(descr)
+            res_value.inject(typeshed_value)
+        else:
+            descriptor_types = _py_type(descr)
+            if descriptor_types.is_Any():
+                return Value.make_any(), Value.make_any()
+
+            for descriptor_type in descriptor_types:
+                descriptor_type_gets = _pytype_lookup(descriptor_type, "__get__")
+                if descriptor_type_gets.is_Any():
+                    return Value.make_any(), Value.make_any()
+
+                for descriptor_type_get in descriptor_type_gets:
+                    if isinstance(descriptor_type_get, AnalysisFunction):
+                        one_descr = AnalysisDescriptorGetFunction(
+                            tp_self=descr,
+                            tp_obj=type_2_value(None_Instance),
+                            tp_objtype=type_2_value(type),
+                        )
+                        descr_value.inject(one_descr)
+                    else:
+                        raise NotImplementedError
+
+    if name in type.tp_dict:
+        one_res = type.tp_dict.read_value(name)
+        res_value.inject_value(one_res)
+
+    if descrs is not None:
+        res_value.inject_value(descrs)
+
+    return res_value, descr_value

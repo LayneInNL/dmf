@@ -15,11 +15,10 @@ from __future__ import annotations
 
 from typing import Dict
 
-from dmf.analysis.analysis_types import (
+from dmf.analysis.all_types import (
     AnalysisInstance,
-    Namespace_Local,
 )
-from dmf.analysis.analysis_types import Namespace
+from dmf.analysis.namespace import Namespace
 from dmf.analysis.value import Value
 
 
@@ -71,7 +70,7 @@ class Heap:
     ):
         assert instance.tp_uuid in self.singletons
         tp_dict = self.singletons[instance.tp_uuid]
-        tp_dict.write_local_value(field, Namespace_Local, value)
+        tp_dict.write_local_value(field, "local", value)
 
     def read_field_from_instance(self, instance: AnalysisInstance, field: str):
         assert instance.tp_uuid in self.singletons

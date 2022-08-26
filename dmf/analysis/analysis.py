@@ -19,27 +19,25 @@ import sys
 from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, List
 
-from dmf.analysis._type_operations import (
+from dmf.analysis.all_types import (
     Constructor,
-    _getattr,
+    # _getattr,
     AnalysisInstance,
-    _setattr,
+    # _setattr,
     AnalysisDescriptorGetFunction,
     AnalysisDescriptorSetFunction,
-    import_a_module,
-    getattrs,
-    setattrs,
+    # import_a_module,
+    # getattrs,
+    # setattrs,
     ArtificialClass,
+    getattrs,
+    _getattr,
 )
-from dmf.analysis.analysis_types import (
-    Namespace_Local,
-    Namespace_Nonlocal,
-    Namespace_Global,
-    RETURN_FLAG,
-    POS_ARG_END,
-    INIT_FLAG,
-    Namespace_Helper,
-    None_Instance,
+from dmf.analysis.all_types import (
+    # RETURN_FLAG,
+    # POS_ARG_END,
+    # INIT_FLAG,
+    # None_Instance,
     ArtificialFunction,
     AnalysisFunction,
     AnalysisClass,
@@ -47,6 +45,11 @@ from dmf.analysis.analysis_types import (
     AnalysisMethod,
     TypeshedModule,
 )
+
+Namespace_Local = "local"
+Namespace_Nonlocal = "nonlocal"
+Namespace_Global = "global"
+POS_ARG_END = "pos"
 from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
 from dmf.analysis.state import (
     compute_function_defaults,
@@ -65,7 +68,7 @@ from dmf.analysis.state import (
     Stack,
     Heap,
 )
-from dmf.analysis.value import Value, create_value_with_type
+from dmf.analysis.value import Value, create_value_with_type, type_2_value
 from dmf.log.logger import logger
 
 Unused_Name = "UNUSED_NAME"
@@ -276,6 +279,8 @@ class Analysis(AnalysisBase):
         new_stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
+    # deal with cases such as x.y
+    # since there could be descriptors when doing attribute lookup
     def _detect_flow_descr_get(
         self, program_point, old_state: State, new_state: State, dummy_value: Value
     ):
@@ -426,7 +431,11 @@ class Analysis(AnalysisBase):
                     program_point, old_state, new_state, dummy_value_special, type
                 )
             elif isinstance(type, ArtificialClass):
-                one_direct_res = type(address, new_state.heap)
+                one_direct_res = type(
+                    tp_address=address,
+                    tp_class=type_2_value(type),
+                    tp_heap=new_state.heap,
+                )
                 dummy_value_normal.inject(one_direct_res)
             elif isinstance(type, AnalysisFunction):
                 self._detect_flow_function(
@@ -654,10 +663,10 @@ class Analysis(AnalysisBase):
                     raise NotImplementedError(arg)
                 arg_value = new_state.compute_value_of_expr(arg)
                 new_stack.write_var(str(idx), Namespace_Local, arg_value)
-            new_stack.write_helper_var(POS_ARG_END, idx)
+            new_stack.write_special_var(POS_ARG_END, idx)
         # may have implicit args, such as bounded methods
         else:
-            new_stack.write_helper_var(POS_ARG_END, 0)
+            new_stack.write_special_var(POS_ARG_END, 0)
 
         # deal with keyword args
         keywords: List[ast.keyword] = call_stmt.keywords

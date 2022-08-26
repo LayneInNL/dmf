@@ -19,7 +19,7 @@ import argparse
 import os.path
 
 from dmf.analysis.analysis import Analysis
-from dmf.analysis.analysis_types import AnalysisModule
+from dmf.analysis.all_types import AnalysisModule
 
 parser = argparse.ArgumentParser()
 parser.add_argument("main", help="the main file path")
@@ -39,16 +39,16 @@ if __name__ == "__main__":
     main_abs_file_path = os.path.abspath(main_path)
     project_abs_path = os.path.abspath(project_path)
 
-    builtin_path = "./resources/builtins.py"
-    abs_builtin_path = os.path.abspath(builtin_path)
-    cfg = sys.synthesis_cfg(abs_builtin_path)
-    entry_label, exit_label = sys.merge_cfg_info(cfg)
-    builtin_module = AnalysisModule(
-        tp_uuid="builtins", tp_package="", tp_code=(entry_label, exit_label)
-    )
-    sys.analysis_modules["builtins"] = builtin_module
-    analysis = Analysis("builtins")
-    analysis.compute_fixed_point()
+    # builtin_path = "./resources/builtins.py"
+    # abs_builtin_path = os.path.abspath(builtin_path)
+    # cfg = sys.synthesis_cfg(abs_builtin_path)
+    # entry_label, exit_label = sys.merge_cfg_info(cfg)
+    # builtin_module = AnalysisModule(
+    #     tp_uuid="builtins", tp_package="", tp_code=(entry_label, exit_label)
+    # )
+    # sys.analysis_modules["builtins"] = builtin_module
+    # analysis = Analysis("builtins")
+    # analysis.compute_fixed_point()
 
     cfg = sys.synthesis_cfg(main_abs_file_path)
     entry_label, exit_label = sys.merge_cfg_info(cfg)

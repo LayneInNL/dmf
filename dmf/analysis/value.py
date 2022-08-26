@@ -89,7 +89,7 @@ class Value:
         elif len(self.types) > self.threshold:
             self.transform_to_Any()
         else:
-            self.types[type.tp_qualname] = type
+            self.types[type.tp_uuid] = type
 
     def inject_value(self, value: Value):
         if self.is_Any() or value.is_Any():
@@ -107,6 +107,9 @@ class Value:
 
     def values(self):
         return self.types.values()
+
+    def value_2_list(self):
+        return list(self.types.values())
 
     def is_Any(self) -> bool:
         return self.types is Any
