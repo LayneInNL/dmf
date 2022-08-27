@@ -55,7 +55,7 @@ if __name__ == "__main__":
     cfg = sys.synthesis_cfg(main_abs_file_path)
     entry_label, exit_label = sys.merge_cfg_info(cfg)
     main_module = AnalysisModule(
-        tp_uuid="__main__", tp_package="", tp_code=(entry_label, exit_label)
+        tp_name="__main__", tp_package="", tp_code=(entry_label, exit_label)
     )
     sys.analysis_modules["__main__"] = main_module
     analysis = Analysis("__main__")

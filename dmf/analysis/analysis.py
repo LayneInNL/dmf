@@ -16,19 +16,16 @@ from __future__ import annotations
 
 import ast
 import sys
-from collections import defaultdict, deque
+from collections import defaultdict, deque, namedtuple
 from typing import Dict, Tuple, Deque, List
 
 from dmf.analysis.all_types import (
-    # RETURN_FLAG,
-    # POS_ARG_END,
-    # INIT_FLAG,
-    # None_Instance,
     ArtificialFunction,
     AnalysisFunction,
     AnalysisClass,
     ArtificialMethod,
     AnalysisMethod,
+    None_Instance,
 )
 from dmf.analysis.all_types import (
     Constructor,
@@ -36,14 +33,16 @@ from dmf.analysis.all_types import (
     AnalysisDescriptorSetFunction,
     ArtificialClass,
 )
+from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
 from dmf.analysis.builtin_functions import import_a_module
 from dmf.analysis.gets_sets import getattrs, _getattr
-
-Namespace_Local = "local"
-Namespace_Nonlocal = "nonlocal"
-Namespace_Global = "global"
-POS_ARG_END = "pos"
-from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
+from dmf.analysis.implicit_names import (
+    POS_ARG_LEN,
+    INIT_FLAG,
+    RETURN_FLAG,
+    PACKAGE_FLAG,
+    NAME_FLAG,
+)
 from dmf.analysis.state import (
     compute_function_defaults,
     compute_bases,
@@ -61,10 +60,19 @@ from dmf.analysis.state import (
     Stack,
     Heap,
 )
-from dmf.analysis.value import Value, create_value_with_type
+from dmf.analysis.value import Value, create_value_with_type, type_2_value
 from dmf.log.logger import logger
 
+Namespace_Local = "local"
+Namespace_Nonlocal = "nonlocal"
+Namespace_Global = "global"
+POS_ARG_END = "pos"
 Unused_Name = "UNUSED_NAME"
+
+AdditionalEntryInfo = namedtuple(
+    "AdditionalEntryInfo",
+    ["instance_info", "init_info", "module_info", "defaults_info", "kwdefaults_info"],
+)
 
 # points-to analysis
 def record(label: int, context: Tuple):
@@ -94,7 +102,7 @@ class Analysis(AnalysisBase):
         # end point
         self.final_point: ProgramPoint = (final_lab, ())
 
-        self.entry_program_point_info: Dict = {}
+        self.entry_program_point_info: Dict[ProgramPoint, AdditionalEntryInfo] = {}
         self.analysis_list: defaultdict[ProgramPoint, State | BOTTOM] = defaultdict(
             lambda: BOTTOM
         )
@@ -271,10 +279,14 @@ class Analysis(AnalysisBase):
                 instance = val.tp_instance
                 new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
 
-                self.entry_program_point_info[(entry_lab, new_ctx)] = (
+                self.entry_program_point_info[
+                    (entry_lab, new_ctx)
+                ] = AdditionalEntryInfo(
                     instance,
                     INIT_FLAG,
                     val.tp_module,
+                    None,
+                    None,
                 )
 
                 inter_flow = (
@@ -329,10 +341,14 @@ class Analysis(AnalysisBase):
                     instance = descr_get.tp_instance
                     new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
 
-                    self.entry_program_point_info[(entry_lab, new_ctx)] = (
+                    self.entry_program_point_info[
+                        (entry_lab, new_ctx)
+                    ] = AdditionalEntryInfo(
                         instance,
                         None,
                         descr_get.tp_module,
+                        None,
+                        None,
                     )
 
                     inter_flow = (
@@ -376,10 +392,14 @@ class Analysis(AnalysisBase):
                 instance = descr_set.tp_instance
                 new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
 
-                self.entry_program_point_info[(entry_lab, new_ctx)] = (
+                self.entry_program_point_info[
+                    (entry_lab, new_ctx)
+                ] = AdditionalEntryInfo(
                     instance,
                     None,
                     descr_set.tp_module,
+                    None,
+                    None,
                 )
 
                 inter_flow = (
@@ -422,7 +442,13 @@ class Analysis(AnalysisBase):
                 (return_lab, call_ctx),
             )
         )
-        self.entry_program_point_info[(entry_lab, call_ctx)] = (None, None, None)
+        self.entry_program_point_info[(entry_lab, call_ctx)] = AdditionalEntryInfo(
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
     def _detect_flow_call_class(
         self,
@@ -528,14 +554,6 @@ class Analysis(AnalysisBase):
         tp_address = record(call_lab, call_ctx)
         new_method, new_method_descr = _getattr(type, "__new__")
         assert len(new_method_descr) == 0, new_method_descr
-        # if len(new_method) == 0:
-        #     tp_uuid = f"{tp_address}-{type.tp_uuid}"
-        #     tp_dict = new_heap.write_instance_to_heap(tp_uuid)
-        #     analysis_instance = AnalysisInstance(
-        #         tp_uuid=tp_uuid, tp_dict=tp_dict, tp_class=type, tp_address=tp_address
-        #     )
-        #     dummy_value.inject_type(analysis_instance)
-        # else:
         for new in new_method:
             if isinstance(new, Constructor):
                 one_direct_res = new(
@@ -553,10 +571,14 @@ class Analysis(AnalysisBase):
                     (ret_lab, call_ctx),
                 )
                 self.inter_flows.add(inter_flow)
-                self.entry_program_point_info[(entry_lab, new_ctx)] = (
-                    type,
+                self.entry_program_point_info[
+                    (entry_lab, new_ctx)
+                ] = AdditionalEntryInfo(
+                    type_2_value(type),
                     None,
                     type.tp_module,
+                    None,
+                    None,
                 )
 
     # detect flows of functions which have labels
@@ -566,10 +588,10 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: AnalysisFunction,
+        type: AnalysisFunction,
     ):
         call_lab, call_ctx = program_point
-        entry_lab, exit_lab = typ.tp_code
+        entry_lab, exit_lab = type.tp_code
         ret_lab, _ = self.get_func_return_label(call_lab)
 
         new_ctx: Tuple = merge(call_lab, None, call_ctx)
@@ -580,10 +602,12 @@ class Analysis(AnalysisBase):
             (ret_lab, call_ctx),
         )
         self.inter_flows.add(inter_flow)
-        self.entry_program_point_info[(entry_lab, new_ctx)] = (
+        self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
             None,
             None,
-            typ.tp_module,
+            type.tp_module,
+            type.tp_defaults,
+            type.tp_kwdefaults,
         )
 
     # detect flow of analysis methods which have labels
@@ -593,18 +617,21 @@ class Analysis(AnalysisBase):
         old_state: State,
         new_state: State,
         dummy_value: Value,
-        typ: AnalysisMethod,
+        type: AnalysisMethod,
     ):
         call_lab, call_ctx = program_point
-        entry_lab, exit_lab = typ.tp_function.tp_code
-        instance = typ.tp_instance
+        entry_lab, exit_lab = type.tp_function.tp_code
+        instance = type.tp_instance
+        function = type.tp_function
         new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
 
         ret_lab, _ = self.get_func_return_label(call_lab)
-        self.entry_program_point_info[(entry_lab, new_ctx)] = (
-            instance,
+        self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
+            type_2_value(instance),
             None,
-            typ.tp_module,
+            type.tp_module,
+            function.tp_defaults,
+            function.tp_kwdefaults,
         )
 
         inter_flow = (
@@ -681,7 +708,7 @@ class Analysis(AnalysisBase):
     ):
         new_stack, new_heap = new_state.stack, new_state.heap
         # new_stack, new_heap = new_state
-        new_stack.next_ns()
+        new_stack.add_new_frame()
         return new_state
 
     def _transfer_call_normal(
@@ -690,29 +717,27 @@ class Analysis(AnalysisBase):
         # Normal call has form: func_name(args, keywords)
         call_stmt: ast.Call = self.get_stmt_by_point(program_point)
         assert isinstance(call_stmt, ast.Call), call_stmt
-        new_stack, new_heap = new_state.stack, new_state.heap
-        # new_stack, new_heap = new_state
+        new_stack, _ = new_state.stack, new_state.heap
 
         # new namespace to simulate function call
-        new_stack.next_ns()
+        new_stack.add_new_frame()
 
         # deal with positional args
+        # for instance, func(1, "hello") would be ["1": {int}, "2": {str}]
         args: List[ast.expr] = call_stmt.args
-        # has explicit args
-        if args:
-            for idx, arg in enumerate(args, 1):
-                if isinstance(arg, ast.Starred):
-                    raise NotImplementedError(arg)
-                arg_value = new_state.compute_value_of_expr(arg)
-                new_stack.write_var(str(idx), Namespace_Local, arg_value)
-            new_stack.write_special_var(POS_ARG_END, idx)
-        # may have implicit args, such as bounded methods
-        else:
-            new_stack.write_special_var(POS_ARG_END, 0)
+        for idx, arg in enumerate(args, 1):
+            if isinstance(arg, ast.Starred):
+                raise NotImplementedError(arg)
+            arg_value = new_state.compute_value_of_expr(arg)
+            new_stack.write_var(str(idx), Namespace_Local, arg_value)
+
+        # set the length of pos args
+        setattr(new_stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
 
         # deal with keyword args
         keywords: List[ast.keyword] = call_stmt.keywords
         for keyword in keywords:
+            # (NULL identifier for **kwargs)
             if keyword.arg is None:
                 raise NotImplementedError(keyword)
             keyword_value = new_state.compute_value_of_expr(keyword.value)
@@ -728,7 +753,7 @@ class Analysis(AnalysisBase):
 
         # new_stack, new_heap = new_state
         new_stack, new_heap = new_state.stack, new_state.heap
-        new_stack.next_ns()
+        new_stack.add_new_frame()
 
         target_value = new_state.compute_value_of_expr(call_stmt.value)
         for target_typ in target_value:
@@ -755,7 +780,7 @@ class Analysis(AnalysisBase):
 
         new_stack, new_heap = new_state.stack, new_state.heap
         # new_stack, new_heap = new_state
-        new_stack.next_ns()
+        new_stack.add_new_frame()
 
         attribute: ast.Attribute = call_stmt.targets[0]
         attr: str = call_stmt.targets[0].attr
@@ -781,42 +806,54 @@ class Analysis(AnalysisBase):
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
         stmt = self.get_stmt_by_point(program_point)
-        # new_stack, new_heap = new_state
 
         new_stack, new_heap = new_state.stack, new_state.heap
+
+        # add a special return flag to denote return values
+        new_stack.write_var(RETURN_FLAG, "local", Value())
+
         # is self.self_info[program_point] is not None, it means
         # this is a class method call
         # we pass instance information, module name to entry labels
-        instance, init_flag, module_name = self.entry_program_point_info[program_point]
-        if instance:
-            value = create_value_with_type(instance)
-            new_stack.write_var(str(0), Namespace_Local, value)
-        if init_flag:
-            new_stack.write_var(INIT_FLAG, Namespace_Helper, object)
-        if module_name:
-            new_stack.check_module_diff(module_name)
+        (
+            instance_info,
+            init_info,
+            module_info,
+            defaults_info,
+            kwdefaults_info,
+        ) = self.entry_program_point_info[program_point]
+        if instance_info:
+            new_stack.write_var(str(0), Namespace_Local, instance_info)
+        if init_info:
+            # setattr(new_stack.frames[-1].f_locals, INIT_FLAG, None)
+            new_stack.write_var(RETURN_FLAG, Namespace_Local, instance_info)
+        if module_info:
+            new_stack.check_module_diff(module_info)
 
         if isinstance(stmt, ast.arguments):
             # Positional and keyword arguments
-            start_pos = 0 if instance else 1
+            start_pos = 0 if instance_info else 1
             arg_flags = parse_positional_args(start_pos, stmt, new_state)
             arg_flags = parse_keyword_args(arg_flags, stmt, new_state)
-            _ = parse_default_args(arg_flags, stmt, new_state)
-            parse_kwonly_args(stmt, new_state)
+            _ = parse_default_args(arg_flags, stmt, new_state, defaults_info)
+            parse_kwonly_args(stmt, new_state, kwdefaults_info)
 
         return new_state
 
+    # transfer exit label
     def transfer_exit(
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
-        # new_stack, new_heap = new_state
         new_stack, new_heap = new_state.stack, new_state.heap
-        if not new_stack.top_namespace_contains(RETURN_FLAG):
-            value = create_value_with_type(None_Instance)
-            new_stack.write_var(RETURN_FLAG, Namespace_Local, value)
+        return_value = new_stack.read_var(RETURN_FLAG)
+        # if no explicit return, add None
+        if len(return_value) == 0:
+            none_value = type_2_value(None_Instance)
+            new_stack.write_var(RETURN_FLAG, Namespace_Local, none_value)
 
         return new_state
 
+    # transfer return label
     def transfer_return(
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
@@ -833,7 +870,7 @@ class Analysis(AnalysisBase):
                 program_point, old_state, new_state, stmt
             )
         else:
-            assert False
+            raise NotImplementedError
 
     def transfer_return_setter(
         self,
@@ -857,8 +894,8 @@ class Analysis(AnalysisBase):
         # new_stack, new_heap = new_state
         new_stack, new_heap = new_state.stack, new_state.heap
         return_value: Value = new_stack.read_var(RETURN_FLAG)
-        if new_stack.top_namespace_contains(INIT_FLAG):
-            return_value = new_stack.read_var("self")
+        # if hasattr(new_stack.frames[-1].f_locals, INIT_FLAG):
+        #     return_value = new_stack.read_var("self")
         new_stack.pop_frame()
 
         # no need to assign
@@ -903,7 +940,7 @@ class Analysis(AnalysisBase):
     ):
         package = None
         if stmt.level > 0:
-            package: str = new_state.stack.read_package()
+            package: str = getattr(new_state.stack.frames[-1].f_globals, PACKAGE_FLAG)
 
         new_stack = new_state.stack
         logger.debug("ImportFrom module {}".format(stmt.module))
@@ -941,7 +978,7 @@ class Analysis(AnalysisBase):
 
         # class name
         cls_name: str = stmt.name
-        module: str = new_stack.read_module()
+        module: str = getattr(new_stack.frames[-1].f_globals, NAME_FLAG)
 
         value: Value = Value()
         bases = compute_bases(new_state, stmt)
@@ -969,7 +1006,8 @@ class Analysis(AnalysisBase):
 
         defaults, kwdefaults = compute_function_defaults(new_state, node)
 
-        func_module: str = new_state.stack.read_module()
+        func_module: str = getattr(new_state.stack.frames[-1].f_globals, PACKAGE_FLAG)
+
         value = Value()
         value.inject_type(
             AnalysisFunction(
@@ -1010,8 +1048,7 @@ class Analysis(AnalysisBase):
         stmt: ast.Return,
     ) -> State:
         name: str = stmt.value.id
-        new_stack, new_heap = new_state.stack, new_state.heap
-        # new_stack, new_heap = new_state
+        new_stack: Stack = new_state.stack
         value: Value = new_stack.read_var(name)
         new_stack.write_var(RETURN_FLAG, Namespace_Local, value)
         return new_state

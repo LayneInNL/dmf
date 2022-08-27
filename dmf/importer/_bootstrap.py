@@ -720,7 +720,7 @@ def _load_unlocked(spec):
             cfg = sys.synthesis_cfg(module.__file__)
             entry_lab, exit_lab = sys.merge_cfg_info(cfg)
             real_analysis_module = sys.AnalysisModule(
-                tp_uuid=module.__name__,
+                tp_name=module.__name__,
                 tp_package=module.__package__,
                 tp_code=(entry_lab, exit_lab),
             )

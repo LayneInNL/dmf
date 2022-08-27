@@ -17,6 +17,7 @@ from __future__ import annotations
 import sys
 from typing import List
 
+from dmf.analysis.implicit_names import NAME_FLAG
 from dmf.analysis.namespace import (
     Namespace,
     Var,
@@ -239,12 +240,6 @@ class Stack:
     def top_namespace_contains(self, name):
         return name in self.top_frame().f_locals
 
-    def read_module(self):
-        return self.top_frame().f_globals.read_value("__name__")
-
-    def read_package(self) -> str:
-        return self.top_frame().f_globals.read_value("__package__")
-
     def read_var(self, var: str):
         return self.top_frame().read_var(var)
 
@@ -259,7 +254,7 @@ class Stack:
     def delete_var(self, var: str):
         self.top_frame().delete_var(var)
 
-    def next_ns(self):
+    def add_new_frame(self):
         curr_frame = self.top_frame()
 
         new_f_locals = Namespace()
@@ -274,6 +269,6 @@ class Stack:
         self.push_frame(new_frame)
 
     def check_module_diff(self, new_module_name=None):
-        curr_module_name = self.read_module()
+        curr_module_name: str = getattr(self.frames[-1].f_globals, NAME_FLAG)
         if curr_module_name != new_module_name:
             self.top_frame().f_globals = sys.analysis_modules[new_module_name].namespace

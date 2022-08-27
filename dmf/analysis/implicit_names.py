@@ -12,29 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-x = 2
-
-
-def test(x):
-    return x
-
-
-res = test(x)
-
-
-# def test():
-#     yield 1
-
-
-# def test1(x):
-#     def test1():
-#         return x
-#
-#     return test1
-
-
-# res = test1(2)
-# real_res = res()
-# a = test1(1)
-# test1.x = 1
-# y = test1.x
+# denote the length of positional args in a function call
+POS_ARG_LEN = "pos_arg_len"
+RETURN_FLAG = "return_flag"
+INIT_FLAG = "init_flag"
+PACKAGE_FLAG = "package_flag"
+NAME_FLAG = "name_flag"
+DEFAULTS = "tp_defaults"
+KWDEFAULTS = "tp_kwdefaults"

@@ -38,7 +38,9 @@ from dmf.analysis.all_types import (
     # Str_Instance,
     # Bytes_Instance,
 )
+from dmf.analysis.gets_sets import getattrs
 from dmf.analysis.heap import Heap
+from dmf.analysis.implicit_names import POS_ARG_LEN
 from dmf.analysis.stack import Stack
 from dmf.analysis.value import Value, type_2_value
 from dmf.log.logger import logger
@@ -179,7 +181,7 @@ def compute_function_defaults(state: State, node: ast.FunctionDef):
         if kw_default is None:
             kwdefaults.append(kw_default)
         else:
-            kw_default_value = stack.compute_value_of_expr(kw_default)
+            kw_default_value = state.compute_value_of_expr(kw_default)
             kwdefaults.append(kw_default_value)
 
     if arguments.vararg:
@@ -209,7 +211,8 @@ def parse_positional_args(start_pos: int, arguments: ast.arguments, state: State
     args_flag = [False for _ in arguments.args]
     stack = state.stack
     f_locals = stack.top_frame().f_locals
-    positional_len: int = f_locals.read_value(POS_ARG_END)
+    # positional_len: int = f_locals.read_value(POS_ARG_END)
+    positional_len: int = getattr(f_locals, POS_ARG_LEN)
     real_pos_len = positional_len - start_pos + 1
 
     if real_pos_len > len(arguments.args):
@@ -218,7 +221,7 @@ def parse_positional_args(start_pos: int, arguments: ast.arguments, state: State
 
         for idx, arg in enumerate(arguments.args):
             arg_value = f_locals.read_value(str(idx))
-            stack.write_var(arg.arg, Namespace_Local, arg_value)
+            stack.write_var(arg.arg, "local", arg_value)
             args_flag[idx] = True
             f_locals.del_local_var(str(idx))
         # TODO: vararg
@@ -228,7 +231,7 @@ def parse_positional_args(start_pos: int, arguments: ast.arguments, state: State
         for arg_idx, pos_idx in enumerate(range(start_pos, positional_len + 1)):
             arg = arguments.args[arg_idx]
             arg_value = f_locals.read_value(str(pos_idx))
-            stack.write_var(arg.arg, Namespace_Local, arg_value)
+            stack.write_var(arg.arg, "local", arg_value)
             args_flag[arg_idx] = True
             f_locals.del_local_var(str(pos_idx))
     return args_flag
@@ -247,31 +250,31 @@ def parse_keyword_args(arg_flags, arguments: ast.arguments, state: State):
     return arg_flags
 
 
-def parse_default_args(arg_flags, arguments: ast.arguments, state: State):
+def parse_default_args(arg_flags, arguments: ast.arguments, state: State, defaults):
     stack = state.stack
     for idx, elt in enumerate(arg_flags):
         if not elt:
             arg_name = arguments.args[idx].arg
-            default = arguments.nl_defaults[idx]
+            default = defaults[idx]
             if default is None:
                 raise TypeError
-            stack.write_var(arg_name, Namespace_Local, default)
+            stack.write_var(arg_name, "local", default)
             arg_flags[idx] = True
     assert all(arg_flags), arg_flags
     return arg_flags
 
 
-def parse_kwonly_args(arguments: ast.arguments, state: State):
+def parse_kwonly_args(arguments: ast.arguments, state: State, kwdefaults):
     stack = state.stack
     f_locals = stack.top_frame().f_locals
     for idx, kwonly_arg in enumerate(arguments.kwonlyargs):
         kwonly_arg_name = kwonly_arg.arg
         if kwonly_arg_name not in f_locals:
-            default_value = arguments.nl_kw_defaults[idx]
+            default_value = kwdefaults[idx]
             if default_value is None:
                 raise TypeError
             else:
-                stack.write_var(kwonly_arg_name, Namespace_Local, default_value)
+                stack.write_var(kwonly_arg_name, "local", default_value)
     # TODO: kwargs
     if arguments.kwarg is not None:
         raise NotImplementedError

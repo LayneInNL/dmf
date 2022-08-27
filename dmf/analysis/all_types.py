@@ -31,6 +31,7 @@ from dmf.analysis.artificial_types import (
     Singleton,
     ArtificialMethod,
 )
+from dmf.analysis.implicit_names import PACKAGE_FLAG, NAME_FLAG
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.typeshed_types import (
     TypeshedModule,
@@ -267,13 +268,14 @@ class AnalysisClass:
 
 
 class AnalysisModule:
-    def __init__(self, tp_uuid: str, tp_package: str, tp_code):
+    def __init__(self, tp_name: str, tp_package: str, tp_code):
         # tp_uuid is module name
-        self.tp_uuid: str = tp_uuid
+        self.tp_uuid: str = tp_name
         self.tp_class = Module_Type
         self.tp_package: str = tp_package
         self.tp_dict: Namespace = Namespace()
-        self.tp_dict.package = self.tp_package
+        setattr(self.tp_dict, PACKAGE_FLAG, self.tp_package)
+        setattr(self.tp_dict, NAME_FLAG, self.tp_uuid)
         self.tp_code = tp_code
 
     def getattr(self, name: str):

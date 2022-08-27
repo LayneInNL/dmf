@@ -35,7 +35,7 @@ class Typeshed:
         # fully qualified name
         self.tp_qualname: str = tp_qualname
 
-    def __le__(self):
+    def __le__(self, other):
         return True
 
     def __iadd__(self, other):
@@ -114,6 +114,9 @@ class TypeshedInstance(Typeshed):
         super().__init__(tp_name, tp_module, tp_qualname)
         self.tp_uuid = f"{self.tp_qualname}-instance"
         self.tp_class = tp_class
+
+    def __repr__(self):
+        return f"{self.tp_qualname} object"
 
 
 def parse_typeshed_module(module: str):
