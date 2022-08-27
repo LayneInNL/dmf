@@ -17,7 +17,7 @@ import init
 
 import argparse
 import os.path
-
+from dmf.analysis.builtin_functions import _setup_builtin_types
 from dmf.analysis.analysis import Analysis
 from dmf.analysis.all_types import AnalysisModule
 
@@ -27,6 +27,8 @@ parser.add_argument("project", help="the project path")
 
 
 if __name__ == "__main__":
+    _setup_builtin_types()
+
     args = parser.parse_args()
     main_path = args.main
     project_path = args.project

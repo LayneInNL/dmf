@@ -26,11 +26,16 @@
 
 x = list()
 x.append(1)
-test_x = list()
-ii = iter(x)
-while ii:
-    y = next(ii)
-    test_x.append(y)
+x.append(1.1)
+x.append("s")
+# test_x = list()
+# ii = iter(x)
+# yy = next(ii)
+# zz = next(ii)
+# aa = next(ii)
+# while ii:
+#     y = next(ii)
+#     test_x.append(y)
 
 # x.append(1)
 # x.append(1)

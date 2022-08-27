@@ -18,7 +18,14 @@ import sys
 from copy import deepcopy
 from typing import List, Dict
 
-from dmf.analysis.all_types import AnalysisClass, AnalysisInstance
+from dmf.analysis.all_types import (
+    Float_Instance,
+    Str_Instance,
+    Bool_Instance,
+    Bytes_Instance,
+    None_Instance,
+    Ellipsis_Instance,
+)
 from dmf.analysis.all_types import (
     # POS_ARG_END,
     # Namespace_Local,
@@ -33,7 +40,7 @@ from dmf.analysis.all_types import (
 )
 from dmf.analysis.heap import Heap
 from dmf.analysis.stack import Stack
-from dmf.analysis.value import Value
+from dmf.analysis.value import Value, type_2_value
 from dmf.log.logger import logger
 
 
@@ -75,55 +82,52 @@ class State:
         value = Value()
         if isinstance(expr, ast.Num):
             if isinstance(expr.n, int):
-                value.inject_type(Int_Instance)
+                value = type_2_value(Int_Instance)
+                return value
             elif isinstance(expr.n, float):
-                value.inject_type(Float_Instance)
+                value = type_2_value(Float_Instance)
+                return value
             elif isinstance(expr.n, complex):
-                value.inject_type(Complex_Instance)
-            return value
+                raise NotImplementedError(expr)
         elif isinstance(expr, ast.NameConstant):
             if expr.value is None:
                 value.inject_type(None_Instance)
             else:
-                value.inject_type(Bool_Instance)
+                value = type_2_value(Bool_Instance)
+                return value
         elif isinstance(expr, (ast.Str, ast.JoinedStr)):
-            value.inject_type(Str_Instance)
+            value = type_2_value(Str_Instance)
+            return value
         elif isinstance(expr, ast.Bytes):
-            value.inject_type(Bytes_Instance)
+            value = type_2_value(Bytes_Instance)
+            return value
         elif isinstance(expr, ast.Compare):
-            value.inject_type(Bool_Instance)
+            value = type_2_value(Bool_Instance)
+            return value
         elif isinstance(expr, ast.Name):
             value = self.stack.read_var(expr.id)
+            return value
         elif isinstance(expr, ast.Attribute):
             receiver_value: Value = self.compute_value_of_expr(expr.value)
-            receiver_attr: str = expr.attr
-            value: Value = Value()
-            for type in receiver_value:
-                if isinstance(type, AnalysisClass):
-                    res, descrs = _getattr(type, receiver_attr)
-                    value.inject_value(res)
-                elif isinstance(type, AnalysisInstance):
-                    res, descrs = _getattr(type, receiver_attr)
-                    value.inject_value(res)
-                # elif isinstance(type, FunctionObject):
-                #     try:
-                #         tmp = Getattr(type, receiver_attr)
-                #     except AttributeError:
-                #         pass
-                #     else:
-                #         value.inject_value(tmp)
+            value = getattrs(receiver_value, expr.attr)
             return value
         elif isinstance(expr, ast.BinOp):
             raise NotImplementedError(expr)
+        elif isinstance(expr, ast.Constant):
+            raise NotImplementedError(expr)
+        elif isinstance(expr, ast.Ellipsis):
+            value = type_2_value(Ellipsis_Instance)
+            return value
         else:
             logger.warn(expr)
-            assert False, expr
-        return value
+            raise NotImplementedError(expr)
 
 
 def deepcopy_state(state: State) -> State:
     memo = {}
     new_state = deepcopy(state, memo)
+    sys.stack = new_state.stack
+    sys.heap = new_state.heap
     sys.analysis_modules = new_state.analysis_modules
     sys.fake_analysis_modules = new_state.fake_analysis_modules
     return new_state

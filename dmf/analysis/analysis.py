@@ -20,20 +20,6 @@ from collections import defaultdict, deque
 from typing import Dict, Tuple, Deque, List
 
 from dmf.analysis.all_types import (
-    Constructor,
-    # _getattr,
-    AnalysisInstance,
-    # _setattr,
-    AnalysisDescriptorGetFunction,
-    AnalysisDescriptorSetFunction,
-    # import_a_module,
-    # getattrs,
-    # setattrs,
-    ArtificialClass,
-    getattrs,
-    _getattr,
-)
-from dmf.analysis.all_types import (
     # RETURN_FLAG,
     # POS_ARG_END,
     # INIT_FLAG,
@@ -43,8 +29,15 @@ from dmf.analysis.all_types import (
     AnalysisClass,
     ArtificialMethod,
     AnalysisMethod,
-    TypeshedModule,
 )
+from dmf.analysis.all_types import (
+    Constructor,
+    AnalysisDescriptorGetFunction,
+    AnalysisDescriptorSetFunction,
+    ArtificialClass,
+)
+from dmf.analysis.builtin_functions import import_a_module
+from dmf.analysis.gets_sets import getattrs, _getattr
 
 Namespace_Local = "local"
 Namespace_Nonlocal = "nonlocal"
@@ -68,7 +61,7 @@ from dmf.analysis.state import (
     Stack,
     Heap,
 )
-from dmf.analysis.value import Value, create_value_with_type, type_2_value
+from dmf.analysis.value import Value, create_value_with_type
 from dmf.log.logger import logger
 
 Unused_Name = "UNUSED_NAME"
@@ -115,6 +108,8 @@ class Analysis(AnalysisBase):
         self.present()
 
     def initialize(self):
+        sys.stack = self.extremal_value.stack
+        sys.heap = self.extremal_value.heap
         self.work_list.extendleft(self.generate_flow(self.extremal_point))
         self.analysis_list[self.extremal_point] = self.extremal_value
 
@@ -175,6 +170,11 @@ class Analysis(AnalysisBase):
             elif self.is_normal_call_point(program_point):
                 self._detect_flow_call(
                     program_point, next_state, next_next_state, dummy_value
+                )
+                next_next_class_state = deepcopy_state(next_state)
+                dummy_class_value = Value()
+                self._detect_flow_call_class(
+                    program_point, next_state, next_next_class_state, dummy_class_value
                 )
             elif self.is_class_init_call_point(program_point):
                 self.detect_flow_artificial_init(
@@ -424,6 +424,32 @@ class Analysis(AnalysisBase):
         )
         self.entry_program_point_info[(entry_lab, call_ctx)] = (None, None, None)
 
+    def _detect_flow_call_class(
+        self,
+        program_point: ProgramPoint,
+        old_state: State,
+        new_state: State,
+        dummy_value: Value,
+    ):
+        call_stmt: ast.Call = self.get_stmt_by_point(program_point)
+        assert isinstance(call_stmt, ast.Call), call_stmt
+
+        call_lab, call_ctx = program_point
+
+        value: Value = new_state.compute_value_of_expr(call_stmt.func)
+        # iterate all types to find which is callable
+        for type in value:
+            if isinstance(type, AnalysisClass):
+                self._detect_flow_class(
+                    program_point, old_state, new_state, dummy_value, type
+                )
+
+        if len(dummy_value):
+            _, dummy_ret_lab = self.get_special_new_return_label(call_lab)
+            dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+            new_state.stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
+            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
+
     # deal with cases such as name()
     def _detect_flow_call(
         self,
@@ -441,20 +467,19 @@ class Analysis(AnalysisBase):
         address = record(call_lab, call_ctx)
 
         dummy_value_normal: Value = Value()
-        dummy_value_special: Value = Value()
 
         value: Value = new_state.compute_value_of_expr(call_stmt.func)
         # iterate all types to find which is callable
         for type in value:
-            if isinstance(type, AnalysisClass):
-                self._detect_flow_class(
-                    program_point, old_state, new_state, dummy_value_special, type
-                )
+            # if isinstance(type, AnalysisClass):
+            #     self._detect_flow_class(
+            #         program_point, old_state, new_state, dummy_value_special, type
+            #     )
             # such as list class
-            elif isinstance(type, ArtificialClass):
+            if isinstance(type, ArtificialClass):
                 one_direct_res = type(
                     tp_address=address,
-                    tp_class=type_2_value(type),
+                    tp_class=type,
                     tp_heap=new_state.heap,
                 )
                 dummy_value_normal.inject(one_direct_res)
@@ -464,11 +489,11 @@ class Analysis(AnalysisBase):
                 )
             elif isinstance(type, AnalysisFunction):
                 self._detect_flow_function(
-                    program_point, old_state, new_state, dummy_value, type
+                    program_point, old_state, new_state, dummy_value_normal, type
                 )
             elif isinstance(type, AnalysisMethod):
                 self._detect_flow_method(
-                    program_point, old_state, new_state, dummy_value, type
+                    program_point, old_state, new_state, dummy_value_normal, type
                 )
             elif isinstance(type, ArtificialMethod):
                 self._detect_flow_artificial_method(
@@ -479,20 +504,12 @@ class Analysis(AnalysisBase):
                     program_point, old_state, new_state, dummy_value_normal, type
                 )
 
-        if len(dummy_value_normal):
-            _, dummy_ret_lab = self.get_func_return_label(call_lab)
-            dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-            new_state.stack.write_var(
-                dummy_ret_stmt.id, Namespace_Local, dummy_value_normal
-            )
-            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
-        if len(dummy_value_special):
-            _, dummy_ret_lab = self.get_special_new_return_label(call_lab)
-            dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-            new_state.stack.write_var(
-                dummy_stmt.id, Namespace_Local, dummy_value_special
-            )
-            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
+        _, dummy_ret_lab = self.get_func_return_label(call_lab)
+        dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+        new_state.stack.write_var(
+            dummy_ret_stmt.id, Namespace_Local, dummy_value_normal
+        )
+        self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     # deal with class initialization
     # find __new__ and __init__ method
