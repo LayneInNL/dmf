@@ -212,6 +212,26 @@ class Analysis(AnalysisBase):
             new_heap.write_instance_to_heap(instance)
             dummy_value.inject_type(instance)
 
+    def _detect_flow_artificial_function(
+        self,
+        program_point: ProgramPoint,
+        old_state: State,
+        new_state: State,
+        dummy_value: Value,
+        typ: ArtificialFunction,
+    ):
+        call_stmt = self.get_stmt_by_point(program_point)
+
+        args, keywords = compute_func_args(
+            new_state, call_stmt.args, call_stmt.keywords
+        )
+        try:
+            res = typ(*args, **keywords)
+        except TypeError:
+            logger.critical(f"Functioin call failed")
+        else:
+            dummy_value.inject(res)
+
     def _detect_flow_artificial_method(
         self,
         program_point: ProgramPoint,
@@ -430,6 +450,7 @@ class Analysis(AnalysisBase):
                 self._detect_flow_class(
                     program_point, old_state, new_state, dummy_value_special, type
                 )
+            # such as list class
             elif isinstance(type, ArtificialClass):
                 one_direct_res = type(
                     tp_address=address,
@@ -437,6 +458,10 @@ class Analysis(AnalysisBase):
                     tp_heap=new_state.heap,
                 )
                 dummy_value_normal.inject(one_direct_res)
+            elif isinstance(type, ArtificialFunction):
+                self._detect_flow_artificial_function(
+                    program_point, old_state, new_state, dummy_value_normal, type
+                )
             elif isinstance(type, AnalysisFunction):
                 self._detect_flow_function(
                     program_point, old_state, new_state, dummy_value, type

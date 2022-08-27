@@ -12,59 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 from __future__ import annotations
-import ast
-import builtins
-import sys
+
 from typing import Tuple
 
-from ._types import (
-    Object_Type,
-    Type_Type,
-    Int_Type,
-    Float_Type,
-    Complex_Type,
-    List_Type,
-    Tuple_Type,
-    Range_Type,
-    Str_Type,
-    Bytes_Type,
-    ByteArray_Type,
-    MemoryView_Type,
-    Set_Type,
-    FrozenSet_Type,
-    Dict_Type,
-    Module_Type,
-    Function_Type,
-    Method_Type,
-    None_Type,
-    Bool_Type,
-    Namespace,
-    LocalVar,
-    NonlocalVar,
-    GlobalVar,
-    SpecialVar,
-    POS_ARG_END,
-    INIT_FLAG,
-    RETURN_FLAG,
-    Namespace_Local,
-    Namespace_Nonlocal,
-    Namespace_Global,
-    Namespace_Helper,
-    Var,
-    c3,
-)
-from .exceptions import MROAnyError, AnalysisAttributeError
-from .special_types import Any
-from .value import Value
 from dmf.typeshed_client.parser import (
     parse_module,
-    resolve_attribute,
-    TypeshedModule as _TypeshedModule,
-    TypeshedClass as _TypeshedClass,
-    TypeshedFunction as _TypeshedFunction,
-    AnnAssignNameInfo,
-    AssignNameInfo,
 )
+from .special_types import Any
+from .value import Value
 from ..importer import import_module
 
 
@@ -373,9 +328,3 @@ def import_a_module(name, package=None, level=0) -> Value:
 
     value.inject(module)
     return value
-
-
-builtin_namespace = Namespace()
-list_value = Value()
-list_value.inject(List_Type)
-builtin_namespace.write_local_value("list", list_value)

@@ -37,6 +37,7 @@ class ArtificialFunction:
             self.tp_addon = tp_addon
 
     def __call__(self, *args, **kwargs):
+        print(*args, **kwargs)
         return self.tp_code(*args, **kwargs)
 
     def __le__(self, other: ArtificialFunction):
@@ -163,9 +164,43 @@ class ListArtificialClass(ArtificialClass):
     #         self.tp_dict.write_local_value("internal", iterable)
     #
 
-    def __call__(self, tp_address, tp_class, tp_heap):
+    def __call__(self, tp_address, tp_class, tp_heap, *arguments):
         tp_dict = tp_heap.write_instance_to_heap(tp_address)
         return AnalysisInstance(tp_address, tp_class, tp_dict)
+
+
+class IteratorArtificialClass(ArtificialClass):
+    def __call__(self, tp_address, tp_class, tp_heap, *arguments):
+        tp_dict = tp_heap.write_instance_to_heap(tp_address)
+        return AnalysisInstance(tp_address, tp_class, tp_dict)
+
+
+class Iterator:
+    def __init__(self, original):
+        if isinstance(original, AnalysisInstance):
+            self.tp_uuid = f"{original.tp_uuid}-iterator"
+            value = original.tp_dict.read_value("internal")
+            self.internal = list(value.values())
+        else:
+            raise NotImplementedError(original)
+
+    def __next__(self) -> Value:
+        value = Value()
+        try:
+            elt = self.internal.pop()
+        except IndexError:
+            return value
+        else:
+            elt_value = type_2_value(elt)
+            value.inject(elt_value)
+            return value
+
+    def __le__(self, other: Iterator):
+        # means no elements in iterator
+        return len(self.internal) == 0 and len(other.internal) == 0
+
+    def __iadd__(self, other: Iterator):
+        return self
 
 
 List_Type = ListArtificialClass("builtins.list")
@@ -188,6 +223,15 @@ def _setup_List_Type():
     arti_append = ArtificialFunction(tp_function=append, tp_addon="list.append")
     arti_append_value = type_2_value(arti_append)
     List_Type.tp_dict.write_local_value(append.__name__, arti_append_value)
+
+    def __iter__(self):
+        if self.is_Any():
+            return Value.make_any()
+        return Iterator(self)
+
+    arti_iter = ArtificialFunction(tp_function=__iter__, tp_addon="list.__iter__")
+    arti_iter_value = type_2_value(arti_iter)
+    List_Type.tp_dict.write_local_value(__iter__.__name__, arti_iter_value)
 
 
 _setup_List_Type()
@@ -662,7 +706,7 @@ class AnalysisDescriptorGetFunction:
 
 class AnalysisDescriptorSetFunction:
     def __init__(self, tp_self, tp_obj, tp_value):
-        self.tp_uuid = f"{tp_self.tp_qualname}-{tp_obj.tp_qualname}"
+        self.tp_uuid = f"{tp_self.tp_uuid}-setter"
         self.tp_self = tp_self
         self.tp_obj = tp_obj
         self.tp_value = tp_value
@@ -739,6 +783,58 @@ Typeshed_List_Type: Value = builtin_module_dict.read_value("list")
 List_Type.tp_fallback = Typeshed_List_Type
 builtin_module_dict.write_local_value("list", type_2_value(List_Type))
 None_Instance = TypeshedInstance("None", "builtins", "builtins-None", None_Type)
+
+
+def iter(objs, sentinel=None):
+    if objs.is_Any():
+        return Value.make_any()
+
+    if sentinel is not None:
+        return Value.make_any()
+
+    value = Value()
+    for obj in objs:
+        obj_iters: Value = _pytype_lookup_by_obj(obj, "__iter__")
+        if obj_iters.is_Any():
+            return Value.make_any()
+
+        for obj_iter in obj_iters:
+            if isinstance(obj_iter, AnalysisFunction):
+                value.inject(obj_iter)
+            elif isinstance(obj_iter, ArtificialFunction):
+                _res = obj_iter(obj)
+                value.inject(_res)
+            else:
+                raise NotImplementedError
+    return value
+
+
+def next(objs, default=None):
+    if objs.is_Any():
+        return Value.make_any()
+
+    value = Value()
+    for obj in objs:
+        obj_iters: Value = _pytype_lookup_by_obj(obj, "__next__")
+        if obj_iters.is_Any():
+            return Value.make_any()
+
+        for obj_iter in obj_iters:
+            if isinstance(obj_iter, AnalysisFunction):
+                value.inject(obj_iter)
+            elif isinstance(obj_iter, ArtificialFunction):
+                _res = obj_iter(obj)
+                value.inject(_res)
+            else:
+                raise NotImplementedError
+
+    if default is not None:
+        return value.inject(default)
+    return value
+
+
+arti_iter = ArtificialFunction(tp_function=iter, tp_addon="builtins.iter")
+builtin_module_dict.write_local_value("iter", type_2_value(arti_iter))
 
 
 class TypeExprVisitor(ast.NodeVisitor):
@@ -883,6 +979,34 @@ def _py_type(obj) -> Value:
 def _pytype_lookup(obj_type, name) -> Value:
     res = _find_name_in_mro(obj_type, name)
     return res
+
+
+def _pytype_lookup_by_obj(obj, name) -> Value:
+    obj_types = _py_type(obj)
+    if obj_types.is_Any():
+        return Value.make_any()
+
+    value = Value()
+    for obj_type in obj_types:
+        _value = _pytype_lookup(obj_type, name)
+        value.inject(_value)
+
+    return value
+
+
+def _pytype_lookup_set(type, name, value):
+    res = _find_name_in_mro(type, name)
+    if res.is_Any():
+        return Value.make_any()
+
+    # no class variable called name
+    if len(res) == 0:
+        type.tp_dict.write_local_value(name, value)
+        return type.tp_dict.read_value(name)
+    # class variable exists, return this one
+    else:
+        res.inject_value(value)
+        return res
 
 
 def _find_name_in_mro(obj_type, name) -> Value:
@@ -1077,3 +1201,47 @@ def type_getattro(type, name) -> Tuple[Value, Value]:
         res_value.inject_value(descrs)
 
     return res_value, descr_value
+
+
+def GenericSetAttr(obj, name, value):
+    descr_value = Value()
+
+    obj_types = _py_type(obj)
+    if obj_types.is_Any():
+        return Value.make_any()
+
+    # look up class dict
+    for obj_type in obj_types:
+        descriptors = _pytype_lookup_set(obj_type, name, value)
+        if descriptors.is_Any():
+            return Value.make_any()
+
+        for descriptor in descriptors:
+            descriptor_types = _py_type(descriptor)
+            if descriptor_types.is_Any():
+                return Value.make_any()
+
+            for descriptor_type in descriptor_types:
+                descriptor_type_sets = _pytype_lookup(descriptor_type, "__set__")
+                if descriptor_type_sets.is_Any():
+                    return Value.make_any()
+
+                for descriptor_type_set in descriptor_type_sets:
+                    if isinstance(descriptor_type_set, AnalysisFunction):
+                        one_descr = AnalysisDescriptorSetFunction(
+                            tp_self=descriptor_type,
+                            tp_obj=type_2_value(obj),
+                            tp_value=value,
+                        )
+                        descr_value.inject(one_descr)
+                    else:
+                        raise NotImplementedError(descriptor_type_set)
+
+    # instance dict assignment
+    obj.tp_dict.write_local_value(name, value)
+
+    return descr_value
+
+
+def type_setattro(type, name, value):
+    return GenericSetAttr(type, name, value)
