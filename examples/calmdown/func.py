@@ -15,11 +15,11 @@
 x = 2
 
 
-def test(x):
+def test(x=1):
     return x
 
 
-res = test(x)
+res = test()
 
 
 # def test():

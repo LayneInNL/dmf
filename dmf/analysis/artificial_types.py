@@ -16,7 +16,8 @@ from typing import List
 
 from dmf.analysis.exceptions import MROAnyError
 from dmf.analysis.namespace import Namespace
-from dmf.analysis.special_types import Bases_Any
+from dmf.analysis.special_types import Bases_Any, MRO_Any
+from dmf.analysis.typeshed_types import TypeshedClass
 from dmf.analysis.value import type_2_value
 
 
@@ -112,7 +113,7 @@ def static_c3(cls_obj) -> List[List]:
     if cls_obj is Object_Type:
         return [[cls_obj]]
     elif cls_obj is Bases_Any:
-        return [[MROAnyError]]
+        return [[MRO_Any]]
         # raise MROAnyError
     else:
         mros = []
@@ -146,8 +147,14 @@ def static_merge(mro_list) -> List:
 
 
 # Type_Type.tp_bases = [[Bases_Any], [Object_Type]]
+Type_Type.tp_bases = [[Bases_Any]]
 Type_Type.tp_mro = c3(Type_Type)
 Object_Type.tp_mro = c3(Object_Type)
+
+# Type and Object are initialized. Here we initialize Typeshed related objects
+TypeshedClass.tp_class = Type_Type
+TypeshedClass.tp_bases = [[Bases_Any]]
+TypeshedClass.c3 = c3
 
 # redefine __init__ to create other ArtificialClasses
 def __init__(self, tp_qualname: str):
@@ -161,8 +168,6 @@ def __init__(self, tp_qualname: str):
 
 ArtificialClass.__init__ = __init__
 Range_Type = ArtificialClass("builtins.range")
-Module_Type = ArtificialClass("builtins.module")
-Function_Type = ArtificialClass("builtins.function")
 Method_Type = ArtificialClass("builtins.method")
 
 None_Type = ArtificialClass("builtins.NoneType")

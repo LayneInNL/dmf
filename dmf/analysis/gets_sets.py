@@ -13,22 +13,24 @@
 #  limitations under the License.
 from typing import Tuple
 
-from dmf.analysis.all_types import (
+from dmf.analysis.analysis_types import (
     AnalysisInstance,
     AnalysisFunction,
     AnalysisModule,
     AnalysisMethod,
-    evaluate,
+    refine_type,
     AnalysisDescriptorGetFunction,
     None_Instance,
     AnalysisDescriptorSetFunction,
+    AnalysisClass,
+    refine_value,
 )
 from dmf.analysis.artificial_types import (
     ArtificialClass,
     ArtificialFunction,
     ArtificialMethod,
 )
-from dmf.analysis.special_types import Bases_Any
+from dmf.analysis.special_types import Bases_Any, MRO_Any
 from dmf.analysis.typeshed_types import TypeshedModule, TypeshedFunction
 from dmf.analysis.value import Value, type_2_value
 
@@ -73,7 +75,7 @@ def _find_name_in_mro(obj_type, name) -> Value:
     tp_mros = obj_type.tp_mro
     for tp_mro in tp_mros:
         for cls in tp_mro:
-            if cls is Bases_Any:
+            if cls is MRO_Any:
                 return Value.make_any()
             else:
                 # tp_dict could belong to AnalysisClass, ArtificialClass and
@@ -119,39 +121,77 @@ def getattrs(objs: Value, name: str, default=None) -> Tuple[Value, Value]:
     return direct_res, descr_gets
 
 
+def setattrs(objs, name, value) -> Value:
+    # if objs is Any, return Any
+    if objs.is_Any():
+        return Value.make_any()
+
+    descr_sets = Value()
+    for obj in objs:
+        curr_descr_sets = _setattr(obj, name, value)
+        descr_sets += curr_descr_sets
+
+    return descr_sets
+
+
+def _setattr(obj, name, value) -> Value:
+    tp = _py_type(obj)
+    # tp_setattr = _pytype_lookup(tp, "__setattr__")
+    # if len(tp_setattr) == 0:
+    raise NotImplementedError(f"setattr({obj},{name},{value})")
+    # # work on class
+    # if isinstance(obj, ClassLevel):
+    #     return type_setattro(obj, name, value)
+    # elif isinstance(obj, Instance):
+    #     return GenericSetAttr(obj, name, value)
+    # elif isinstance(obj, AnalysisFunction):
+    #     return GenericSetAttr(obj, name, value)
+    # else:
+    #     raise NotImplementedError(f"setattr({obj},{name},{value})")
+    # else:
+    #     return Value(any=True)
+
+    return value
+
+
 def _getattr(obj, name) -> Tuple[Value, Value]:
 
     obj_type = _py_type(obj)
     # get the __getattribute__ of this obj
-    tp_getattributes = _pytype_lookup(obj_type, "__getattribute__")
-    if len(tp_getattributes) == 0:
-        if isinstance(obj, AnalysisInstance):
-            return GenericGetAttr(obj, name)
-        elif isinstance(obj, ArtificialClass):
-            return type_getattro(obj, name)
-        # work on class
-        if isinstance(obj, AnalysisFunction):
-            return GenericGetAttr(obj, name)
-        elif isinstance(obj, AnalysisModule):
-            try:
-                res = obj.getattr(name)
-            except AttributeError:
-                return Value(), Value()
-            else:
-                return res, Value()
-        elif isinstance(obj, TypeshedModule):
-            try:
-                res = obj.getattr(name)
-            except AttributeError:
-                return Value(), Value()
-            else:
-                direct_res, descr_gets = Value(), Value()
-                direct_res.inject(res)
-                return direct_res, descr_gets
+    # tp_getattributes = _pytype_lookup(obj_type, "__getattribute__")
+    # if len(tp_getattributes) == 0:
+    if isinstance(obj, AnalysisInstance):
+        return GenericGetAttr(obj, name)
+    elif isinstance(obj, AnalysisClass):
+        return type_getattro(obj, name)
+    elif isinstance(obj, ArtificialClass):
+        return type_getattro(obj, name)
+    # work on class
+    elif isinstance(obj, AnalysisFunction):
+        return GenericGetAttr(obj, name)
+    elif isinstance(obj, (AnalysisModule, TypeshedModule)):
+        direct_res, descr_gets = Value(), Value()
+        try:
+            res = obj.getattr(name)
+            res = refine_value(res)
+        except AttributeError:
+            return direct_res, descr_gets
         else:
-            raise NotImplementedError
+            direct_res.inject(res)
+            return res, descr_gets
+    elif isinstance(obj, TypeshedModule):
+        direct_res, descr_gets = Value(), Value()
+        try:
+            res = obj.getattr(name)
+        except AttributeError:
+            return direct_res, descr_gets
+        else:
+            direct_res.inject(res)
+            return direct_res, descr_gets
     else:
-        return Value.make_any(), Value.make_any()
+        raise NotImplementedError(obj)
+    # else:
+    #     return Value.make_any(), Value.make_any()
 
 
 def GenericGetAttr(obj, name):
@@ -191,8 +231,9 @@ def GenericGetAttr(obj, name):
                         # self = descr, obj = obj, type=tp
                         one_descr = AnalysisDescriptorGetFunction(
                             tp_self=descr,
-                            tp_obj=type_2_value(obj),
+                            tp_obj=obj,
                             tp_objtype=obj_type,
+                            tp_function=descr_tp_get,
                         )
                         descr_value.inject(one_descr)
                     else:
@@ -220,28 +261,26 @@ def type_getattro(type, name) -> Tuple[Value, Value]:
         if isinstance(descr, (AnalysisFunction, ArtificialFunction)):
             res_value.inject(descr)
         elif isinstance(descr, TypeshedFunction):
-            typeshed_value = evaluate(descr)
+            typeshed_value = refine_type(descr)
             res_value.inject(typeshed_value)
         else:
-            descriptor_types = _py_type(descr)
-            if descriptor_types.is_Any():
+            descriptor_type = _py_type(descr)
+
+            descriptor_type_gets = _pytype_lookup(descriptor_type, "__get__")
+            if descriptor_type_gets.is_Any():
                 return Value.make_any(), Value.make_any()
 
-            for descriptor_type in descriptor_types:
-                descriptor_type_gets = _pytype_lookup(descriptor_type, "__get__")
-                if descriptor_type_gets.is_Any():
-                    return Value.make_any(), Value.make_any()
-
-                for descriptor_type_get in descriptor_type_gets:
-                    if isinstance(descriptor_type_get, AnalysisFunction):
-                        one_descr = AnalysisDescriptorGetFunction(
-                            tp_self=descr,
-                            tp_obj=type_2_value(None_Instance),
-                            tp_objtype=type_2_value(type),
-                        )
-                        descr_value.inject(one_descr)
-                    else:
-                        raise NotImplementedError
+            for descriptor_type_get in descriptor_type_gets:
+                if isinstance(descriptor_type_get, AnalysisFunction):
+                    one_descr = AnalysisDescriptorGetFunction(
+                        tp_self=descr,
+                        tp_obj=None_Instance,
+                        tp_objtype=type,
+                        tp_function=descriptor_type,
+                    )
+                    descr_value.inject(one_descr)
+                else:
+                    raise NotImplementedError
 
     if name in type.tp_dict:
         one_res = type.tp_dict.read_value(name)

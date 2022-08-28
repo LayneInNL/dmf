@@ -19,7 +19,7 @@ import sys
 from collections import defaultdict, deque, namedtuple
 from typing import Dict, Tuple, Deque, List
 
-from dmf.analysis.all_types import (
+from dmf.analysis.analysis_types import (
     ArtificialFunction,
     AnalysisFunction,
     AnalysisClass,
@@ -27,7 +27,7 @@ from dmf.analysis.all_types import (
     AnalysisMethod,
     None_Instance,
 )
-from dmf.analysis.all_types import (
+from dmf.analysis.analysis_types import (
     Constructor,
     AnalysisDescriptorGetFunction,
     AnalysisDescriptorSetFunction,
@@ -35,7 +35,7 @@ from dmf.analysis.all_types import (
 )
 from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
 from dmf.analysis.builtin_functions import import_a_module
-from dmf.analysis.gets_sets import getattrs, _getattr
+from dmf.analysis.gets_sets import getattrs, _getattr, setattrs, _setattr
 from dmf.analysis.implicit_names import (
     POS_ARG_LEN,
     INIT_FLAG,
@@ -66,7 +66,6 @@ from dmf.log.logger import logger
 Namespace_Local = "local"
 Namespace_Nonlocal = "nonlocal"
 Namespace_Global = "global"
-POS_ARG_END = "pos"
 Unused_Name = "UNUSED_NAME"
 
 AdditionalEntryInfo = namedtuple(
@@ -147,12 +146,17 @@ class Analysis(AnalysisBase):
                     program_point, self.analysis_list[program_point]
                 )
             )
-            self.analysis_effect_list[program_point] = self.transfer(program_point)
-            logger.info(
-                "Effect at program point {}: {}".format(
-                    program_point, self.analysis_effect_list[program_point].heap
+            try:
+                self.analysis_effect_list[program_point] = self.transfer(program_point)
+                logger.info(
+                    "Effect at program point {}: {}".format(
+                        program_point, self.analysis_effect_list[program_point]
+                    )
                 )
-            )
+            except:
+                pass
+            else:
+                pass
         self.transfer(self.final_point)
 
     # based on current program point, update self.IF
@@ -277,7 +281,7 @@ class Analysis(AnalysisBase):
             if isinstance(val, AnalysisMethod):
                 entry_lab, exit_lab = val.tp_function.tp_code
                 instance = val.tp_instance
-                new_ctx: Tuple = merge(call_lab, instance.nl__address__, call_ctx)
+                new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
 
                 self.entry_program_point_info[
                     (entry_lab, new_ctx)
@@ -323,9 +327,11 @@ class Analysis(AnalysisBase):
         new_stack, new_heap = new_state.stack, new_state.heap
         # abstract value of stmt.value
         value = new_state.compute_value_of_expr(call_stmt.value)
-        dummy_value = Value()
         ret_lab, dummy_ret_lab = self.get_getter_return_label(call_lab)
         direct_res, descr_gets = getattrs(value, call_stmt.attr)
+
+        dummy_value = Value()
+        dummy_value.inject(direct_res)
 
         # if any of two is Any, the result is Any, the flow is not constructed
         if direct_res.is_Any() or descr_gets.is_Any():
@@ -336,19 +342,19 @@ class Analysis(AnalysisBase):
         else:
             dummy_value.inject(direct_res)
             for descr_get in descr_gets:
-                if isinstance(descr_get, AnalysisMethod):
+                if isinstance(descr_get, AnalysisDescriptorGetFunction):
                     entry_lab, exit_lab = descr_get.tp_function.tp_code
-                    instance = descr_get.tp_instance
+                    instance = descr_get.tp_self
                     new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
 
                     self.entry_program_point_info[
                         (entry_lab, new_ctx)
                     ] = AdditionalEntryInfo(
-                        instance,
+                        type_2_value(instance),
                         None,
-                        descr_get.tp_module,
-                        None,
-                        None,
+                        descr_get.tp_function.tp_module,
+                        descr_get.tp_function.tp_defaults,
+                        descr_get.tp_function.tp_kwdefaults,
                     )
 
                     inter_flow = (
@@ -358,12 +364,40 @@ class Analysis(AnalysisBase):
                         (ret_lab, call_ctx),
                     )
                     self.inter_flows.add(inter_flow)
-                elif isinstance(descr_get, ArtificialMethod):
-                    dummy_value.inject(descr_get)
 
-            dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-            new_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
-            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
+                else:
+                    dummy_value.inject(descr_get)
+                    # continue
+                    # raise NotImplementedError(descr_get)
+
+                # if isinstance(descr_get, AnalysisMethod):
+                #     entry_lab, exit_lab = descr_get.tp_function.tp_code
+                #     instance = descr_get.tp_instance
+                #     new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
+                #
+                #     self.entry_program_point_info[
+                #         (entry_lab, new_ctx)
+                #     ] = AdditionalEntryInfo(
+                #         instance,
+                #         None,
+                #         descr_get.tp_module,
+                #         None,
+                #         None,
+                #     )
+                #
+                #     inter_flow = (
+                #         (call_lab, call_ctx),
+                #         (entry_lab, new_ctx),
+                #         (exit_lab, new_ctx),
+                #         (ret_lab, call_ctx),
+                #     )
+                #     self.inter_flows.add(inter_flow)
+                # elif isinstance(descr_get, ArtificialMethod):
+                #     dummy_value.inject(descr_get)
+
+        dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+        new_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
+        self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     def _detect_flow_descr_set(
         self, program_point, old_state: State, new_state: State, dummy_value: Value
@@ -766,7 +800,7 @@ class Analysis(AnalysisBase):
                     owner = attr_typ.tp_objtype
                     owner_value = create_value_with_type(owner)
                     new_stack.write_var("2", Namespace_Local, owner_value)
-                    new_stack.write_var(POS_ARG_END, Namespace_Helper, 2)
+                    setattr(new_stack.frames[-1].f_locals, POS_ARG_LEN, 2)
         return new_state
 
     def _transfer_call_setter(
@@ -797,7 +831,7 @@ class Analysis(AnalysisBase):
                     value = attr_typ.tp_value
                     value_value = create_value_with_type(value)
                     new_stack.write_var("2", Namespace_Local, value_value)
-                    new_stack.write_var(POS_ARG_END, Namespace_Helper, 2)
+                    setattr(new_stack.frames[-1].f_locals, POS_ARG_LEN, 2)
 
         return new_state
 
@@ -826,7 +860,9 @@ class Analysis(AnalysisBase):
             new_stack.write_var(str(0), Namespace_Local, instance_info)
         if init_info:
             # setattr(new_stack.frames[-1].f_locals, INIT_FLAG, None)
-            new_stack.write_var(RETURN_FLAG, Namespace_Local, instance_info)
+            new_stack.write_var(
+                RETURN_FLAG, Namespace_Local, type_2_value(instance_info)
+            )
         if module_info:
             new_stack.check_module_diff(module_info)
 

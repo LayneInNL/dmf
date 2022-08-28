@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-from dmf.analysis.all_types import (
+from dmf.analysis.analysis_types import (
     AnalysisInstance,
 )
 from dmf.analysis.namespace import Namespace

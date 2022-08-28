@@ -19,7 +19,7 @@ import argparse
 import os.path
 from dmf.analysis.builtin_functions import _setup_builtin_types
 from dmf.analysis.analysis import Analysis
-from dmf.analysis.all_types import AnalysisModule
+from dmf.analysis.analysis_types import AnalysisModule
 
 parser = argparse.ArgumentParser()
 parser.add_argument("main", help="the main file path")

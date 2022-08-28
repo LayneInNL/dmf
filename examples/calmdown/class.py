@@ -14,12 +14,15 @@
 
 
 class Test:
-    # def __init__(self):
-    #     pass
-    pass
+    def __init__(self):
+        pass
+
+    def test(self):
+        return self
 
 
 a = Test()
+res = a.test()
 # a.x = 1
 # y = a.x
 # a.x = 1

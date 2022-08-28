@@ -38,6 +38,9 @@ class _MROAny:
             memo[id(self)] = self
         return memo[id(self)]
 
+    def __repr__(self):
+        return "MRO_Any"
+
 
 MRO_Any = _MROAny()
 
@@ -50,6 +53,9 @@ class _BasesAny:
         if id(self) not in memo:
             memo[id(self)] = self
         return memo[id(self)]
+
+    def __repr__(self):
+        return "Bases_Any"
 
 
 Bases_Any = _BasesAny()

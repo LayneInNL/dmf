@@ -18,25 +18,15 @@ import sys
 from copy import deepcopy
 from typing import List, Dict
 
-from dmf.analysis.all_types import (
+from dmf.analysis.analysis_types import (
     Float_Instance,
     Str_Instance,
     Bool_Instance,
     Bytes_Instance,
     None_Instance,
     Ellipsis_Instance,
-)
-from dmf.analysis.all_types import (
-    # POS_ARG_END,
-    # Namespace_Local,
     Object_Type,
     Int_Instance,
-    # Float_Instance,
-    # Complex_Instance,
-    # None_Instance,
-    # Bool_Instance,
-    # Str_Instance,
-    # Bytes_Instance,
 )
 from dmf.analysis.gets_sets import getattrs
 from dmf.analysis.heap import Heap
@@ -203,7 +193,7 @@ def compute_bases(state: State, node: ast.ClassDef):
                 base_types.append(cls)
         return base_types
     else:
-        default_base = Object_Type
+        default_base = [Object_Type]
         return [default_base]
 
 
