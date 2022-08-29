@@ -13,17 +13,31 @@
 #  limitations under the License.
 
 
-class Test:
-    def __init__(self):
-        pass
-
-    def test(self):
-        return self
-
-
-a = Test()
-res = a.test()
+# class Test:
+#     def __init__(self):
+#         pass
+#
+#     def test(self):
+#         return self
+#
+#
+# a = Test()
+# res = a.test()
 # a.x = 1
 # y = a.x
 # a.x = 1
 # b = a.x
+
+
+class Base:
+    def test(self):
+        return 1
+
+
+class Derive(Base):
+    def test(self):
+        return super(Derive, self).test()
+
+
+d = Derive()
+res = d.test()

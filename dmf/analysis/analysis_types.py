@@ -27,11 +27,11 @@ from dmf.analysis.artificial_types import (
     c3,
     None_Type,
     Singleton,
-    ArtificialMethod,
     Immutable,
 )
 from dmf.analysis.implicit_names import PACKAGE_FLAG, NAME_FLAG
 from dmf.analysis.namespace import Namespace
+from dmf.analysis.special_types import MRO_Any
 from dmf.analysis.typeshed_types import (
     TypeshedModule,
     TypeshedFunction,
@@ -76,6 +76,12 @@ Str_Instance = TypeshedInstance("str", "builtins", "builtins-str", Str_Type)
 Bytes_Types: Value = builtin_module_dict.read_value("bytes")
 Bytes_Type = extract_1value(Bytes_Types)
 Bytes_Instance = TypeshedInstance("bytes", "builtins", "builtins-bytes", Bytes_Type)
+
+ByteArray_Types: Value = builtin_module_dict.read_value("bytearray")
+ByteArray_Type = extract_1value(ByteArray_Types)
+ByteArray_Instance = TypeshedInstance(
+    "bytearray", "builtins", "builtins-bytearray", ByteArray_Type
+)
 
 Bool_Types: Value = builtin_module_dict.read_value("bool")
 Bool_Type = extract_1value(Bool_Types)
@@ -131,6 +137,44 @@ def _setup_Object_Type():
 
 
 _setup_Object_Type()
+
+
+class SuperArtificialClass(ArtificialClass):
+    def __call__(self, tp_address, tp_class, *args):
+        # super(type1, type2)
+        assert len(args) == 2, args
+        type1_value, type2_value = args
+        assert len(type1_value) == 1, type1_value
+        assert len(type2_value) == 1, type2_value
+        type1 = extract_1value(type1_value)
+        type2 = extract_1value(type2_value)
+        assert isinstance(type2, AnalysisInstance)
+
+        type_type2 = type2.tp_class
+        type_type2_mros = type_type2.tp_mro
+        super_mros = []
+        for type_type2_mro in type_type2_mros:
+            found_in_curr_mro = False
+            # each is a list [xxx, yyy, zzz]
+            for idx, curr_type in enumerate(type_type2_mro):
+                if type_type2.tp_uuid == type1.tp_uuid:
+                    one_mro = type_type2_mro[idx + 1 :]
+                    super_mros.append(one_mro)
+                    found_in_curr_mro = True
+                    break
+            if not found_in_curr_mro:
+                super_mros.append([MRO_Any])
+
+        tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        setattr(tp_dict, "super_self", type2)
+        setattr(tp_dict, "super_mros", super_mros)
+        return AnalysisInstance(tp_address, tp_class, tp_dict)
+
+
+Super_Type = SuperArtificialClass("builtins.super")
+Typeshed_Super_Type: Value = builtin_module_dict.read_value("super")
+Super_Type.tp_fallback = Typeshed_Super_Type
+builtin_module_dict.write_local_value("super", type_2_value(Super_Type))
 
 # mimic builtins.property
 class PropertyArtificialClass(ArtificialClass):

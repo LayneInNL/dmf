@@ -182,19 +182,17 @@ def compute_function_defaults(state: State, node: ast.FunctionDef):
     return defaults, kwdefaults
 
 
-def compute_bases(state: State, node: ast.ClassDef):
+def compute_bases(state: State, node: ast.ClassDef) -> List[List]:
     # should I use state at call label or state at return label?
+    base_types: List[List] = []
     if node.bases:
-        base_types = []
         for base in node.bases:
             cls_types = state.compute_value_of_expr(base)
-            assert len(cls_types) == 1
-            for cls in cls_types:
-                base_types.append(cls)
-        return base_types
+            cls_type_list = cls_types.value_2_list()
+            base_types.append(cls_type_list)
     else:
-        default_base = [Object_Type]
-        return [default_base]
+        base_types.append([Object_Type])
+    return base_types
 
 
 def parse_positional_args(start_pos: int, arguments: ast.arguments, state: State):

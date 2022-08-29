@@ -31,6 +31,8 @@ from dmf.analysis.analysis_types import (
     ClassmethodArtificialClass,
     AnalysisClassmethodMethod,
     StaticmethodArtificialClass,
+    Super_Type,
+    SuperArtificialClass,
 )
 from dmf.analysis.artificial_types import (
     ArtificialClass,
@@ -46,20 +48,9 @@ def _py_type(obj):
     return obj.tp_class
 
 
-def _pytype_lookup(obj_type, name) -> Value:
-    res = _find_name_in_mro(obj_type, name)
+def _pytype_lookup(obj_type, name, mros=None) -> Value:
+    res = _find_name_in_mro(obj_type, name, mros)
     return res
-
-
-def _pytype_lookup_by_obj(obj, name) -> Value:
-    obj_type = _py_type(obj)
-
-    value = Value()
-    for obj_type in obj_type:
-        _value = _pytype_lookup(obj_type, name)
-        value.inject(_value)
-
-    return value
 
 
 def _pytype_lookup_set(type, name, value):
@@ -77,9 +68,12 @@ def _pytype_lookup_set(type, name, value):
         return res
 
 
-def _find_name_in_mro(obj_type, name) -> Value:
+def _find_name_in_mro(obj_type, name, mros=None) -> Value:
     all_mro_value = Value()
-    tp_mros = obj_type.tp_mro
+    if mros is not None:
+        tp_mros = mros
+    else:
+        tp_mros = obj_type.tp_mro
     for tp_mro in tp_mros:
         for cls in tp_mro:
             if cls is MRO_Any:
@@ -207,9 +201,16 @@ def GenericGetAttr(obj, name):
 
     # get types of obj
     obj_type = _py_type(obj)
+    mros = None
+    if isinstance(obj_type, SuperArtificialClass):
+        # super is so complicated
+        tp_dict = sys.heap.read_instance_dict(obj.tp_address)
+        obj = getattr(tp_dict, "super_self")
+        obj_type = _py_type(obj)
+        mros = getattr(tp_dict, "super_mros")
 
     # try finding descriptors
-    descrs = _pytype_lookup(obj_type, name)
+    descrs = _pytype_lookup(obj_type, name, mros)
     if descrs.is_Any():
         return Value.make_any(), Value.make_any()
 

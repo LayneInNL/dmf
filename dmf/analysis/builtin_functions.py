@@ -11,17 +11,19 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-import sys
 
 from dmf.analysis.analysis_types import (
     AnalysisFunction,
     AnalysisMethod,
+    Bool_Instance,
+    Str_Instance,
+    ByteArray_Instance,
+    Bytes_Instance,
     AnalysisInstance,
 )
 from dmf.analysis.artificial_types import (
     ArtificialFunction,
     ArtificialMethod,
-    ArtificialClass,
 )
 from dmf.analysis.gets_sets import getattrs
 from dmf.analysis.namespace import Namespace
@@ -40,8 +42,63 @@ builtin_module = extract_1value(builtin_modules)
 builtin_module_dict: Namespace = builtin_module.tp_dict
 
 
-def _setup_builtin_types():
+def _setup_all():
+    def all(iterable):
+        return type_2_value(Bool_Instance)
 
+
+def _setup_any():
+    def any(iterable):
+        return type_2_value(Bool_Instance)
+
+
+def _setup_ascii(object):
+    def ascii(iterable):
+        return type_2_value(Str_Instance)
+
+
+def _setup_bin():
+    def bin(x):
+        return type_2_value(Str_Instance)
+
+
+def _setup_bool():
+    def bool(x=None):
+        return type_2_value(Bool_Instance)
+
+
+def _setup_bytearray():
+    def bytearray(source=None, encoding=None, errors=None):
+        return type_2_value(ByteArray_Instance)
+
+
+def _setup_bytes():
+    def bytes(source=None, encoding=None, errors=None):
+        return type_2_value(Bytes_Instance)
+
+
+def _setup_callable():
+    def callable(object):
+        return type_2_value(Bool_Instance)
+
+
+def _setup_chr():
+    def chr(i):
+        return type_2_value(Str_Instance)
+
+
+# classmethod is in another file
+
+
+def _setup_compile():
+    def compile(source, filename, mode, flags=0, dont_inherit=False, optimize=-1):
+        return Value.make_any()
+
+
+# complex no occurrence
+
+
+def _setup_builtin_types():
     # mimic builtins.iter
     def iter(objs, sentinel=None):
         if objs.is_Any():

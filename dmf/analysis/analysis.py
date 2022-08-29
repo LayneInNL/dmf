@@ -23,7 +23,6 @@ from dmf.analysis.analysis_types import (
     ArtificialFunction,
     AnalysisFunction,
     AnalysisClass,
-    ArtificialMethod,
     AnalysisMethod,
     None_Instance,
     AnalysisPropertyGetFunction,
@@ -37,6 +36,7 @@ from dmf.analysis.analysis_types import (
     ArtificialClass,
 )
 from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
+from dmf.analysis.artificial_types import ArtificialMethod
 from dmf.analysis.builtin_functions import import_a_module
 from dmf.analysis.gets_sets import getattrs, _getattr, setattrs, _setattr
 from dmf.analysis.implicit_names import (

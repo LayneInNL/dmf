@@ -14,11 +14,11 @@
 from types import FunctionType
 from typing import List
 
-from dmf.analysis.exceptions import MROAnyError
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.special_types import Bases_Any, MRO_Any
 from dmf.analysis.typeshed_types import TypeshedClass
 from dmf.analysis.value import type_2_value
+from dmf.log.logger import logger
 
 
 class Singleton:
@@ -99,14 +99,9 @@ Type_Type.tp_bases = [[Object_Type]]
 # if MROAnyError, it means mro can not be fully constructed.
 # we only know current class and the rest of mro is Any
 def c3(cls_obj):
-    try:
-        mros = static_c3(cls_obj)
-    except MROAnyError:
-        # return cls_obj, MRO_Any
-        return mros
-    else:
-        # return mros[0], mros[1:]
-        return mros
+    mros = static_c3(cls_obj)
+    logger.critical(mros)
+    return mros
 
 
 def static_c3(cls_obj) -> List[List]:
@@ -114,7 +109,6 @@ def static_c3(cls_obj) -> List[List]:
         return [[cls_obj]]
     elif cls_obj is Bases_Any:
         return [[MRO_Any]]
-        # raise MROAnyError
     else:
         mros = []
         # cls_obj is like [[1,2,3]]
@@ -146,8 +140,8 @@ def static_merge(mro_list) -> List:
         raise TypeError("No legal mro")
 
 
-# Type_Type.tp_bases = [[Bases_Any], [Object_Type]]
-Type_Type.tp_bases = [[Bases_Any]]
+Type_Type.tp_bases = [[Object_Type]]
+# Type_Type.tp_bases = [[Bases_Any]]
 Type_Type.tp_mro = c3(Type_Type)
 Object_Type.tp_mro = c3(Object_Type)
 

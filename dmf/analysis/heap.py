@@ -77,7 +77,7 @@ class Heap:
         return tp_dict.read_value(field)
 
     def read_instance_dict(self, heap_address: str):
-        return self.singletons[heap_address.tp_uuid]
+        return self.singletons[heap_address]
 
     def write_instance_dict(self, heap_address: str):
         self.singletons[heap_address] = Namespace()
