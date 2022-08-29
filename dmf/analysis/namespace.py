@@ -76,7 +76,8 @@ class Namespace(dict):
             if name == var.name:
                 return val
 
-    def write_local_value(self, name: str, value):
+    def write_local_value(self, name: str, value: Value):
+        assert isinstance(value, Value), value
         self[LocalVar(name)] = value
 
     def write_nonlocal_value(self, name: str, ns: Namespace):

@@ -28,6 +28,7 @@ from dmf.analysis.artificial_types import (
     None_Type,
     Singleton,
     ArtificialMethod,
+    Immutable,
 )
 from dmf.analysis.implicit_names import PACKAGE_FLAG, NAME_FLAG
 from dmf.analysis.namespace import Namespace
@@ -96,7 +97,7 @@ Ellipsis_Instance = TypeshedInstance(
 )
 
 # minic object.__new__
-class Constructor(Singleton):
+class Constructor(Singleton, Immutable):
     def __init__(self):
         self.tp_uuid = id(self)
         self.tp_class = Function_Type
@@ -131,13 +132,68 @@ def _setup_Object_Type():
 
 _setup_Object_Type()
 
+# mimic builtins.property
+class PropertyArtificialClass(ArtificialClass):
+    def __call__(self, tp_address, tp_class, *args):
+        assert len(args) == 4, args
+        fget, fset, fdel, doc = args
+
+        tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        tp_dict.write_local_value("fget", fget)
+        tp_dict.write_local_value("fset", fset)
+        tp_dict.write_local_value("fdel", fdel)
+        tp_dict.write_local_value("doc", doc)
+        return AnalysisInstance(
+            tp_address=tp_address, tp_class=tp_class, tp_dict=tp_dict
+        )
+
+
+Property_Type = PropertyArtificialClass("builtins.property")
+Typeshed_Property_Type: Value = builtin_module_dict.read_value("property")
+Property_Type.tp_fallback = Typeshed_Property_Type
+builtin_module_dict.write_local_value("property", type_2_value(Property_Type))
+
+# mimic builtins.classmethod
+class ClassmethodArtificialClass(ArtificialClass):
+    def __call__(self, tp_address, tp_class, *args):
+        assert len(args) == 1, args
+        function, *_ = args
+        tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        tp_dict.write_local_value("function", function)
+        return AnalysisInstance(
+            tp_address=tp_address, tp_class=tp_class, tp_dict=tp_dict
+        )
+
+
+Classmethod_Type = ClassmethodArtificialClass("builtins.classmethod")
+Typeshed_Classmethod_Type: Value = builtin_module_dict.read_value("classmethod")
+Classmethod_Type.tp_fallback = Typeshed_Classmethod_Type
+builtin_module_dict.write_local_value("classmethod", type_2_value(Classmethod_Type))
+
+# mimic builtins.staticmethod
+class StaticmethodArtificialClass(ArtificialClass):
+    def __call__(self, tp_address, tp_class, *args):
+        assert len(args) == 1, args
+        function, *_ = args
+        tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        tp_dict.write_local_value("function", function)
+        return AnalysisInstance(
+            tp_address=tp_address, tp_class=tp_class, tp_dict=tp_dict
+        )
+
+
+Staticmethod_Type = StaticmethodArtificialClass("builtins.staticmethod")
+Typeshed_Staticmethod_Type: Value = builtin_module_dict.read_value("staticmethod")
+Staticmethod_Type.tp_fallback = Typeshed_Staticmethod_Type
+builtin_module_dict.write_local_value("staticmethod", type_2_value(Staticmethod_Type))
+
 
 class ListArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, tp_heap, *arguments):
+    def __call__(self, tp_address, tp_class, *arguments):
         # tp_dict = tp_heap.write_instance_to_heap(tp_address)
         tp_dict = sys.heap.write_instance_to_heap(tp_address)
         tp_dict.write_local_value("internal", Value())
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+        return str(tp_address, tp_class, tp_dict)
 
 
 List_Type = ListArtificialClass("builtins.list")
@@ -197,7 +253,7 @@ class TupleArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, tp_heap, *arguments):
         tp_dict = tp_heap.write_instance_to_heap(tp_address)
         tp_dict.write_local_value("internal", Value())
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+        return str(tp_address, tp_class, tp_dict)
 
 
 Tuple_Type = TupleArtificialClass("builtins.tuple")
@@ -207,7 +263,7 @@ class SetArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, tp_heap, *arguments):
         tp_dict = tp_heap.write_instance_to_heap(tp_address)
         tp_dict.write_local_value("internal", Value())
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+        return str(tp_address, tp_class, tp_dict)
 
 
 Set_Type = SetArtificialClass("builtins.set")
@@ -217,7 +273,7 @@ class FrozensetArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, tp_heap, *arguments):
         tp_dict = tp_heap.write_instance_to_heap(tp_address)
         tp_dict.write_local_value("internal", Value())
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+        return str(tp_address, tp_class, tp_dict)
 
 
 Frozenset_Type = FrozensetArtificialClass("builtins.frozenset")
@@ -227,7 +283,7 @@ class DictArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, tp_heap, *arguments):
         tp_dict = tp_heap.write_instance_to_heap(tp_address)
         tp_dict.write_local_value("internal", Value())
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+        return str(tp_address, tp_class, tp_dict)
 
 
 Dict_Type = DictArtificialClass("builtins.dict")
@@ -243,7 +299,7 @@ class ListIteratorArtificialClass(ArtificialClass):
         value = Value()
         value.inject(iterator)
         tp_dict.write_local_value("iterators", value)
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+        return str(tp_address, tp_class, tp_dict)
 
 
 List_Iterator_Type = ListIteratorArtificialClass("builtins.iterator")
@@ -304,9 +360,9 @@ class Iterator:
 
 
 class AnalysisClass:
-    def __init__(self, tp_uuid: str, tp_bases, tp_module, tp_dict, tp_code):
+    def __init__(self, tp_uuid, tp_bases, tp_module, tp_dict, tp_code):
         # tp_uuid is flow label
-        self.tp_uuid: str = tp_uuid
+        self.tp_uuid: str = str(tp_uuid)
 
         self.tp_class = Type_Type
         self.tp_bases = tp_bases
@@ -322,6 +378,9 @@ class AnalysisClass:
     def __iadd__(self, other: AnalysisClass):
         self.tp_dict += other.tp_dict
         return self
+
+    def __repr__(self):
+        return self.tp_uuid
 
 
 class AnalysisModule:
@@ -411,6 +470,55 @@ class AnalysisDescriptorGetFunction:
         self.tp_objtype = tp_objtype
         # __get__ function
         self.tp_function = tp_function
+
+
+class AnalysisClassmethodMethod:
+    def __init__(self, tp_function, tp_instance):
+        self.tp_uuid = f"{tp_function.tp_uuid}-{tp_instance.tp_uuid}-classmethod"
+        self.tp_function = tp_function
+        self.tp_instance = tp_instance
+        self.tp_module = tp_function.tp_module
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __repr__(self):
+        return self.tp_uuid
+
+
+class AnalysisStaticMethod:
+    def __init__(self, tp_function):
+        self.tp_uuid = f"{tp_function.tp_uuid}-staticmethod"
+        self.tp_function = tp_function
+        self.tp_module = tp_function.tp_module
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __repr__(self):
+        return self.tp_uuid
+
+
+class AnalysisPropertyGetFunction:
+    def __init__(self, tp_obj, tp_function):
+        self.tp_uuid = f"{tp_obj.tp_uuid}-property-getter"
+        self.tp_obj = tp_obj
+        self.tp_function = tp_function
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __repr__(self):
+        return self.tp_uuid
 
 
 class AnalysisDescriptorSetFunction:

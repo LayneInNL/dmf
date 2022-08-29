@@ -71,7 +71,6 @@ class State:
         return self
 
     def compute_value_of_expr(self, expr: ast.expr):
-        value = Value()
         if isinstance(expr, ast.Num):
             if isinstance(expr.n, int):
                 value = type_2_value(Int_Instance)
@@ -83,7 +82,8 @@ class State:
                 raise NotImplementedError(expr)
         elif isinstance(expr, ast.NameConstant):
             if expr.value is None:
-                value.inject_type(None_Instance)
+                value = type_2_value(None_Instance)
+                return value
             else:
                 value = type_2_value(Bool_Instance)
                 return value

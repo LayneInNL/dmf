@@ -18,26 +18,27 @@ from typing import Dict
 from dmf.analysis.analysis_types import (
     AnalysisInstance,
 )
-from dmf.analysis.namespace import Namespace
+from dmf.analysis.namespace import Namespace, Var
 from dmf.analysis.value import Value
 
 
 class Heap:
     def __init__(self):
-        self.singletons: Dict = {}
+        self.singletons: Dict[str, Namespace] = {}
 
     def __contains__(self, item):
         return item in self.singletons
 
     def __le__(self, other: Heap):
-        for ins in self.singletons:
-            if ins not in other.singletons:
+        for heap_address in self.singletons:
+            if heap_address not in other.singletons:
                 return False
             else:
-                self_dict = self.singletons[ins]
-                other_dict = other.singletons[ins]
+                self_dict: Namespace = self.singletons[heap_address]
+                other_dict: Namespace = other.singletons[heap_address]
                 for field in self_dict:
-                    if field not in other_dict:
+                    field: Var
+                    if field.name not in other_dict:
                         return False
                     elif not self_dict[field] <= other_dict[field]:
                         return False
@@ -65,23 +66,21 @@ class Heap:
             self.singletons[heap_uuid] = Namespace()
         return self.singletons[heap_uuid]
 
-    def write_field_to_instance(
-        self, instance: AnalysisInstance, field: str, value: Value
-    ):
-        assert instance.tp_uuid in self.singletons
-        tp_dict = self.singletons[instance.tp_uuid]
-        tp_dict.write_local_value(field, "local", value)
+    def write_field_to_address(self, heap_address: str, field: str, value: Value):
+        assert heap_address in self.singletons
+        tp_dict = self.singletons[heap_address]
+        tp_dict.write_local_value(field, value)
 
-    def read_field_from_instance(self, instance: AnalysisInstance, field: str):
-        assert instance.tp_uuid in self.singletons
-        tp_dict = self.singletons[instance.tp_uuid]
+    def read_field_from_address(self, heap_address: str, field: str):
+        assert heap_address in self.singletons
+        tp_dict = self.singletons[heap_address]
         return tp_dict.read_value(field)
 
-    def read_instance_dict(self, instance: AnalysisInstance):
-        return self.singletons[instance.tp_uuid]
+    def read_instance_dict(self, heap_address: str):
+        return self.singletons[heap_address.tp_uuid]
 
-    def write_instance_dict(self, instance: AnalysisInstance):
-        self.singletons[instance.tp_uuid] = Namespace()
+    def write_instance_dict(self, heap_address: str):
+        self.singletons[heap_address] = Namespace()
 
-    def delete_instance_from_heap(self, instance: AnalysisInstance):
-        del self.singletons[instance.tp_uuid]
+    def delete_instance_from_heap(self, heap_address: str):
+        del self.singletons[heap_address]

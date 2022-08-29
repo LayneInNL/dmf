@@ -11,11 +11,18 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import sys
+
 from dmf.analysis.analysis_types import (
     AnalysisFunction,
     AnalysisMethod,
+    AnalysisInstance,
 )
-from dmf.analysis.artificial_types import ArtificialFunction, ArtificialMethod
+from dmf.analysis.artificial_types import (
+    ArtificialFunction,
+    ArtificialMethod,
+    ArtificialClass,
+)
 from dmf.analysis.gets_sets import getattrs
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.typeshed_types import (
@@ -34,6 +41,7 @@ builtin_module_dict: Namespace = builtin_module.tp_dict
 
 
 def _setup_builtin_types():
+
     # mimic builtins.iter
     def iter(objs, sentinel=None):
         if objs.is_Any():

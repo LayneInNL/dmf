@@ -11,6 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import sys
 from typing import Tuple
 
 from dmf.analysis.analysis_types import (
@@ -24,6 +25,12 @@ from dmf.analysis.analysis_types import (
     AnalysisDescriptorSetFunction,
     AnalysisClass,
     refine_value,
+    Constructor,
+    PropertyArtificialClass,
+    AnalysisPropertyGetFunction,
+    ClassmethodArtificialClass,
+    AnalysisClassmethodMethod,
+    StaticmethodArtificialClass,
 )
 from dmf.analysis.artificial_types import (
     ArtificialClass,
@@ -208,19 +215,53 @@ def GenericGetAttr(obj, name):
 
     # traverse descrs
     for descr in descrs:
+        # if descr is a function, there is an implicit __set__
         if isinstance(descr, AnalysisFunction):
             one_descr = AnalysisMethod(tp_function=descr, tp_instance=obj)
             descr_value.inject(one_descr)
+        # if descr is a function, there is an implicit __set__
         elif isinstance(descr, ArtificialFunction):
             one_descr = ArtificialMethod(tp_function=descr, tp_instance=obj)
             descr_value.inject(one_descr)
         else:
-            # types of descriptor
-            descr_types = _py_type(descr)
-            if descr_types.is_Any():
-                return Value.make_any(), Value.make_any()
+            descr_type = _py_type(descr)
+            if isinstance(descr_type, PropertyArtificialClass):
+                fgets = sys.heap.read_field_from_address(descr.tp_address, "fget")
+                if fgets.is_Any():
+                    return Value.make_any(), Value.make_any()
+                for fget in fgets:
+                    if isinstance(fget, AnalysisFunction):
+                        one_descr = AnalysisPropertyGetFunction(obj, fget)
+                        descr_value.inject(one_descr)
+                    else:
+                        raise NotImplementedError(fget)
+            elif isinstance(descr_type, ClassmethodArtificialClass):
+                functions = sys.heap.read_field_from_address(
+                    descr.tp_address, "function"
+                )
+                if functions.is_Any():
+                    return Value.make_any(), Value.make_any()
+                for function in functions:
+                    if isinstance(function, AnalysisFunction):
+                        one_res = AnalysisClassmethodMethod(
+                            tp_function=function, tp_instance=obj_type
+                        )
+                        res_value.inject(one_res)
+                    else:
+                        raise NotImplementedError(function)
+            elif isinstance(descr_type, StaticmethodArtificialClass):
+                functions = sys.heap.read_field_from_address(
+                    descr.tp_address, "function"
+                )
+                if functions.is_Any():
+                    return Value.make_any(), Value.make_any()
+                for function in functions:
+                    if isinstance(function, AnalysisFunction):
+                        res_value.inject(function)
+                    else:
+                        raise NotImplementedError(function)
 
-            for descr_type in descr_types:
+            else:
                 descr_tp_gets = _pytype_lookup(descr_type, "__get__")
                 if descr_tp_gets.is_Any():
                     return Value.make_any(), Value.make_any()
@@ -237,7 +278,7 @@ def GenericGetAttr(obj, name):
                         )
                         descr_value.inject(one_descr)
                     else:
-                        raise NotImplementedError
+                        raise NotImplementedError(f"{obj},{name}")
 
     tp_dict = obj.tp_dict
     if name in obj.tp_dict:
@@ -263,6 +304,8 @@ def type_getattro(type, name) -> Tuple[Value, Value]:
         elif isinstance(descr, TypeshedFunction):
             typeshed_value = refine_type(descr)
             res_value.inject(typeshed_value)
+        elif isinstance(descr, Constructor):
+            res_value.inject(descr)
         else:
             descriptor_type = _py_type(descr)
 
@@ -280,7 +323,7 @@ def type_getattro(type, name) -> Tuple[Value, Value]:
                     )
                     descr_value.inject(one_descr)
                 else:
-                    raise NotImplementedError
+                    raise NotImplementedError(f"{type},{name}")
 
     if name in type.tp_dict:
         one_res = type.tp_dict.read_value(name)
