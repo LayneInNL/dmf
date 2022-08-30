@@ -609,11 +609,15 @@ class CFGVisitor(ast.NodeVisitor):
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
             for target in node.targets:
-                expr_sequence = self.visit(target)
-                self.populate_body(expr_sequence[:-1])
-                lhs_target = expr_sequence[-1]
-                tmp_assign = ast.Assign(targets=[lhs_target], value=node.value)
-                if isinstance(lhs_target, ast.Attribute):
+                if isinstance(target, ast.Name):
+                    tmp_assign = ast.Assign(targets=[target], value=node.value)
+                    add_stmt(self.curr_block, tmp_assign)
+                    self.curr_block = self.add_edge(
+                        self.curr_block.bid, self.new_block().bid
+                    )
+                elif isinstance(target, ast.Attribute):
+                    assert isinstance(target.value, ast.Name)
+                    tmp_assign = ast.Assign(targets=[target], value=node.value)
                     call_node = self.curr_block
                     add_stmt(call_node, tmp_assign)
 
@@ -630,13 +634,35 @@ class CFGVisitor(ast.NodeVisitor):
                         (call_node.bid, return_node.bid, dummy_return_node.bid)
                     )
                     self.curr_block = dummy_return_node
-                elif isinstance(lhs_target, (ast.Subscript, ast.Name)):
+                    self.curr_block = self.add_edge(
+                        self.curr_block.bid, self.new_block().bid
+                    )
+
+                elif isinstance(target, ast.Subscript):
+                    assert isinstance(target.value, ast.Name)
+                    decomposed_slice_expr, target.slice = self.decompose_expr(
+                        target.slice
+                    )
+                    self.populate_body(decomposed_slice_expr)
+                    tmp_assign = ast.Assign(targets=[target], value=node.value)
                     add_stmt(self.curr_block, tmp_assign)
-                elif isinstance(lhs_target, (ast.List, ast.Tuple)):
-                    raise NotImplementedError(lhs_target)
-                self.curr_block = self.add_edge(
-                    self.curr_block.bid, self.new_block().bid
-                )
+                    self.curr_block = self.add_edge(
+                        self.curr_block.bid, self.new_block().bid
+                    )
+                elif isinstance(target, (ast.List, ast.Tuple)):
+                    # we should not decompose elts in containers
+                    expr_sequence = []
+                    for idx, elt in enumerate(target.elts):
+                        *decompose_expr, target.elts[idx] = self.visit(elt)
+                        expr_sequence.extend(decompose_expr)
+                    self.populate_body(expr_sequence)
+                    tmp_assign = ast.Assign(targets=[target], value=node.value)
+                    add_stmt(self.curr_block, tmp_assign)
+                    self.curr_block = self.add_edge(
+                        self.curr_block.bid, self.new_block().bid
+                    )
+                elif isinstance(target, ast.Starred):
+                    raise NotImplementedError
             return
 
         new_assign = ast.Assign(targets=node.targets, value=new_expr_sequence[-1])
@@ -1392,24 +1418,44 @@ class CFGVisitor(ast.NodeVisitor):
         seq, node.value = self.decompose_expr(node.value)
         return seq + [node]
 
-    def visit_Subscript(self, node) -> Any:
-        expr_sequence = self.visit(node.value)
-        node.value = expr_sequence[-1]
-
-        return expr_sequence[:-1] + [node]
+    def visit_Subscript(self, node: ast.Subscript) -> Any:
+        seq = []
+        seq1, node.value = self.decompose_expr(node.value)
+        seq.extend(seq1)
+        seq2, node.slice = self.decompose_expr(node.slice)
+        seq.extend(seq2)
+        return seq + [node]
 
     def visit_Starred(self, node) -> Any:
-        return self.visit_Attribute(node)
+        seq, node.value = self.decompose_expr(node.value)
+        return seq + [node]
 
     def visit_Name(self, node: ast.Name) -> Any:
         return [node]
 
-    def visit_List(self, node) -> Any:
+    def visit_List(self, node: ast.List) -> Any:
         seq = []
         for idx, elt in enumerate(node.elts):
             seq1, node.elts[idx] = self.decompose_expr(elt)
             seq.extend(seq1)
         return seq + [node]
 
-    def visit_Tuple(self, node) -> Any:
+    def visit_Tuple(self, node: ast.Tuple) -> Any:
         return self.visit_List(node)
+
+    def visit_Slice(self, node: ast.Slice) -> Any:
+        seq = []
+        seq1, node.lower = self.decompose_expr(node.lower)
+        seq.extend(seq1)
+        seq2, node.upper = self.decompose_expr(node.upper)
+        seq.extend(seq2)
+        seq3, node.step = self.decompose_expr(node.step)
+        seq.extend(seq3)
+        return seq + [node]
+
+    def visit_ExtSlice(self, node: ast.ExtSlice) -> Any:
+        raise NotImplementedError(node)
+
+    def visit_Index(self, node: ast.Index) -> Any:
+        seq, node.value = self.decompose_expr(node.value)
+        return seq + [node]

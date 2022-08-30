@@ -17,7 +17,7 @@ from typing import List
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.special_types import Bases_Any, MRO_Any
 from dmf.analysis.typeshed_types import TypeshedClass
-from dmf.analysis.value import type_2_value
+from dmf.analysis.value import type_2_value, Value
 from dmf.log.logger import logger
 
 
@@ -84,8 +84,28 @@ class ArtificialClass(Singleton, Immutable):
         return self.tp_qualname
 
 
+class TypeArtificialClass(ArtificialClass):
+    def __call__(self, tp_address: int, tp_class, *args):
+        if len(args) == 1:
+            # type(obj)
+            objs: Value = args[0]
+            if objs.is_Any():
+                return Value.make_any()
+
+            value = Value()
+            for obj in objs:
+                value.inject(obj.tp_class)
+            return value
+        elif len(args) == 3:
+            # type(name, bases, dict)
+            # set type to Any
+            return Value.make_any()
+        else:
+            raise NotImplementedError
+
+
 # create a type
-Type_Type = ArtificialClass("builtins.type")
+Type_Type = TypeArtificialClass("builtins.type")
 Type_Type_Value = type_2_value(Type_Type)
 Type_Type.tp_class = Type_Type
 

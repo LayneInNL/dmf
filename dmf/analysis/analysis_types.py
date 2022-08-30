@@ -139,6 +139,11 @@ def _setup_Object_Type():
 _setup_Object_Type()
 
 
+Typeshed_Type_Type: Value = builtin_module_dict.read_value("type")
+Type_Type.tp_fallback = Typeshed_Type_Type
+builtin_module_dict.write_local_value("type", type_2_value(Type_Type))
+
+
 class SuperArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args):
         # super(type1, type2)
