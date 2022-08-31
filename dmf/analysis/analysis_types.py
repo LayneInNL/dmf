@@ -239,6 +239,49 @@ Staticmethod_Type.tp_fallback = Typeshed_Staticmethod_Type
 builtin_module_dict.write_local_value("staticmethod", type_2_value(Staticmethod_Type))
 
 
+class GeneratorArtificialClass(ArtificialClass):
+    def __call__(self, tp_address, tp_class, *arguments):
+        # arguments contain all yielded types
+        assert len(arguments) == 1
+        init_container_value, *_ = arguments
+
+        logger.critical(arguments)
+        tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        return GeneratorAnalysisInstance(
+            tp_address, tp_class, tp_dict, init_container_value
+        )
+
+
+Generator_Type = GeneratorArtificialClass("types.GeneratorType")
+Typeshed_Generator_Type: Value = types_module_dict.read_value("GeneratorType")
+Generator_Type.tp_fallback = Typeshed_Generator_Type
+types_module_dict.write_local_value("GeneratorType", type_2_value(Generator_Type))
+
+
+def _setup_Generator_Type():
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        value = Value()
+        for type in self:
+            one_value = type.tp_dict.read_value(type.tp_container)
+            value.inject(one_value)
+        return value
+
+    methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
+    for method in methods:
+        arti_method = ArtificialFunction(
+            tp_function=method, tp_qualname=f"types.GeneratorType.{method.__name__}"
+        )
+        Generator_Type.tp_dict.write_local_value(
+            method.__name__, type_2_value(arti_method)
+        )
+
+
+_setup_Generator_Type()
+
+
 class ListArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *arguments):
         if len(arguments) == 0:
@@ -719,6 +762,7 @@ class AnalysisFunction:
         tp_module: str,
         tp_defaults,
         tp_kwdefaults,
+        tp_generator: bool = False,
     ):
         # tp_uuid is flow label
         self.tp_uuid: int = tp_uuid
@@ -728,6 +772,7 @@ class AnalysisFunction:
         self.tp_dict: Namespace = Namespace()
         self.tp_defaults = tp_defaults
         self.tp_kwdefaults = tp_kwdefaults
+        self.tp_generator: bool = tp_generator
 
     def __le__(self, other: AnalysisFunction):
         return self.tp_dict <= other.tp_dict
@@ -850,6 +895,13 @@ class IteratorAnalysisInstance(AnalysisInstance):
         self.tp_container = "iterators"
         iterator = Iterator(tp_address, init_value)
         tp_dict.write_local_value(self.tp_container, type_2_value(iterator))
+
+
+class GeneratorAnalysisInstance(AnalysisInstance):
+    def __init__(self, tp_address, tp_class, tp_dict, init_value):
+        super().__init__(tp_address, tp_class, tp_dict)
+        self.tp_container = "internal"
+        tp_dict.write_local_value(self.tp_container, init_value)
 
 
 class ListAnalysisInstance(AnalysisInstance):

@@ -38,8 +38,8 @@ while ii:
     y = next(ii)
     test_x.append(y)
 
-xxxxxxxxxxxxx = test_x
-xxxxxxxxxxxxx.extend(x)
+# xxxxxxxxxxxxx = test_x
+# xxxxxxxxxxxxx.extend(x)
 # x.append(1)
 # x.append(1)
 # x.append(False)

@@ -15,3 +15,12 @@
 
 def test():
     yield 1
+    yield "str"
+
+
+res = test()
+a = list()
+ii = iter(res)
+while ii:
+    n1 = next(res)
+    a.append(n1)

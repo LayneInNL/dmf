@@ -30,6 +30,7 @@ from dmf.analysis.analysis_types import (
     AnalysisInstance,
     refine_type,
     TypeExprVisitor,
+    Generator_Type,
 )
 from dmf.analysis.analysis_types import (
     Constructor,
@@ -47,6 +48,8 @@ from dmf.analysis.implicit_names import (
     RETURN_FLAG,
     PACKAGE_FLAG,
     NAME_FLAG,
+    GENERATOR,
+    GENERATOR_ADDRESS,
 )
 from dmf.analysis.special_types import Any
 from dmf.analysis.state import (
@@ -77,7 +80,14 @@ Unused_Name = "UNUSED_NAME"
 
 AdditionalEntryInfo = namedtuple(
     "AdditionalEntryInfo",
-    ["instance_info", "init_info", "module_info", "defaults_info", "kwdefaults_info"],
+    [
+        "instance_info",
+        "init_info",
+        "module_info",
+        "defaults_info",
+        "kwdefaults_info",
+        "generator_info",
+    ],
 )
 
 # points-to analysis
@@ -271,6 +281,14 @@ class Analysis(AnalysisBase):
         elif isinstance(expr, ast.Name):
             one_value = new_state.compute_value_of_expr(expr)
             dummy_value.inject(one_value)
+        elif isinstance(expr, ast.Yield):
+            one_value = new_state.compute_value_of_expr(expr.value)
+            # used by generators
+            return_value = new_state.stack.read_var(RETURN_FLAG)
+            return_value.inject(one_value)
+            new_state.stack.write_var(RETURN_FLAG, "local", return_value)
+
+            dummy_value.inject(one_value)
         elif isinstance(expr, ast.BinOp):
             operator_name = self._numeric_methods[type(expr.op)]
             reversed_operator_name = self._numeric_methods[type(expr.op)]
@@ -288,7 +306,7 @@ class Analysis(AnalysisBase):
                     raise NotImplementedError(one_operator_direct_res)
             rhs = expr.right
         else:
-            raise NotImplementedError
+            raise NotImplementedError(expr)
 
         dummy_ret_expr = self.get_stmt_by_label(dummy_ret_lab)
         # dummy_ret_expr must be an ast.Name
@@ -381,11 +399,7 @@ class Analysis(AnalysisBase):
                 self.entry_program_point_info[
                     (entry_lab, new_ctx)
                 ] = AdditionalEntryInfo(
-                    instance,
-                    INIT_FLAG,
-                    val.tp_module,
-                    None,
-                    None,
+                    instance, INIT_FLAG, val.tp_module, None, None, False
                 )
 
                 inter_flow = (
@@ -450,6 +464,7 @@ class Analysis(AnalysisBase):
                         descr_get.tp_function.tp_module,
                         descr_get.tp_function.tp_defaults,
                         descr_get.tp_function.tp_kwdefaults,
+                        False,
                     )
 
                     inter_flow = (
@@ -466,7 +481,7 @@ class Analysis(AnalysisBase):
                     self.entry_program_point_info[
                         (entry_lab, new_ctx)
                     ] = AdditionalEntryInfo(
-                        None, None, descr_get.tp_function.tp_module, None, None
+                        None, None, descr_get.tp_function.tp_module, None, None, False
                     )
 
                     inter_flow = (
@@ -489,6 +504,7 @@ class Analysis(AnalysisBase):
                         descr_get.tp_function.tp_module,
                         None,
                         None,
+                        False,
                     )
 
                     inter_flow = (
@@ -502,31 +518,6 @@ class Analysis(AnalysisBase):
                     dummy_value.inject(descr_get)
                     # continue
                     # raise NotImplementedError(descr_get)
-
-                # if isinstance(descr_get, AnalysisMethod):
-                #     entry_lab, exit_lab = descr_get.tp_function.tp_code
-                #     instance = descr_get.tp_instance
-                #     new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
-                #
-                #     self.entry_program_point_info[
-                #         (entry_lab, new_ctx)
-                #     ] = AdditionalEntryInfo(
-                #         instance,
-                #         None,
-                #         descr_get.tp_module,
-                #         None,
-                #         None,
-                #     )
-                #
-                #     inter_flow = (
-                #         (call_lab, call_ctx),
-                #         (entry_lab, new_ctx),
-                #         (exit_lab, new_ctx),
-                #         (ret_lab, call_ctx),
-                #     )
-                #     self.inter_flows.add(inter_flow)
-                # elif isinstance(descr_get, ArtificialMethod):
-                #     dummy_value.inject(descr_get)
 
         dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
@@ -562,11 +553,7 @@ class Analysis(AnalysisBase):
                 self.entry_program_point_info[
                     (entry_lab, new_ctx)
                 ] = AdditionalEntryInfo(
-                    instance,
-                    None,
-                    descr_set.tp_module,
-                    None,
-                    None,
+                    instance, None, descr_set.tp_module, None, None, False
                 )
 
                 inter_flow = (
@@ -610,11 +597,7 @@ class Analysis(AnalysisBase):
             )
         )
         self.entry_program_point_info[(entry_lab, call_ctx)] = AdditionalEntryInfo(
-            None,
-            None,
-            None,
-            None,
-            None,
+            None, None, None, None, None, False
         )
 
     def _detect_flow_call_class(
@@ -743,11 +726,7 @@ class Analysis(AnalysisBase):
                 self.entry_program_point_info[
                     (entry_lab, new_ctx)
                 ] = AdditionalEntryInfo(
-                    type_2_value(type),
-                    None,
-                    type.tp_module,
-                    None,
-                    None,
+                    type_2_value(type), None, type.tp_module, None, None, False
                 )
 
     # detect flows of functions which have labels
@@ -763,6 +742,9 @@ class Analysis(AnalysisBase):
         entry_lab, exit_lab = type.tp_code
         ret_lab, _ = self.get_func_return_label(call_lab)
 
+        # used by generator
+        tp_address = record(call_lab, call_ctx)
+
         new_ctx: Tuple = merge(call_lab, None, call_ctx)
         inter_flow = (
             (call_lab, call_ctx),
@@ -777,6 +759,7 @@ class Analysis(AnalysisBase):
             type.tp_module,
             type.tp_defaults,
             type.tp_kwdefaults,
+            (type.tp_generator, tp_address) if type.tp_generator else type.tp_generator,
         )
 
     # detect flow of analysis methods which have labels
@@ -801,6 +784,7 @@ class Analysis(AnalysisBase):
             type.tp_module,
             function.tp_defaults,
             function.tp_kwdefaults,
+            False,
         )
 
         inter_flow = (
@@ -833,6 +817,7 @@ class Analysis(AnalysisBase):
             type.tp_module,
             function.tp_defaults,
             function.tp_kwdefaults,
+            False,
         )
 
         inter_flow = (
@@ -1028,6 +1013,7 @@ class Analysis(AnalysisBase):
             module_info,
             defaults_info,
             kwdefaults_info,
+            generator_info,
         ) = self.entry_program_point_info[program_point]
         if instance_info:
             new_stack.write_var(str(0), Namespace_Local, instance_info)
@@ -1038,6 +1024,10 @@ class Analysis(AnalysisBase):
             )
         if module_info:
             new_stack.check_module_diff(module_info)
+
+        if generator_info:
+            setattr(new_stack.frames[-1].f_locals, GENERATOR, generator_info[0])
+            setattr(new_stack.frames[-1].f_locals, GENERATOR_ADDRESS, generator_info[1])
 
         if isinstance(stmt, ast.arguments):
             # Positional and keyword arguments
@@ -1100,16 +1090,20 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Name,
     ):
-        # new_stack, new_heap = new_state
         new_stack, new_heap = new_state.stack, new_state.heap
         return_value: Value = new_stack.read_var(RETURN_FLAG)
-        # if hasattr(new_stack.frames[-1].f_locals, INIT_FLAG):
-        #     return_value = new_stack.read_var("self")
-        new_stack.pop_frame()
 
-        # no need to assign
-        if stmt.id == Unused_Name:
-            return new_state
+        # check if it's a generator
+        if hasattr(new_stack.frames[-1].f_locals, GENERATOR):
+            generator_address = getattr(
+                new_stack.frames[-1].f_locals, GENERATOR_ADDRESS
+            )
+            tp_address = f"{generator_address}-generator"
+            generator_instance = Generator_Type(
+                tp_address, Generator_Type, return_value
+            )
+            return_value = type_2_value(generator_instance)
+        new_stack.pop_frame()
 
         # write value to name
         new_stack.write_var(stmt.id, Namespace_Local, return_value)
@@ -1212,14 +1206,6 @@ class Analysis(AnalysisBase):
     ):
         lab, _ = program_point
         func_cfg = self.checkout_cfg(lab)
-        # if is_generator is True, this is a generator function.
-        # The only way to keep soundness is set function to Any
-        # For instance, def func(): yield 1;    yield "str"
-        # gen = func(); res = next(gen); res2 = next(gen)
-        # how to keep two results in data flow analysis?
-        if func_cfg.is_generator:
-            new_state.stack.write_var(node.name, Namespace_Local, Value.make_any())
-            return new_state
 
         entry_lab, exit_lab = self.add_sub_cfg(lab)
 
@@ -1235,6 +1221,8 @@ class Analysis(AnalysisBase):
                 tp_code=(entry_lab, exit_lab),
                 tp_defaults=defaults,
                 tp_kwdefaults=kwdefaults,
+                # if is_generator is True, this is a generator function.
+                tp_generator=func_cfg.is_generator,
             )
         )
 
