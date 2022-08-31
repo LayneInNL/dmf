@@ -63,7 +63,10 @@ class State:
         self.fake_analysis_modules: Dict = fake_analysis_modules
 
     def __repr__(self):
-        return repr(self.stack)
+        return f"{self.stack}\n{self.heap}"
+
+    def __le__(self, other):
+        return self.stack <= other.stack and self.heap <= other.heap
 
     def __iadd__(self, other: State):
         self.stack += other.stack

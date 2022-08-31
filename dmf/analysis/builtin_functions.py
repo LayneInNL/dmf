@@ -256,13 +256,8 @@ def _setup_builtin_types():
     builtin_module_dict.write_local_value("iter", type_2_value(arti_iter))
 
     def next(objs, default=None):
-        if objs.is_Any():
-            return Value.make_any()
-
         value = Value()
         direct_res, descr_res = getattrs(objs, "__next__")
-        if direct_res.is_Any() or descr_res.is_Any():
-            return Value.make_any()
 
         for one_direct_res in direct_res:
             if isinstance(one_direct_res, ArtificialFunction):

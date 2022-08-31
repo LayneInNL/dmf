@@ -68,8 +68,9 @@ class Value:
         return self
 
     def __repr__(self):
-        print(self.types)
-        return self.types.__repr__()
+        # return self.types.__repr__()
+        formatted = list(self.types.values())
+        return repr(formatted)
 
     def __iter__(self):
         return iter(self.types.values())

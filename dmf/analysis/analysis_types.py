@@ -17,6 +17,7 @@ from __future__ import annotations
 import ast
 import builtins
 import sys
+from types import FunctionType
 from typing import Tuple
 
 from dmf.analysis.artificial_basic_types import (
@@ -246,9 +247,7 @@ class ListArtificialClass(ArtificialClass):
             init_container_value = Value().make_any()
         logger.critical(arguments)
         tp_dict = sys.heap.write_instance_to_heap(tp_address)
-        setattr(tp_dict, "container_type", "list")
-        tp_dict.write_local_value("internal", Value())
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+        return ListAnalysisInstance(tp_address, tp_class, tp_dict, init_container_value)
 
 
 List_Type = ListArtificialClass("builtins.list")
@@ -259,132 +258,369 @@ builtin_module_dict.write_local_value("list", type_2_value(List_Type))
 
 
 def _setup_List_Type():
-    def __init__(self, iterable=None):
-        pass
-
     def append(self, x):
         value = Value()
         value.inject(x)
 
-        prev_value = self.tp_dict.read_value("internal")
+        prev_value = self.tp_dict.read_value(self.tp_container)
         value.inject(prev_value)
-        self.tp_dict.write_local_value("internal", value)
+        self.tp_dict.write_local_value(self.tp_container, value)
         return type_2_value(None_Instance)
 
-    arti_append = ArtificialFunction(
-        tp_function=append, tp_qualname="builtins.list.append"
-    )
-    arti_append_value = type_2_value(arti_append)
-    List_Type.tp_dict.write_local_value(append.__name__, arti_append_value)
+    def extend(self, iterable):
+        self.tp_dict.write_local_value(self.tp_container, Value.make_any())
+        return type_2_value(None_Instance)
+
+    def insert(self, i, x):
+        value = Value()
+        value.inject(x)
+
+        prev_value = self.tp_value.read_value(self.tp_contaier)
+        value.inject(prev_value)
+
+        self.tp_dict.write_local_value(self.tp_contaier, value)
+        return type_2_value(None_Instance)
+
+    def remove(self, x):
+        return type_2_value(None_Instance)
+
+    def pop(self, i=None):
+        prev_value = self.tp_dict.read_value(self.tp_container)
+        return prev_value
+
+    def clear(self):
+        self.tp_dict.write_local_value(self.tp_container, Value())
+        return type_2_value(None_Instance)
+
+    def index(self, x, start=None, end=None):
+        return type_2_value(Int_Instance)
+
+    def count(self, x):
+        return type_2_value(Int_Instance)
+
+    def sort(self, *args, **kwargs):
+        return type_2_value(None_Instance)
+
+    def reverse(self):
+        return type_2_value(None_Instance)
+
+    def copy(self):
+        return type_2_value(self)
 
     def __iter__(self):
-        if self.is_Any():
-            return Value.make_any()
-        # find list type
         value = Value()
         for type in self:
-            if isinstance(type.tp_class, ListArtificialClass):
+            if isinstance(type, ListAnalysisInstance):
                 iterator_tp_address = f"{type.tp_address}-list-iterator"
-                list_value = type.tp_dict.read_value("internal")
-                one_type = List_Iterator_Type(
-                    iterator_tp_address, List_Iterator_Type, list_value
-                )
+                list_value = type.tp_dict.read_value(type.tp_container)
+                one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
                 value.inject(one_type)
             else:
                 raise NotImplementedError(type.tp_class)
         return value
 
-    arti_iter = ArtificialFunction(
-        tp_function=__iter__, tp_qualname="builtins.list.__iter__"
+    list_methods = filter(
+        lambda symbol: isinstance(symbol, FunctionType), locals().values()
     )
-    arti_iter_value = type_2_value(arti_iter)
-    List_Type.tp_dict.write_local_value(__iter__.__name__, arti_iter_value)
+    for method in list_methods:
+        arti_method = ArtificialFunction(
+            tp_function=method, tp_qualname=f"builtins.list.{method.__name__}"
+        )
+        List_Type.tp_dict.write_local_value(method.__name__, type_2_value(arti_method))
 
 
 _setup_List_Type()
 
 
 class TupleArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, tp_heap, *arguments):
-        tp_dict = tp_heap.write_instance_to_heap(tp_address)
-        tp_dict.write_local_value("internal", Value())
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+    def __call__(self, tp_address, tp_class, *arguments):
+        if len(arguments) == 0:
+            init_container_value = Value()
+        else:
+            init_container_value = Value().make_any()
+        logger.critical(arguments)
+        tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        return TupleAnalysisInstance(
+            tp_address, tp_class, tp_dict, init_container_value
+        )
 
 
 Tuple_Type = TupleArtificialClass("builtins.tuple")
 
 
+def _setup_Tuple_Type():
+    def index(self, x, start=None, end=None):
+        return type_2_value(Int_Instance)
+
+    def count(self, x):
+        return type_2_value(Int_Instance)
+
+    list_methods = filter(
+        lambda symbol: isinstance(symbol, FunctionType), locals().values()
+    )
+    for method in list_methods:
+        arti_method = ArtificialFunction(
+            tp_function=method, tp_qualname=f"builtins.tuple.{method.__name__}"
+        )
+        Tuple_Type.tp_dict.write_local_value(method.__name__, type_2_value(arti_method))
+
+
+_setup_Tuple_Type()
+
+
 class SetArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, tp_heap, *arguments):
-        tp_dict = tp_heap.write_instance_to_heap(tp_address)
-        tp_dict.write_local_value("internal", Value())
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+    def __call__(self, tp_address, tp_class, *arguments):
+        if len(arguments) == 0:
+            init_container_value = Value()
+        else:
+            init_container_value = Value().make_any()
+        logger.critical(arguments)
+        tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        return SetAnalysisInstance(tp_address, tp_class, tp_dict, init_container_value)
 
 
 Set_Type = SetArtificialClass("builtins.set")
 
 
+def _setup_Set_Type():
+    def add(self, x):
+        value = Value()
+        value.inject(x)
+        prev_value = self.tp_dict.read_value(self.tp_container)
+        value.inject(prev_value)
+        self.tp_dict.write_local_value(self.tp_container, value)
+        return type_2_value(None_Instance)
+
+    def clear(self):
+        self.tp_dict.write_local_value(self.tp_container, Value())
+        return type_2_value(None_Instance)
+
+    def copy(self):
+        return type_2_value(self)
+
+    def discard(self):
+        return type_2_value(None_Instance)
+
+    def difference(self, *args, **kwargs):
+        return Value.make_any()
+
+    def difference_update(self, *args, **kwargs):
+        return Value.make_any()
+
+    def intersection(self, *args, **kwargs):
+        return Value.make_any()
+
+    def intersection_update(self, *args, **kwargs):
+        return Value.make_any()
+
+    def isdisjoint(self, *args, **kwargs):
+        return type_2_value(Bool_Instance)
+
+    def issubset(self, *args, **kwargs):
+        return type_2_value(Bool_Instance)
+
+    def issuperset(self, *args, **kwargs):
+        return type_2_value(Bool_Instance)
+
+    def pop(self, *args, **kwargs):
+        value = self.tp_dict.read_value(self.tp_container)
+        return value
+
+    def remove(self, *args, **kwargs):
+        return type_2_value(None_Instance)
+
+    def symmetric_difference(self, *args, **kwargs):
+        return Value.make_any()
+
+    def symmetric_difference_update(self, *args, **kwargs):
+        return Value.make_any()
+
+    def union(self, *args, **kwargs):
+        return Value.make_any()
+
+    methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
+    for method in methods:
+        arti_method = ArtificialFunction(
+            tp_function=method, tp_qualname=f"builtins.set.{method.__name__}"
+        )
+        Set_Type.tp_dict.write_local_value(method.__name__, type_2_value(arti_method))
+
+
+_setup_Set_Type()
+
+
 class FrozensetArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, tp_heap, *arguments):
-        tp_dict = tp_heap.write_instance_to_heap(tp_address)
-        tp_dict.write_local_value("internal", Value())
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+    def __call__(self, tp_address, tp_class, *arguments):
+        if len(arguments) == 0:
+            init_container_value = Value()
+        else:
+            init_container_value = Value().make_any()
+        logger.critical(arguments)
+        tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        return FrozenSetAnalysisInstance(
+            tp_address, tp_class, tp_dict, init_container_value
+        )
 
 
 Frozenset_Type = FrozensetArtificialClass("builtins.frozenset")
 
 
+def _setup_FrozenSet_Type():
+    def copy(self):
+        return type_2_value(self)
+
+    def difference(self, *args, **kwargs):
+        return Value.make_any()
+
+    def intersection(self, *args, **kwargs):
+        return Value.make_any()
+
+    def isdisjoint(self, *args, **kwargs):
+        return type_2_value(Bool_Instance)
+
+    def issubset(self, *args, **kwargs):
+        return type_2_value(Bool_Instance)
+
+    def issuperset(self, *args, **kwargs):
+        return type_2_value(Bool_Instance)
+
+    def symmetric_difference(self, *args, **kwargs):
+        return Value.make_any()
+
+    def union(self, *args, **kwargs):
+        return Value.make_any()
+
+    methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
+    for method in methods:
+        arti_method = ArtificialFunction(
+            tp_function=method, tp_qualname=f"builtins.frozenset.{method.__name__}"
+        )
+        Frozenset_Type.tp_dict.write_local_value(
+            method.__name__, type_2_value(arti_method)
+        )
+
+
+_setup_FrozenSet_Type()
+
+
 class DictArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, tp_heap, *arguments):
-        tp_dict = tp_heap.write_instance_to_heap(tp_address)
-        tp_dict.write_local_value("internal", Value())
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+    def __call__(self, tp_address, tp_class, *arguments):
+        if len(arguments) == 0:
+            init_key_value = Value()
+            init_value_value = Value()
+        else:
+            init_key_value = Value.make_any()
+            init_value_value = Value.make_any()
+        logger.critical(arguments)
+        tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        return DictAnalysisInstance(
+            tp_address, tp_class, tp_dict, init_key_value, init_value_value
+        )
 
 
 Dict_Type = DictArtificialClass("builtins.dict")
 
 
-class ListIteratorArtificialClass(ArtificialClass):
+def _setup_Dict_Type():
+    def get(self, key, default=None):
+        value = Value()
+        prev_value = self.tp_dict.read_value(self.tp_container[1])
+        value.inject(prev_value)
+        if default is not None:
+            value.inject(default)
+        return value
+
+    def setdefault(self, key, default=None):
+        value = Value()
+        prev_value = self.tp_dict.read_value(self.tp_container[1])
+        value.inject(prev_value)
+        if default is not None:
+            value.inject(default)
+        return value
+
+    def pop(self, key, default=None):
+        value = Value()
+        prev_value = self.tp_dict.read_value(self.tp_container[1])
+        value.inject(prev_value)
+        if default is not None:
+            value.inject(default)
+        return value
+
+    def popitem(self):
+        value = Value()
+        key_value = self.tp_dict.read_value(self.tp_container[0])
+        value.inject(key_value)
+        value_value = self.tp_dict.read_value(self.tp_container[1])
+        value.inject(value_value)
+        one_tuple = Tuple_Type(f"{self.tp_address}-popitem", Tuple_Type, value)
+        return type_2_value(one_tuple)
+
+    def keys(self):
+        raise NotImplementedError
+
+    def items(self):
+        raise NotImplementedError
+
+    def values(self):
+        raise NotImplementedError
+
+    def update(self, other):
+        return type_2_value(None_Instance)
+
+    def fromkeys(self, iterable, value=None):
+        raise NotImplementedError
+
+    def clear(self):
+        self.tp_dict.write_local_value(self.tp_container[0], Value())
+        self.tp_dict.write_local_value(self.tp_container[1], Value())
+        return type_2_value(None_Instance)
+
+    def copy(self):
+        return type_2_value(self)
+
+    methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
+    for method in methods:
+        arti_method = ArtificialFunction(
+            tp_function=method, tp_qualname=f"builtins.dict.{method.__name__}"
+        )
+        Dict_Type.tp_dict.write_local_value(method.__name__, type_2_value(arti_method))
+
+
+_setup_Dict_Type()
+
+
+class IteratorArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, value):
         # create instance dict
         tp_dict = sys.heap.write_instance_to_heap(tp_address)
         # create an iterator
-        iterator = Iterator(tp_address, value)
-        # read instance dict
-        value = Value()
-        value.inject(iterator)
-        tp_dict.write_local_value("iterators", value)
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+        return IteratorAnalysisInstance(tp_address, tp_class, tp_dict, value)
 
 
-List_Iterator_Type = ListIteratorArtificialClass("builtins.iterator")
+Iterator_Type = IteratorArtificialClass("builtins.iterator")
 
 
-def _setup_List_Iterator_Type():
+def _setup_Iterator_Type():
     def __next__(self):
-        if self.is_Any():
-            return Value.make_any()
-
         value = Value()
         for one_type in self:
-            one_value = one_type.tp_dict.read_value("iterators")
-            if one_value.is_Any():
-                return Value.make_any()
-
+            one_value = one_type.tp_dict.read_value(one_type.tp_container)
             for each_one_value in one_value:
                 _value = builtins.next(each_one_value)
                 value.inject(_value)
         return value
 
-    arti_next = ArtificialFunction(
-        tp_function=__next__, tp_qualname="builtins.list_iterator.__next__"
-    )
-    List_Iterator_Type.tp_dict.write_local_value(
-        __next__.__name__, type_2_value(arti_next)
-    )
+    methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
+    for method in methods:
+        arti_method = ArtificialFunction(
+            tp_function=method, tp_qualname=f"builtins.iterator.{method.__name__}"
+        )
+        Iterator_Type.tp_dict.write_local_value(
+            method.__name__, type_2_value(arti_method)
+        )
 
 
-_setup_List_Iterator_Type()
+_setup_Iterator_Type()
 
 
 class Iterator:
@@ -402,15 +638,22 @@ class Iterator:
         except IndexError:
             return value
         else:
-            elt_value = type_2_value(elt)
-            value.inject(elt_value)
+            value.inject(elt)
             return value
 
     def __le__(self, other: Iterator):
         # means no elements in iterator
+        # raise NotImplementedError
+        logger.critical(
+            f"self.internal: {self.internal}, other.internal: {other.internal}"
+        )
         return len(self.internal) == 0 and len(other.internal) == 0
 
     def __iadd__(self, other: Iterator):
+        # raise NotImplementedError
+        logger.critical(
+            f"self.internal: {self.internal}, other.internal: {other.internal}"
+        )
         return self
 
 
@@ -599,6 +842,50 @@ class AnalysisInstance:
 
     def __repr__(self):
         return f"{self.tp_class.tp_uuid} object"
+
+
+class IteratorAnalysisInstance(AnalysisInstance):
+    def __init__(self, tp_address, tp_class, tp_dict, init_value):
+        super().__init__(tp_address, tp_class, tp_dict)
+        self.tp_container = "iterators"
+        iterator = Iterator(tp_address, init_value)
+        tp_dict.write_local_value(self.tp_container, type_2_value(iterator))
+
+
+class ListAnalysisInstance(AnalysisInstance):
+    def __init__(self, tp_address, tp_class, tp_dict, initial_value):
+        super().__init__(tp_address, tp_class, tp_dict)
+        self.tp_container = "internal"
+        tp_dict.write_local_value(self.tp_container, initial_value)
+
+
+class TupleAnalysisInstance(AnalysisInstance):
+    def __init__(self, tp_address, tp_class, tp_dict, initial_value):
+        super().__init__(tp_address, tp_class, tp_dict)
+        self.tp_container = "internal"
+        tp_dict.write_local_value(self.tp_container, initial_value)
+
+
+class SetAnalysisInstance(AnalysisInstance):
+    def __init__(self, tp_address, tp_class, tp_dict, initial_value):
+        super().__init__(tp_address, tp_class, tp_dict)
+        self.tp_container = "internal"
+        tp_dict.write_local_value(self.tp_container, initial_value)
+
+
+class FrozenSetAnalysisInstance(AnalysisInstance):
+    def __init__(self, tp_address, tp_class, tp_dict, initial_value):
+        super().__init__(tp_address, tp_class, tp_dict)
+        self.tp_container = "internal"
+        tp_dict.write_local_value(self.tp_container, initial_value)
+
+
+class DictAnalysisInstance(AnalysisInstance):
+    def __init__(self, tp_address, tp_class, tp_dict, initial_value1, initial_value2):
+        super().__init__(tp_address, tp_class, tp_dict)
+        self.tp_container = ("internal1", "internal2")
+        tp_dict.write_local_value(self.tp_container[0], initial_value1)
+        tp_dict.write_local_value(self.tp_container[1], initial_value2)
 
 
 class TypeExprVisitor(ast.NodeVisitor):

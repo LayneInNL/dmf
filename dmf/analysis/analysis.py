@@ -264,6 +264,12 @@ class Analysis(AnalysisBase):
         if isinstance(expr, ast.Num):
             one_value = new_state.compute_value_of_expr(expr)
             dummy_value.inject(one_value)
+        elif isinstance(expr, ast.Str):
+            one_value = new_state.compute_value_of_expr(expr)
+            dummy_value.inject(one_value)
+        elif isinstance(expr, ast.Name):
+            one_value = new_state.compute_value_of_expr(expr)
+            dummy_value.inject(one_value)
         elif isinstance(expr, ast.BinOp):
             operator_name = self._numeric_methods[type(expr.op)]
             reversed_operator_name = self._numeric_methods[type(expr.op)]

@@ -49,13 +49,14 @@ class Heap:
             if ins not in self.singletons:
                 self.singletons[ins] = other.singletons[ins]
             else:
-                self_dict = self.singletons[ins]
-                other_dict = other.singletons[ins]
-                for field in other_dict:
-                    if field not in self.singletons:
-                        self_dict[field] = other_dict[field]
-                    else:
-                        self_dict[field] += other_dict[field]
+                self.singletons[ins] += other.singletons[ins]
+                # self_dict = self.singletons[ins]
+                # other_dict = other.singletons[ins]
+                # for field in other_dict:
+                #     if field not in self.singletons:
+                #         self_dict[field] = other_dict[field]
+                #     else:
+                #         self_dict[field] += other_dict[field]
         return self
 
     def __repr__(self):

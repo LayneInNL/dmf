@@ -13,30 +13,41 @@
 #  limitations under the License.
 
 
-class _TypeAny:
+class SingletonInstance(type):
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(SingletonInstance, cls).__call__(
+                *args, **kwargs
+            )
+        return cls._instances[cls]
+
+
+class SingletonInstanceWithDeepcopy:
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
+
+class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
     def __init__(self):
         self.tp_uuid = id(self)
 
     def __repr__(self):
         return "Any"
 
-    def __deepcopy__(self, memo):
-        if id(self) not in memo:
-            memo[id(self)] = self
-        return memo[id(self)]
+    def values(self):
+        return [self]
 
 
 Any = _TypeAny()
 
 
-class _MROAny:
+class _MROAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
     def __init__(self):
         self.tp_uuid = id(self)
-
-    def __deepcopy__(self, memo):
-        if id(self) not in memo:
-            memo[id(self)] = self
-        return memo[id(self)]
 
     def __repr__(self):
         return "MRO_Any"
@@ -45,14 +56,9 @@ class _MROAny:
 MRO_Any = _MROAny()
 
 
-class _BasesAny:
+class _BasesAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
     def __init__(self):
         self.tp_uuid = id(self)
-
-    def __deepcopy__(self, memo):
-        if id(self) not in memo:
-            memo[id(self)] = self
-        return memo[id(self)]
 
     def __repr__(self):
         return "Bases_Any"
