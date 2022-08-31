@@ -24,10 +24,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-x = list()
-x.append(1)
-x.append(1.1)
-x.append("s")
+x = list(1)
+# x.append(1)
+# x.append(1.1)
+# x.append("s")
 # test_x = list()
 # ii = iter(x)
 # yy = next(ii)

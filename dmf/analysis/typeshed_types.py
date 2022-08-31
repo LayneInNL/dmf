@@ -17,9 +17,9 @@ from typing import List
 
 import astor
 
-# from dmf.analysis.artificial_types import Module_Type, Type_Type, c3
+from dmf.analysis.artificial_basic_types import Type_Type, c3
 from dmf.analysis.namespace import Namespace
-from dmf.analysis.special_types import MRO_Any
+from dmf.analysis.special_types import MRO_Any, Bases_Any
 from dmf.analysis.typeshed import get_stub_file
 from dmf.analysis.value import type_2_value, Value
 
@@ -76,9 +76,9 @@ class TypeshedClass(Typeshed):
         super().__init__(tp_name, tp_module, tp_qualname)
         self.tp_dict = tp_dict
         self.tp_mro = [[self, MRO_Any]]
-        # self.tp_class = Type_Type
-        # self.tp_bases = [[Bases_Any]]
-        # self.tp_mro = c3(self)
+        self.tp_class = Type_Type
+        self.tp_bases = [[Bases_Any]]
+        self.tp_mro = c3(self)
 
 
 class TypeshedFunction(Typeshed):
@@ -120,6 +120,7 @@ class TypeshedInstance(Typeshed):
         super().__init__(tp_name, tp_module, tp_qualname)
         self.tp_uuid = f"{self.tp_qualname}-instance"
         self.tp_class = tp_class
+        self.tp_dict: Namespace = Namespace()
 
     def __repr__(self):
         return f"{self.tp_qualname} object"
@@ -322,14 +323,20 @@ class ModuleVisitor(ast.NodeVisitor):
                 self.module_dict.write_local_value(alias.name, value)
 
 
+# further parse typeshed types to standard typeshed types.
+# for instance, importedname to typeshedclass
+# but insert other types as normal
 def resolve_typeshed_types(attributes: Value) -> Value:
     if attributes.is_Any():
         return Value.make_any()
 
     value = Value()
     for attribute in attributes:
-        tmp = resolve_typeshed_type(attribute)
-        value.inject(tmp)
+        if isinstance(attribute, Typeshed):
+            tmp = resolve_typeshed_type(attribute)
+            value.inject(tmp)
+        else:
+            value.inject(attribute)
 
     return value
 

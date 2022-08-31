@@ -19,7 +19,7 @@ import builtins
 import sys
 from typing import Tuple
 
-from dmf.analysis.artificial_types import (
+from dmf.analysis.artificial_basic_types import (
     ArtificialClass,
     ArtificialFunction,
     Type_Type,
@@ -41,8 +41,12 @@ from dmf.analysis.typeshed_types import (
     parse_typeshed_module,
     TypeshedInstance,
     extract_1value,
+    Typeshed,
+    resolve_typeshed_type,
+    resolve_typeshed_types,
 )
 from dmf.analysis.value import Value, type_2_value
+from dmf.log.logger import logger
 
 # since we use static analysis, builtin_module is a set of modules
 # but in fact there will only be one module
@@ -102,6 +106,10 @@ Ellipsis_Instance = TypeshedInstance(
     "ellipsis", "builtins", "builtins-ellipsis", Ellipsis_Type
 )
 
+Typeshed_Type_Type: Value = builtin_module_dict.read_value("type")
+Type_Type.tp_fallback = Typeshed_Type_Type
+builtin_module_dict.write_local_value("type", type_2_value(Type_Type))
+
 # minic object.__new__
 class Constructor(Singleton, Immutable):
     def __init__(self):
@@ -131,17 +139,10 @@ def _setup_Object_Type():
     )
     Object_Type.tp_dict.write_local_value("__init__", type_2_value(init))
 
-    new = constructor
-    value = type_2_value(new)
-    Object_Type.tp_dict.write_local_value("__new__", value)
+    Object_Type.tp_dict.write_local_value("__new__", type_2_value(constructor))
 
 
 _setup_Object_Type()
-
-
-Typeshed_Type_Type: Value = builtin_module_dict.read_value("type")
-Type_Type.tp_fallback = Typeshed_Type_Type
-builtin_module_dict.write_local_value("type", type_2_value(Type_Type))
 
 
 class SuperArtificialClass(ArtificialClass):
@@ -239,10 +240,15 @@ builtin_module_dict.write_local_value("staticmethod", type_2_value(Staticmethod_
 
 class ListArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *arguments):
-        # tp_dict = tp_heap.write_instance_to_heap(tp_address)
+        if len(arguments) == 0:
+            init_container_value = Value()
+        else:
+            init_container_value = Value().make_any()
+        logger.critical(arguments)
         tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        setattr(tp_dict, "container_type", "list")
         tp_dict.write_local_value("internal", Value())
-        return str(tp_address, tp_class, tp_dict)
+        return AnalysisInstance(tp_address, tp_class, tp_dict)
 
 
 List_Type = ListArtificialClass("builtins.list")
@@ -302,7 +308,7 @@ class TupleArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, tp_heap, *arguments):
         tp_dict = tp_heap.write_instance_to_heap(tp_address)
         tp_dict.write_local_value("internal", Value())
-        return str(tp_address, tp_class, tp_dict)
+        return AnalysisInstance(tp_address, tp_class, tp_dict)
 
 
 Tuple_Type = TupleArtificialClass("builtins.tuple")
@@ -312,7 +318,7 @@ class SetArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, tp_heap, *arguments):
         tp_dict = tp_heap.write_instance_to_heap(tp_address)
         tp_dict.write_local_value("internal", Value())
-        return str(tp_address, tp_class, tp_dict)
+        return AnalysisInstance(tp_address, tp_class, tp_dict)
 
 
 Set_Type = SetArtificialClass("builtins.set")
@@ -322,7 +328,7 @@ class FrozensetArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, tp_heap, *arguments):
         tp_dict = tp_heap.write_instance_to_heap(tp_address)
         tp_dict.write_local_value("internal", Value())
-        return str(tp_address, tp_class, tp_dict)
+        return AnalysisInstance(tp_address, tp_class, tp_dict)
 
 
 Frozenset_Type = FrozensetArtificialClass("builtins.frozenset")
@@ -332,7 +338,7 @@ class DictArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, tp_heap, *arguments):
         tp_dict = tp_heap.write_instance_to_heap(tp_address)
         tp_dict.write_local_value("internal", Value())
-        return str(tp_address, tp_class, tp_dict)
+        return AnalysisInstance(tp_address, tp_class, tp_dict)
 
 
 Dict_Type = DictArtificialClass("builtins.dict")
@@ -348,7 +354,7 @@ class ListIteratorArtificialClass(ArtificialClass):
         value = Value()
         value.inject(iterator)
         tp_dict.write_local_value("iterators", value)
-        return str(tp_address, tp_class, tp_dict)
+        return AnalysisInstance(tp_address, tp_class, tp_dict)
 
 
 List_Iterator_Type = ListIteratorArtificialClass("builtins.iterator")
@@ -707,14 +713,22 @@ class TypeExprVisitor(ast.NodeVisitor):
                 raise NotImplementedError
 
 
+# further parse types
+# for instance, test: int to Int_Type
+# but insert other types as normal
 def refine_value(value_to_to_refined: Value):
     if value_to_to_refined.is_Any():
         return Value.make_any()
 
+    normalized_types = resolve_typeshed_types(value_to_to_refined)
+
     value = Value()
-    for type in value_to_to_refined:
-        sub_value = refine_type(type)
-        value.inject(sub_value)
+    for type in normalized_types:
+        if isinstance(type, Typeshed):
+            sub_value = refine_type(type)
+            value.inject(sub_value)
+        else:
+            value.inject(type)
 
     return value
 
@@ -745,3 +759,17 @@ def refine_type(typeshed_type):
         raise NotImplementedError
     else:
         raise NotImplementedError
+
+
+def resolve_ordinary_types(self):
+    module = self.tp_module
+    visitor = TypeExprVisitor(module)
+
+    value = Value()
+    for ordinary in self.ordinaries:
+        one_value = visitor.visit(ordinary.returns)
+        value.inject(one_value)
+    return value
+
+
+TypeshedFunction.resolve_ordinary_types = resolve_ordinary_types

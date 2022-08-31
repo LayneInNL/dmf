@@ -20,8 +20,11 @@ from dmf.analysis.analysis_types import (
     ByteArray_Instance,
     Bytes_Instance,
     AnalysisInstance,
+    Int_Instance,
+    Float_Instance,
+    None_Instance,
 )
-from dmf.analysis.artificial_types import (
+from dmf.analysis.artificial_basic_types import (
     ArtificialFunction,
     ArtificialMethod,
 )
@@ -40,6 +43,11 @@ from dmf.importer import import_module
 builtin_modules: Value = parse_typeshed_module("builtins")
 builtin_module = extract_1value(builtin_modules)
 builtin_module_dict: Namespace = builtin_module.tp_dict
+
+
+def _setup_abs():
+    def abs(x):
+        return type_2_value(Int_Instance)
 
 
 def _setup_all():
@@ -93,6 +101,116 @@ def _setup_chr():
 def _setup_compile():
     def compile(source, filename, mode, flags=0, dont_inherit=False, optimize=-1):
         return Value.make_any()
+
+
+def _setup_eval():
+    def eval(expression, globals=None, locals=None):
+        return Value.make_any()
+
+
+def _setup_exec():
+    def exec(object, globals=None, locals=None):
+        return Value.make_any()
+
+
+def _setup_float():
+    def float(x=None):
+        return type_2_value(Float_Instance)
+
+
+def _setup_format():
+    def format(value, format_spec=None):
+        return type_2_value(Str_Instance)
+
+
+def _setup_hash():
+    def hash(object):
+        return type_2_value(Int_Instance)
+
+
+def _setup_hex():
+    def hex(x):
+        return type_2_value(Str_Instance)
+
+
+def _setup_id():
+    def id(object):
+        return type_2_value(Int_Instance)
+
+
+def _setup_input():
+    def input(prompt=None):
+        return type_2_value(Str_Instance)
+
+
+def _setup_int():
+    def int(x=None, base=None):
+        return type_2_value(Int_Instance)
+
+
+def _setup_isinstance():
+    def isinstance(object, classinfo):
+        return type_2_value(Bool_Instance)
+
+
+def _setup_issubclass():
+    def isinstance(cls, classinfo):
+        return type_2_value(Bool_Instance)
+
+
+def _setup_len():
+    def len(s):
+        return type_2_value(Int_Instance)
+
+
+def _setup_max():
+    def max(*args, **kwargs):
+        return type_2_value(Int_Instance)
+
+
+def _setup_min():
+    def min(*args, **kwargs):
+        return type_2_value(Int_Instance)
+
+
+def _setup_oct():
+    def oct(x):
+        return type_2_value(Str_Instance)
+
+
+def _setup_ord():
+    def ord(c):
+        return type_2_value(Int_Instance)
+
+
+def _setup_pow():
+    def pow(base, exp=None, mod=None):
+        return type_2_value(Int_Instance)
+
+
+def _setup_print():
+    def print(*args, **kwargs):
+        return type_2_value(None_Instance)
+
+
+def _setup_repr():
+    def repr(object):
+        return type_2_value(Str_Instance)
+
+
+def _setup_round():
+    def round(*args, **kwargs):
+        return type_2_value(Int_Instance)
+
+
+def _setup_str():
+    def str(*args, **kwargs):
+        return type_2_value(Str_Instance)
+
+
+def _setup_sum():
+    def sum(*args, **kwargs):
+        return type_2_value(Int_Instance)
 
 
 # complex no occurrence

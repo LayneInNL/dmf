@@ -43,6 +43,7 @@ sys.call_flow_tuples = set()
 sys.classdef_flow_tuples = set()
 sys.getter_flow_tuples = set()
 sys.setter_flow_tuples = set()
+sys.magic_inter_tuples = set()
 sys.special_init_inter_flows = set()
 # mimic labels
 sys.dummy_labels = set()
@@ -59,6 +60,7 @@ def merge_cfg_info(cfg):
     sys.classdef_flow_tuples.update(cfg.classdef_inter_flows)
     sys.getter_flow_tuples.update(cfg.getter_inter_flows)
     sys.setter_flow_tuples.update(cfg.setter_inter_flows)
+    sys.magic_inter_tuples.update(cfg.magic_inter_flows)
     sys.special_init_inter_flows.update(cfg.special_init_inter_flows)
 
     sys.dummy_labels.update(cfg.dummy_labels)

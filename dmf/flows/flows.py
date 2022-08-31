@@ -116,6 +116,7 @@ class CFG:
         self.setter_inter_flows: Set[Tuple[int, int, int]] = set()
         self.getter_inter_flows: Set[Tuple[int, int, int]] = set()
         self.special_init_inter_flows: Set[Tuple[int, int, int]] = set()
+        self.magic_inter_flows: Set[Tuple[int, int, int]] = set()
 
         self.call_labels: Set[int] = set()
         self.return_labels: Set[int] = set()
@@ -148,6 +149,13 @@ class CFG:
                     additional += "Return from descriptor getter"
                 if id3 == block.bid:
                     additional += "Dummy return from descriptor getter"
+            for id1, id2, id3 in self.magic_inter_flows:
+                if id1 == block.bid:
+                    additional += "Possibly invoke magic methods"
+                if id2 == block.bid:
+                    additional += "Possibly return of magic methods"
+                if id3 == block.bid:
+                    additional += "Dummy possibly return of magic methods"
 
             for (
                 id1,
@@ -331,6 +339,10 @@ class CFGVisitor(ast.NodeVisitor):
             self.cfg.call_labels.add(l1)
             self.cfg.return_labels.add(l2)
         for l1, l2, dummy in self.cfg.getter_inter_flows:
+            self.cfg.flows -= {(l1, l2)}
+            self.cfg.call_labels.add(l1)
+            self.cfg.return_labels.add(l2)
+        for l1, l2, dummy in self.cfg.magic_inter_flows:
             self.cfg.flows -= {(l1, l2)}
             self.cfg.call_labels.add(l1)
             self.cfg.return_labels.add(l2)
@@ -585,27 +597,34 @@ class CFGVisitor(ast.NodeVisitor):
                 )
                 node.value = init_var
                 self.curr_block = dummy_return_node
-            elif isinstance(node.value, ast.Attribute):
+            else:
                 # call x.y
-                descr_get_var = ast.Name(id=TempVariableName.generate())
+                temp_return_name = ast.Name(id=TempVariableName.generate())
+
                 call_node = self.curr_block
                 add_stmt(call_node, node.value)
+
                 # return xxx
                 return_node = self.add_edge(call_node.bid, self.new_block().bid)
-                add_stmt(return_node, descr_get_var)
+                add_stmt(return_node, temp_return_name)
                 # dummy xxx
                 dummy_return_node = self.add_edge(return_node.bid, self.new_block().bid)
-                add_stmt(dummy_return_node, descr_get_var)
+                add_stmt(dummy_return_node, temp_return_name)
+
                 self.cfg.dummy_labels.add(dummy_return_node.bid)
 
-                # update flow info
-                self.cfg.getter_inter_flows.add(
-                    (call_node.bid, return_node.bid, dummy_return_node.bid)
-                )
-                node.value = descr_get_var
+                if isinstance(node.value, ast.Attribute):
+                    # update attribute info
+                    self.cfg.getter_inter_flows.add(
+                        (call_node.bid, return_node.bid, dummy_return_node.bid)
+                    )
+                else:
+                    # update atribute info
+                    self.cfg.magic_inter_flows.add(
+                        (call_node.bid, return_node.bid, dummy_return_node.bid)
+                    )
+                node.value = temp_return_name
                 self.curr_block = dummy_return_node
-            # else:
-            #     add_stmt(self.curr_block, node)
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
             for target in node.targets:

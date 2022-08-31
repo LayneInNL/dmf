@@ -13,19 +13,11 @@
 #  limitations under the License.
 
 
-def iter(obj):
-    return obj.__iter__()
-
-
-def next(obj):
-    return obj.__next__()
-
-
-a = list()
-a.append(1)
-a.append(False)
-
-b = list()
+# a = list()
+# a.append(1)
+# a.append(False)
+#
+# b = list()
 
 for elt in a:
     b.append(elt)

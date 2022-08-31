@@ -28,6 +28,8 @@ from dmf.analysis.analysis_types import (
     AnalysisPropertyGetFunction,
     AnalysisClassmethodMethod,
     AnalysisInstance,
+    refine_type,
+    TypeExprVisitor,
 )
 from dmf.analysis.analysis_types import (
     Constructor,
@@ -36,7 +38,7 @@ from dmf.analysis.analysis_types import (
     ArtificialClass,
 )
 from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
-from dmf.analysis.artificial_types import ArtificialMethod
+from dmf.analysis.artificial_basic_types import ArtificialMethod
 from dmf.analysis.builtin_functions import import_a_module
 from dmf.analysis.gets_sets import getattrs, _getattr, setattrs, _setattr
 from dmf.analysis.implicit_names import (
@@ -63,6 +65,7 @@ from dmf.analysis.state import (
     Stack,
     Heap,
 )
+from dmf.analysis.typeshed_types import TypeshedFunction
 from dmf.analysis.value import Value, create_value_with_type, type_2_value
 from dmf.log.logger import logger
 
@@ -203,6 +206,88 @@ class Analysis(AnalysisBase):
                 self._detect_flow_descr_set(
                     program_point, next_state, next_next_state, dummy_value
                 )
+            elif self.is_magic_call_point(program_point):
+                self._detect_flow_magic(
+                    program_point, next_state, next_next_state, dummy_value
+                )
+            else:
+                raise NotImplementedError(program_point)
+
+    _numeric_methods = {
+        ast.Add: "__add__",
+        ast.Sub: "__sub__",
+        ast.Mult: "__mul__",
+        ast.Div: "__truediv__",
+        ast.Mod: "__mod__",
+        ast.Pow: "__pow__",
+        ast.LShift: "__lshift__",
+        ast.RShift: "__rshift__",
+        ast.BitOr: "__or__",
+        ast.BitXor: "__xor__",
+        ast.BitAnd: "__and__",
+        ast.FloorDiv: "__floordiv__",
+    }
+    _reversed_numeric_methods = {
+        ast.Add: "__radd__",
+        ast.Sub: "__rsub__",
+        ast.Mult: "__rmul__",
+        ast.Div: "__rtruediv__",
+        ast.Mod: "__rmod__",
+        ast.Pow: "__rpow__",
+        ast.LShift: "__rlshift__",
+        ast.RShift: "__rrshift__",
+        ast.BitOr: "__ror__",
+        ast.BitXor: "__rxor__",
+        ast.BitAnd: "__rand__",
+        ast.FloorDiv: "__rfloordiv__",
+    }
+
+    def _detect_flow_magic(
+        self,
+        program_point: ProgramPoint,
+        old_state: State,
+        new_state: State,
+        dummy_value: Value,
+    ):
+        # detect flow of possibly magic methods
+        # for instance, a = x + y. There may be an implicit x.__add__
+        # expr is guaranteed to be ast.expr type
+        expr = self.get_stmt_by_point(program_point)
+
+        call_lab, call_ctx = program_point
+        ret_lab, dummy_ret_lab = self.get_magic_return_label(call_lab)
+
+        # used to push dummy value to dummy point
+        dummy_value = Value()
+
+        # no magic method
+        if isinstance(expr, ast.Num):
+            one_value = new_state.compute_value_of_expr(expr)
+            dummy_value.inject(one_value)
+        elif isinstance(expr, ast.BinOp):
+            operator_name = self._numeric_methods[type(expr.op)]
+            reversed_operator_name = self._numeric_methods[type(expr.op)]
+
+            # left expr
+            lhs = expr.left
+            # left expr value
+            lhs_value = new_state.compute_value_of_expr(lhs)
+            operator_direct_res, operator_descr_res = getattrs(lhs_value, operator_name)
+            for one_operator_direct_res in operator_direct_res:
+                if isinstance(one_operator_direct_res, TypeshedFunction):
+                    one_value = one_operator_direct_res.resolve_ordinary_types()
+                    dummy_value.inject(one_value)
+                else:
+                    raise NotImplementedError(one_operator_direct_res)
+            rhs = expr.right
+        else:
+            raise NotImplementedError
+
+        dummy_ret_expr = self.get_stmt_by_label(dummy_ret_lab)
+        # dummy_ret_expr must be an ast.Name
+        assert isinstance(dummy_ret_expr, ast.Name)
+        new_state.stack.write_var(dummy_ret_expr.id, Namespace_Local, dummy_value)
+        self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     def _lambda_constructor(
         self,
@@ -812,6 +897,10 @@ class Analysis(AnalysisBase):
             return self._transfer_call_getter(program_point, old_state, new_state)
         elif self.is_setter_call_point(program_point):
             return self._transfer_call_setter(program_point, old_state, new_state)
+        elif self.is_magic_call_point(program_point):
+            return self._transfer_call_magic(program_point, old_state, new_state)
+        else:
+            raise NotImplementedError
 
     def _transfer_call_classdef(
         self, program_point: ProgramPoint, old_state: State, new_state: State

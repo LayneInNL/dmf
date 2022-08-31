@@ -16,7 +16,6 @@ from typing import List
 
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.special_types import Bases_Any, MRO_Any
-from dmf.analysis.typeshed_types import TypeshedClass
 from dmf.analysis.value import type_2_value, Value
 from dmf.log.logger import logger
 
@@ -76,8 +75,11 @@ class ArtificialMethod:
 # ArtificialClass = builtins.type
 class ArtificialClass(Singleton, Immutable):
     def __init__(self, tp_qualname: str):
+        # fully qualified name
         self.tp_uuid: str = tp_qualname
+        # fully qualified name
         self.tp_qualname: str = tp_qualname
+        # instance dict
         self.tp_dict: Namespace = Namespace()
 
     def __repr__(self):
@@ -109,7 +111,12 @@ Type_Type = TypeArtificialClass("builtins.type")
 Type_Type_Value = type_2_value(Type_Type)
 Type_Type.tp_class = Type_Type
 
-Object_Type = ArtificialClass("builtins.object")
+# mimic builtins.object
+class ObjectArtificialClass(ArtificialClass):
+    pass
+
+
+Object_Type = ObjectArtificialClass("builtins.object")
 Object_Type_Value = type_2_value(Object_Type)
 Object_Type.tp_bases = []
 Object_Type.tp_class = Type_Type
@@ -120,7 +127,6 @@ Type_Type.tp_bases = [[Object_Type]]
 # we only know current class and the rest of mro is Any
 def c3(cls_obj):
     mros = static_c3(cls_obj)
-    logger.critical(mros)
     return mros
 
 
@@ -142,7 +148,6 @@ def static_c3(cls_obj) -> List[List]:
                     one_mro: List = static_merge(merge_list)
                     mros.append([cls_obj] + one_mro)
         return mros
-        # return [cls_obj] + static_merge([static_c3(base) for base in cls_obj.tp_bases])
 
 
 def static_merge(mro_list) -> List:
@@ -160,15 +165,9 @@ def static_merge(mro_list) -> List:
         raise TypeError("No legal mro")
 
 
-Type_Type.tp_bases = [[Object_Type]]
-# Type_Type.tp_bases = [[Bases_Any]]
 Type_Type.tp_mro = c3(Type_Type)
 Object_Type.tp_mro = c3(Object_Type)
 
-# Type and Object are initialized. Here we initialize Typeshed related objects
-TypeshedClass.tp_class = Type_Type
-TypeshedClass.tp_bases = [[Bases_Any]]
-TypeshedClass.c3 = c3
 
 # redefine __init__ to create other ArtificialClasses
 def __init__(self, tp_qualname: str):
@@ -176,12 +175,10 @@ def __init__(self, tp_qualname: str):
     self.tp_qualname: str = tp_qualname
     self.tp_dict: Namespace = Namespace()
     self.tp_class = Type_Type
-    self.tp_bases = [Type_Type_Value.value_2_list()]
+    self.tp_bases = [[Object_Type]]
     self.tp_mro = c3(self)
 
 
 ArtificialClass.__init__ = __init__
-Range_Type = ArtificialClass("builtins.range")
-Method_Type = ArtificialClass("builtins.method")
 
 None_Type = ArtificialClass("builtins.NoneType")

@@ -34,13 +34,18 @@ from dmf.analysis.analysis_types import (
     Super_Type,
     SuperArtificialClass,
 )
-from dmf.analysis.artificial_types import (
+from dmf.analysis.artificial_basic_types import (
     ArtificialClass,
     ArtificialFunction,
     ArtificialMethod,
 )
 from dmf.analysis.special_types import Bases_Any, MRO_Any
-from dmf.analysis.typeshed_types import TypeshedModule, TypeshedFunction
+from dmf.analysis.typeshed_types import (
+    TypeshedModule,
+    TypeshedFunction,
+    TypeshedInstance,
+    Typeshed,
+)
 from dmf.analysis.value import Value, type_2_value
 
 
@@ -163,6 +168,8 @@ def _getattr(obj, name) -> Tuple[Value, Value]:
     # if len(tp_getattributes) == 0:
     if isinstance(obj, AnalysisInstance):
         return GenericGetAttr(obj, name)
+    elif isinstance(obj, TypeshedInstance):
+        return GenericGetAttr(obj, name)
     elif isinstance(obj, AnalysisClass):
         return type_getattro(obj, name)
     elif isinstance(obj, ArtificialClass):
@@ -224,7 +231,15 @@ def GenericGetAttr(obj, name):
         elif isinstance(descr, ArtificialFunction):
             one_descr = ArtificialMethod(tp_function=descr, tp_instance=obj)
             descr_value.inject(one_descr)
+        # if descr is a typeshed, we already know its information.
+        # So we have to translate it into abstract value
+        # @property def test(): int, in this case we extract int
+        # def test(): int, in this case we extract test function
+        elif isinstance(descr, Typeshed):
+            one_value = refine_type(descr)
+            res_value.inject(one_value)
         else:
+            # go through normal cases
             descr_type = _py_type(descr)
             if isinstance(descr_type, PropertyArtificialClass):
                 fgets = sys.heap.read_field_from_address(descr.tp_address, "fget")

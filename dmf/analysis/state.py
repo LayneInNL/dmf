@@ -104,6 +104,11 @@ class State:
             value = getattrs(receiver_value, expr.attr)
             return value
         elif isinstance(expr, ast.BinOp):
+            # operator = Add | Sub | Mult | MatMult | Div | Mod | Pow | LShift
+            #                  | RShift | BitOr | BitXor | BitAnd | FloorDiv
+            if isinstance(expr.op, ast.Add):
+
+                pass
             raise NotImplementedError(expr)
         elif isinstance(expr, ast.Constant):
             raise NotImplementedError(expr)
