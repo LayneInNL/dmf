@@ -22,6 +22,13 @@ def test(x=1):
 res = test()
 
 
+def test1():
+    yield 1
+
+
+gen = test1()
+
+
 # def test():
 #     yield 1
 

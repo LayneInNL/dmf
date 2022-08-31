@@ -206,6 +206,10 @@ class AnalysisBase:
         sys.merge_cfg_info(cfg)
         return cfg.start_block.bid, cfg.final_block.bid
 
+    def checkout_cfg(self, lab: int):
+        cfg: CFG = sys.analysis_cfgs[lab]
+        return cfg
+
     def generate_flow(self, program_point: ProgramPoint):
         added = []
         added += self.DELTA_basic_flow(program_point)

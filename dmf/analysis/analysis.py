@@ -48,6 +48,7 @@ from dmf.analysis.implicit_names import (
     PACKAGE_FLAG,
     NAME_FLAG,
 )
+from dmf.analysis.special_types import Any
 from dmf.analysis.state import (
     compute_function_defaults,
     compute_bases,
@@ -660,50 +661,49 @@ class Analysis(AnalysisBase):
         # record
         address = record(call_lab, call_ctx)
 
-        dummy_value_normal: Value = Value()
-
         value: Value = new_state.compute_value_of_expr(call_stmt.func)
         # iterate all types to find which is callable
         for type in value:
-            if isinstance(type, AnalysisClass):
+            # if type is Any, just insert it
+            if type is Any:
+                dummy_value.inject(type)
+            elif isinstance(type, AnalysisClass):
                 logger.info("Skip AnalysisClass")
             elif isinstance(type, ArtificialClass):
                 one_direct_res = type(address, type, *computed_args, **computed_kwargs)
-                dummy_value_normal.inject(one_direct_res)
+                dummy_value.inject(one_direct_res)
             elif isinstance(type, ArtificialFunction):
                 self._detect_flow_artificial_function(
-                    program_point, old_state, new_state, dummy_value_normal, type
+                    program_point, old_state, new_state, dummy_value, type
                 )
             elif isinstance(type, AnalysisFunction):
                 self._detect_flow_function(
-                    program_point, old_state, new_state, dummy_value_normal, type
+                    program_point, old_state, new_state, dummy_value, type
                 )
             elif isinstance(type, AnalysisMethod):
                 self._detect_flow_method(
-                    program_point, old_state, new_state, dummy_value_normal, type
+                    program_point, old_state, new_state, dummy_value, type
                 )
             elif isinstance(type, ArtificialMethod):
                 self._detect_flow_artificial_method(
-                    program_point, old_state, new_state, dummy_value_normal, type
+                    program_point, old_state, new_state, dummy_value, type
                 )
             elif isinstance(type, Constructor):
                 self._lambda_constructor(
-                    program_point, old_state, new_state, dummy_value_normal, type
+                    program_point, old_state, new_state, dummy_value, type
                 )
             elif isinstance(type, AnalysisInstance):
                 pass
             elif isinstance(type, AnalysisClassmethodMethod):
                 self._detect_flow_classmethod(
-                    program_point, old_state, new_state, dummy_value_normal, type
+                    program_point, old_state, new_state, dummy_value, type
                 )
             else:
                 raise NotImplementedError(type)
 
         _, dummy_ret_lab = self.get_func_return_label(call_lab)
         dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-        new_state.stack.write_var(
-            dummy_ret_stmt.id, Namespace_Local, dummy_value_normal
-        )
+        new_state.stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     # deal with class initialization
@@ -1202,6 +1202,7 @@ class Analysis(AnalysisBase):
         new_stack.write_var(cls_name, Namespace_Local, value)
         return new_state
 
+    # when a function definition is encountered...
     def transfer_FunctionDef(
         self,
         program_point: ProgramPoint,
@@ -1210,6 +1211,16 @@ class Analysis(AnalysisBase):
         node: ast.FunctionDef,
     ):
         lab, _ = program_point
+        func_cfg = self.checkout_cfg(lab)
+        # if is_generator is True, this is a generator function.
+        # The only way to keep soundness is set function to Any
+        # For instance, def func(): yield 1;    yield "str"
+        # gen = func(); res = next(gen); res2 = next(gen)
+        # how to keep two results in data flow analysis?
+        if func_cfg.is_generator:
+            new_state.stack.write_var(node.name, Namespace_Local, Value.make_any())
+            return new_state
+
         entry_lab, exit_lab = self.add_sub_cfg(lab)
 
         defaults, kwdefaults = compute_function_defaults(new_state, node)

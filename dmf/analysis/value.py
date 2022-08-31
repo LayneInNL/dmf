@@ -69,8 +69,11 @@ class Value:
 
     def __repr__(self):
         # return self.types.__repr__()
-        formatted = list(self.types.values())
-        return repr(formatted)
+        if self.types is Any:
+            return "Any"
+        else:
+            formatted = list(self.types.values())
+            return repr(formatted)
 
     def __iter__(self):
         return iter(self.types.values())

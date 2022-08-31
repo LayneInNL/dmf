@@ -246,11 +246,6 @@ class Stack:
     def write_var(self, var: str, scope: str, value):
         self.top_frame().write_var(var, scope, value)
 
-    def write_special_var(self, var: str, value):
-        setattr(self.frames[-1].f_locals, var, value)
-        # raise NotImplementedError
-        # self.write_var(var, Namespace_Helper, value)
-
     def delete_var(self, var: str):
         self.top_frame().delete_var(var)
 

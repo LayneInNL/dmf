@@ -213,6 +213,11 @@ def _setup_sum():
         return type_2_value(Int_Instance)
 
 
+def _setup_sorted():
+    def sorted(iterable, key=None, reverse=False):
+        return iterable
+
+
 # complex no occurrence
 
 
