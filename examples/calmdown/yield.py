@@ -16,6 +16,7 @@
 def test():
     yield 1
     yield "str"
+    yield 1.1
 
 
 res = test()

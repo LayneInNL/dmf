@@ -11,6 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import sys
 
 from dmf.analysis.analysis_types import (
     AnalysisFunction,
@@ -23,6 +24,8 @@ from dmf.analysis.analysis_types import (
     Int_Instance,
     Float_Instance,
     None_Instance,
+    List_Type,
+    Dict_Type,
 )
 from dmf.analysis.artificial_basic_types import (
     ArtificialFunction,
@@ -37,6 +40,7 @@ from dmf.analysis.typeshed_types import (
 )
 from dmf.analysis.value import Value, type_2_value
 from dmf.importer import import_module
+from dmf.log.logger import logger
 
 # since we use static analysis, builtin_module is a set of modules
 # but in fact there will only be one module
@@ -218,7 +222,91 @@ def _setup_sorted():
         return iterable
 
 
+def _setup_dir():
+    # return list[str]
+    def dir(object=None):
+        program_point = sys.program_point
+        logger.critical(f"The program point is {program_point}")
+        label, context = program_point
+        heap = label
+        value = type_2_value(Str_Instance)
+        return List_Type(heap, List_Type, value)
+
+    arti_method = ArtificialFunction(tp_function=dir, tp_qualname="builtins.dir")
+    builtin_module_dict.write_local_value(dir.__name__, type_2_value(arti_method))
+
+
+_setup_dir()
+
+
+def _setup_globals():
+    # return list[str]
+    def globals():
+        program_point = sys.program_point
+        logger.critical(f"The program point is {program_point}")
+        label, context = program_point
+        heap = label
+        value1 = type_2_value(Str_Instance)
+        value2 = Value.make_any()
+        return Dict_Type(heap, Dict_Type, value1, value2)
+
+    arti_method = ArtificialFunction(
+        tp_function=globals, tp_qualname="builtins.globals"
+    )
+    builtin_module_dict.write_local_value(globals.__name__, type_2_value(arti_method))
+
+
+_setup_globals()
+
+
+def _setup_locals():
+    # return list[str]
+    def locals():
+        program_point = sys.program_point
+        logger.critical(f"The program point is {program_point}")
+        label, context = program_point
+        heap = label
+        value1 = type_2_value(Str_Instance)
+        value2 = Value.make_any()
+        return Dict_Type(heap, Dict_Type, value1, value2)
+
+    arti_method = ArtificialFunction(tp_function=locals, tp_qualname="builtins.locals")
+    builtin_module_dict.write_local_value(locals.__name__, type_2_value(arti_method))
+
+
+_setup_locals()
+
+
+def _setup_vars():
+    # return list[str]
+    def vars(object=None):
+        program_point = sys.program_point
+        logger.critical(f"The program point is {program_point}")
+        label, context = program_point
+        heap = label
+        value1 = type_2_value(Str_Instance)
+        value2 = Value.make_any()
+        return Dict_Type(heap, Dict_Type, value1, value2)
+
+    arti_method = ArtificialFunction(tp_function=vars, tp_qualname="builtins.vars")
+    builtin_module_dict.write_local_value(vars.__name__, type_2_value(arti_method))
+
+
+_setup_vars()
 # complex no occurrence
+
+
+def _setup_hasattr():
+    def hasattr(object, name):
+        return type_2_value(Bool_Instance)
+
+    arti_method = ArtificialFunction(
+        tp_function=hasattr, tp_qualname="builtins.hasattr"
+    )
+    builtin_module_dict.write_local_value(hasattr.__name__, type_2_value(arti_method))
+
+
+_setup_hasattr()
 
 
 def _setup_builtin_types():

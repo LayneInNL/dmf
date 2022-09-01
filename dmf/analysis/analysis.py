@@ -69,7 +69,11 @@ from dmf.analysis.state import (
     Stack,
     Heap,
 )
-from dmf.analysis.typeshed_types import TypeshedFunction
+from dmf.analysis.typeshed_types import (
+    TypeshedFunction,
+    TypeshedClass,
+    TypeshedInstance,
+)
 from dmf.analysis.value import Value, create_value_with_type, type_2_value
 from dmf.log.logger import logger
 
@@ -138,6 +142,8 @@ class Analysis(AnalysisBase):
         self.analysis_list[self.extremal_point] = self.extremal_value
 
     def _push_state_to(self, state: State, program_point: ProgramPoint):
+        sys.program_point = program_point
+        logger.warning(f"Current detect flow sys.program_point {sys.program_point}")
         old: State | BOTTOM = self.analysis_list[program_point]
         if not compare_states(state, old):
             state: State = merge_states(state, old)
@@ -681,6 +687,12 @@ class Analysis(AnalysisBase):
                 self._detect_flow_classmethod(
                     program_point, old_state, new_state, dummy_value, type
                 )
+            # type is a typeshed class, for example, slice
+            elif isinstance(type, TypeshedClass):
+                typeshed_instance = TypeshedInstance(
+                    type.tp_name, type.tp_module, type.tp_qualname, type
+                )
+                dummy_value.inject(typeshed_instance)
             else:
                 raise NotImplementedError(type)
 
@@ -829,6 +841,8 @@ class Analysis(AnalysisBase):
         self.inter_flows.add(inter_flow)
 
     def transfer(self, program_point: ProgramPoint) -> State | BOTTOM:
+        sys.program_point = program_point
+        logger.warning(f"Current transfer sys.program_point {sys.program_point}")
         # if old_state is BOTTOM, skip this transfer
         old_state: State = self.analysis_list[program_point]
         if is_bot_state(old_state):

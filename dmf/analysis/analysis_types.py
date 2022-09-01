@@ -282,6 +282,46 @@ def _setup_Generator_Type():
 _setup_Generator_Type()
 
 
+class RangeArtificialClass(ArtificialClass):
+    def __call__(self, tp_address, tp_class, *argument):
+        init_container_value = type_2_value(Int_Instance)
+        tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        return RangeAnalysisInstance(
+            tp_address, tp_class, tp_dict, init_container_value
+        )
+
+
+Range_Type = RangeArtificialClass("builtins.range")
+
+Typeshed_Range_Type: Value = builtin_module_dict.read_value("range")
+Range_Type.tp_fallback = Typeshed_Range_Type
+builtin_module_dict.write_local_value("range", type_2_value(Range_Type))
+
+
+def _setup_Range_Type():
+    def __iter__(self):
+        value = Value()
+        for type in self:
+            if isinstance(type, RangeAnalysisInstance):
+                iterator_tp_address = f"{type.tp_address}-range-iterator"
+                list_value = type.tp_dict.read_value(type.tp_container)
+                one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
+                value.inject(one_type)
+            else:
+                raise NotImplementedError(type.tp_class)
+        return value
+
+    methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
+    for method in methods:
+        arti_method = ArtificialFunction(
+            tp_function=method, tp_qualname=f"builtins.range.{method.__name__}"
+        )
+        Range_Type.tp_dict.write_local_value(method.__name__, type_2_value(arti_method))
+
+
+_setup_Range_Type()
+
+
 class ListArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *arguments):
         if len(arguments) == 0:
@@ -362,10 +402,8 @@ def _setup_List_Type():
                 raise NotImplementedError(type.tp_class)
         return value
 
-    list_methods = filter(
-        lambda symbol: isinstance(symbol, FunctionType), locals().values()
-    )
-    for method in list_methods:
+    methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
+    for method in methods:
         arti_method = ArtificialFunction(
             tp_function=method, tp_qualname=f"builtins.list.{method.__name__}"
         )
@@ -898,6 +936,13 @@ class IteratorAnalysisInstance(AnalysisInstance):
 
 
 class GeneratorAnalysisInstance(AnalysisInstance):
+    def __init__(self, tp_address, tp_class, tp_dict, init_value):
+        super().__init__(tp_address, tp_class, tp_dict)
+        self.tp_container = "internal"
+        tp_dict.write_local_value(self.tp_container, init_value)
+
+
+class RangeAnalysisInstance(AnalysisInstance):
     def __init__(self, tp_address, tp_class, tp_dict, init_value):
         super().__init__(tp_address, tp_class, tp_dict)
         self.tp_container = "internal"
