@@ -680,8 +680,6 @@ class CFGVisitor(ast.NodeVisitor):
                     self.curr_block = self.add_edge(
                         self.curr_block.bid, self.new_block().bid
                     )
-                elif isinstance(target, ast.Starred):
-                    raise NotImplementedError
             return
 
         new_assign = ast.Assign(targets=node.targets, value=new_expr_sequence[-1])
