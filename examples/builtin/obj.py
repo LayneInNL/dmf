@@ -12,4 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-a = object()
+f = open("hello")
+# f = 1
+f1 = getattr(f, "some")
+f2 = setattr(f, "some", 1)
+f3 = delattr(f, "some")

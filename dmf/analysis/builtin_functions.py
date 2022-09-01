@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 import sys
+from types import FunctionType
 
 from dmf.analysis.analysis_types import (
     AnalysisFunction,
@@ -307,6 +308,106 @@ def _setup_hasattr():
 
 
 _setup_hasattr()
+
+
+def _setup_enumerate():
+    def enumerate(iterable, start=None):
+        return Value.make_any()
+
+    arti_method = ArtificialFunction(
+        tp_function=enumerate, tp_qualname="builtins.enumerate"
+    )
+    builtin_module_dict.write_local_value(enumerate.__name__, type_2_value(arti_method))
+
+
+_setup_enumerate()
+
+
+def _setup_zip():
+    def zip(*iterables):
+        return Value.make_any()
+
+    arti_method = ArtificialFunction(tp_function=zip, tp_qualname="builtins.zip")
+    builtin_module_dict.write_local_value(zip.__name__, type_2_value(arti_method))
+
+
+_setup_zip()
+
+
+def _setup_reversed():
+    def reversed(seq):
+        return seq
+
+    arti_method = ArtificialFunction(
+        tp_function=reversed, tp_qualname="builtins.reversed"
+    )
+    builtin_module_dict.write_local_value(reversed.__name__, type_2_value(arti_method))
+
+
+_setup_reversed()
+
+
+def _setup_import():
+    def __import__(*args, **kwargs):
+        return Value.make_any()
+
+    arti_method = ArtificialFunction(
+        tp_function=__import__, tp_qualname="builtins.__import__"
+    )
+    builtin_module_dict.write_local_value(
+        __import__.__name__, type_2_value(arti_method)
+    )
+
+
+_setup_import()
+
+
+def _setup_map():
+    def map(*args, **kwargs):
+        return Value.make_any()
+
+    arti_method = ArtificialFunction(tp_function=map, tp_qualname="builtins.map")
+    builtin_module_dict.write_local_value(map.__name__, type_2_value(arti_method))
+
+
+_setup_map()
+
+
+def _setup_filter():
+    def filter(*args, **kwargs):
+        return Value.make_any()
+
+    arti_method = ArtificialFunction(tp_function=filter, tp_qualname="builtins.filter")
+    builtin_module_dict.write_local_value(filter.__name__, type_2_value(arti_method))
+
+
+_setup_filter()
+
+
+def _setup():
+    def open(*args, **kwargs):
+        return Value.make_any()
+
+    def getattr(object, name):
+        return Value.make_any()
+
+    def setattr(object, name, value):
+        return type_2_value(None_Instance)
+
+    def delattr(object, name):
+        return type_2_value(None_Instance)
+
+    methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
+    for method in methods:
+        arti_method = ArtificialFunction(
+            tp_function=method, tp_qualname=f"builtins.{method.__name__}"
+        )
+        builtin_module_dict.write_local_value(
+            method.__name__, type_2_value(arti_method)
+        )
+
+
+_setup()
 
 
 def _setup_builtin_types():
