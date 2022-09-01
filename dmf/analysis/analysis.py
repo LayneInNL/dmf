@@ -25,17 +25,13 @@ from dmf.analysis.analysis_types import (
     AnalysisClass,
     AnalysisMethod,
     None_Instance,
-    AnalysisPropertyGetFunction,
-    AnalysisClassmethodMethod,
     AnalysisInstance,
-    refine_type,
-    TypeExprVisitor,
     Generator_Type,
+    AnalysisDescriptorGetter,
+    AnalysisDescriptorSetter,
 )
 from dmf.analysis.analysis_types import (
     Constructor,
-    AnalysisDescriptorGetFunction,
-    AnalysisDescriptorSetFunction,
     ArtificialClass,
 )
 from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
@@ -74,7 +70,7 @@ from dmf.analysis.typeshed_types import (
     TypeshedClass,
     TypeshedInstance,
 )
-from dmf.analysis.value import Value, create_value_with_type, type_2_value
+from dmf.analysis.value import Value, type_2_value
 from dmf.log.logger import logger
 
 Namespace_Local = "local"
@@ -448,82 +444,33 @@ class Analysis(AnalysisBase):
         dummy_value = Value()
         dummy_value.inject(direct_res)
 
-        # if any of two is Any, the result is Any, the flow is not constructed
-        if direct_res.is_Any() or descr_gets.is_Any():
-            dummy_value = Value().make_any()
-            dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-            new_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
-            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
-        else:
-            dummy_value.inject(direct_res)
-            for descr_get in descr_gets:
-                if isinstance(descr_get, AnalysisDescriptorGetFunction):
-                    entry_lab, exit_lab = descr_get.tp_function.tp_code
-                    instance = descr_get.tp_self
-                    new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
+        for descr_get in descr_gets:
+            if isinstance(descr_get, AnalysisDescriptorGetter):
+                entry_lab, exit_lab = descr_get.tp_function.tp_code
+                new_ctx: Tuple = merge(call_lab, None, call_ctx)
 
-                    self.entry_program_point_info[
-                        (entry_lab, new_ctx)
-                    ] = AdditionalEntryInfo(
-                        type_2_value(instance),
-                        None,
-                        descr_get.tp_function.tp_module,
-                        descr_get.tp_function.tp_defaults,
-                        descr_get.tp_function.tp_kwdefaults,
-                        False,
-                    )
+                self.entry_program_point_info[
+                    (entry_lab, new_ctx)
+                ] = AdditionalEntryInfo(
+                    None,
+                    None,
+                    descr_get.tp_function.tp_module,
+                    descr_get.tp_function.tp_defaults,
+                    descr_get.tp_function.tp_kwdefaults,
+                    False,
+                )
 
-                    inter_flow = (
-                        (call_lab, call_ctx),
-                        (entry_lab, new_ctx),
-                        (exit_lab, new_ctx),
-                        (ret_lab, call_ctx),
-                    )
-                    self.inter_flows.add(inter_flow)
-                elif isinstance(descr_get, AnalysisPropertyGetFunction):
-                    entry_lab, exit_lab = descr_get.tp_function.tp_code
-                    new_ctx: Tuple = merge(call_lab, None, call_ctx)
-
-                    self.entry_program_point_info[
-                        (entry_lab, new_ctx)
-                    ] = AdditionalEntryInfo(
-                        None, None, descr_get.tp_function.tp_module, None, None, False
-                    )
-
-                    inter_flow = (
-                        (call_lab, call_ctx),
-                        (entry_lab, new_ctx),
-                        (exit_lab, new_ctx),
-                        (ret_lab, call_ctx),
-                    )
-                    self.inter_flows.add(inter_flow)
-                elif isinstance(descr_get, AnalysisClassmethodMethod):
-                    raise NotImplementedError
-                    entry_lab, exit_lab = descr_get.tp_function.tp_code
-                    new_ctx: Tuple = merge(call_lab, None, call_ctx)
-
-                    self.entry_program_point_info[
-                        (entry_lab, new_ctx)
-                    ] = AdditionalEntryInfo(
-                        type_2_value(descr_get.tp_instance),
-                        None,
-                        descr_get.tp_function.tp_module,
-                        None,
-                        None,
-                        False,
-                    )
-
-                    inter_flow = (
-                        (call_lab, call_ctx),
-                        (entry_lab, new_ctx),
-                        (exit_lab, new_ctx),
-                        (ret_lab, call_ctx),
-                    )
-                    self.inter_flows.add(inter_flow)
-                else:
-                    dummy_value.inject(descr_get)
-                    # continue
-                    # raise NotImplementedError(descr_get)
+                inter_flow = (
+                    (call_lab, call_ctx),
+                    (entry_lab, new_ctx),
+                    (exit_lab, new_ctx),
+                    (ret_lab, call_ctx),
+                )
+                self.inter_flows.add(inter_flow)
+            else:
+                dummy_value.inject(descr_get)
+                # continue
+                # raise NotImplementedError(descr_get)
 
         dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
@@ -683,10 +630,6 @@ class Analysis(AnalysisBase):
                 )
             elif isinstance(type, AnalysisInstance):
                 pass
-            elif isinstance(type, AnalysisClassmethodMethod):
-                self._detect_flow_classmethod(
-                    program_point, old_state, new_state, dummy_value, type
-                )
             # type is a typeshed class, for example, slice
             elif isinstance(type, TypeshedClass):
                 typeshed_instance = TypeshedInstance(
@@ -775,39 +718,6 @@ class Analysis(AnalysisBase):
         )
 
     # detect flow of analysis methods which have labels
-    def _detect_flow_classmethod(
-        self,
-        program_point: ProgramPoint,
-        old_state: State,
-        new_state: State,
-        dummy_value: Value,
-        type: AnalysisClassmethodMethod,
-    ):
-        call_lab, call_ctx = program_point
-        entry_lab, exit_lab = type.tp_function.tp_code
-        instance = type.tp_instance
-        function = type.tp_function
-        new_ctx: Tuple = merge(call_lab, None, call_ctx)
-
-        ret_lab, _ = self.get_func_return_label(call_lab)
-        self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
-            type_2_value(instance),
-            None,
-            type.tp_module,
-            function.tp_defaults,
-            function.tp_kwdefaults,
-            False,
-        )
-
-        inter_flow = (
-            (call_lab, call_ctx),
-            (entry_lab, new_ctx),
-            (exit_lab, new_ctx),
-            (ret_lab, call_ctx),
-        )
-        self.inter_flows.add(inter_flow)
-
-    # detect flow of analysis methods which have labels
     def _detect_flow_method(
         self,
         program_point: ProgramPoint,
@@ -820,7 +730,12 @@ class Analysis(AnalysisBase):
         entry_lab, exit_lab = type.tp_function.tp_code
         instance = type.tp_instance
         function = type.tp_function
-        new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
+        if hasattr(instance, "tp_address"):
+            # instance is an instance
+            new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
+        else:
+            # instance is a class, encountered in @classmethod
+            new_ctx: Tuple = merge(call_lab, None, call_ctx)
 
         ret_lab, _ = self.get_func_return_label(call_lab)
         self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
@@ -948,6 +863,7 @@ class Analysis(AnalysisBase):
 
         return new_state
 
+    # transfer for cases such as x.y which has descriptors like property.get, __set__
     def _transfer_call_getter(
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
@@ -959,19 +875,15 @@ class Analysis(AnalysisBase):
 
         target_value = new_state.compute_value_of_expr(call_stmt.value)
         _, descr_res = getattrs(target_value, call_stmt.attr)
-        if descr_res.is_Any():
-            raise NotImplementedError
-
-        assert len(descr_res) == 1
         for one_descr in descr_res:
             # f(obj)
-            if isinstance(one_descr, AnalysisPropertyGetFunction):
-                obj = one_descr.tp_obj
-                obj_value = type_2_value(obj)
-                new_stack.write_var("1", Namespace_Local, obj_value)
-                setattr(new_stack.frames[-1].f_locals, POS_ARG_LEN, 1)
-            elif isinstance(one_descr, AnalysisClassmethodMethod):
-                logger.info("AnalysisClassmethodMethod")
+            if isinstance(one_descr, AnalysisDescriptorGetter):
+                descriptor_args = one_descr.tp_args
+                for idx, arg in enumerate(descriptor_args):
+                    new_stack.write_var(str(idx), Namespace_Local, arg)
+                setattr(
+                    new_stack.frames[-1].f_locals, POS_ARG_LEN, len(descriptor_args)
+                )
             else:
                 raise NotImplementedError(one_descr)
         return new_state
@@ -997,14 +909,11 @@ class Analysis(AnalysisBase):
         for target_typ in lhs_value:
             descr_sets = _setattr(target_typ, attr, rhs_value)
             for attr_typ in descr_sets:
-                if isinstance(attr_typ, AnalysisDescriptorSetFunction):
-                    instance = attr_typ.tp_obj
-                    instance_value = create_value_with_type(instance)
-                    new_stack.write_var("1", Namespace_Local, instance_value)
-                    value = attr_typ.tp_value
-                    value_value = create_value_with_type(value)
-                    new_stack.write_var("2", Namespace_Local, value_value)
-                    setattr(new_stack.frames[-1].f_locals, POS_ARG_LEN, 2)
+                if isinstance(attr_typ, AnalysisDescriptorSetter):
+                    args = attr_typ.tp_args
+                    for idx, arg in args:
+                        new_stack.write_var(str(idx), Namespace_Local, arg)
+                    setattr(new_stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
 
         return new_state
 

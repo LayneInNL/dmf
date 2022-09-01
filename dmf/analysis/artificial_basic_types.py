@@ -17,7 +17,6 @@ from typing import List
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.special_types import Bases_Any, MRO_Any
 from dmf.analysis.value import type_2_value, Value
-from dmf.log.logger import logger
 
 
 class Singleton:
@@ -35,12 +34,17 @@ class Immutable:
         return self
 
 
-class ArtificialFunction(Singleton, Immutable):
+class Artificial:
+    pass
+
+
+# mimic man-made functions such as len()
+class ArtificialFunction(Artificial):
     def __init__(self, tp_function: FunctionType, tp_qualname: str):
         # use memory address to denote uniqueness
-        self.tp_uuid: str = str(id(tp_function))
+        self.tp_uuid: str = f"arti-func-{tp_qualname}"
         # human-readable function name
-        self.tp_qualname = tp_qualname
+        self.tp_qualname: str = tp_qualname
         # function itself
         self.tp_code: FunctionType = tp_function
         # an empty tp_dict
@@ -49,66 +53,78 @@ class ArtificialFunction(Singleton, Immutable):
     def __call__(self, *args, **kwargs):
         return self.tp_code(*args, **kwargs)
 
-    def __repr__(self):
-        return self.tp_qualname
-
-
-class ArtificialMethod:
-    def __init__(self, tp_function, tp_instance):
-        self.tp_uuid = f"{tp_function.tp_uuid}-{tp_instance.tp_uuid}"
-        self.tp_function = tp_function
-        self.tp_instance = tp_instance
-
-    def __call__(self, *args, **kwargs):
-        return self.tp_function(self.tp_instance, *args, **kwargs)
-
     def __le__(self, other):
-        return True
+        result = self.tp_dict <= other.tp_dict
+        return result
 
     def __iadd__(self, other):
+        self.tp_dict += other.tp_dict
         return self
 
     def __repr__(self):
-        return self.tp_uuid
+        return f"artificial function {self.tp_uuid}"
 
 
-# ArtificialClass = builtins.type
-class ArtificialClass(Singleton, Immutable):
+# mimic methods such as list.append
+class ArtificialMethod(Artificial):
+    def __init__(self, tp_function: ArtificialFunction, tp_instance):
+        self.tp_uuid: str = f"arti-method-{tp_function.tp_uuid}-{tp_instance.tp_uuid}"
+        self.tp_function: ArtificialFunction = tp_function
+        self.tp_instance = tp_instance
+
+    def __call__(self, *args, **kwargs):
+        return self.tp_function(type_2_value(self.tp_instance), *args, **kwargs)
+
+    def __le__(self, other):
+        return self.tp_function <= other.tp_functioin
+
+    def __iadd__(self, other):
+        self.tp_function += other.tp_functioin
+        return self
+
+    def __repr__(self):
+        return f"artificial-method {self.tp_uuid}"
+
+
+# mimic such as builtins.list
+class ArtificialClass(Artificial):
     def __init__(self, tp_qualname: str):
         # fully qualified name
-        self.tp_uuid: str = tp_qualname
+        self.tp_uuid: str = f"arti-class-{tp_qualname}"
         # fully qualified name
         self.tp_qualname: str = tp_qualname
         # instance dict
         self.tp_dict: Namespace = Namespace()
 
+    def __le__(self, other):
+        return self.tp_dict <= other.tp_dict
+
+    def __iadd__(self, other):
+        self.tp_dict += other.tp_dict
+        return self
+
     def __repr__(self):
-        return self.tp_qualname
+        return f"artificial-class {self.tp_uuid}"
 
 
+# mimic builtins.type
+# if called with 1 arg, return its type
+# if called with 3 args, it's creating a class. just return Any
 class TypeArtificialClass(ArtificialClass):
-    def __call__(self, tp_address: int, tp_class, *args):
+    def __call__(self, tp_address: int, tp_class, *args) -> Value:
         if len(args) == 1:
-            # type(obj)
             objs: Value = args[0]
-            if objs.is_Any():
-                return Value.make_any()
-
             value = Value()
             for obj in objs:
                 value.inject(obj.tp_class)
             return value
-        elif len(args) == 3:
-            # type(name, bases, dict)
-            # set type to Any
-            return Value.make_any()
         else:
-            raise NotImplementedError
+            return Value.make_any()
 
 
-# create a type
+# Type_Type mimics builtins.type
+# call it will yield results
 Type_Type = TypeArtificialClass("builtins.type")
-Type_Type_Value = type_2_value(Type_Type)
 Type_Type.tp_class = Type_Type
 
 # mimic builtins.object
@@ -116,15 +132,13 @@ class ObjectArtificialClass(ArtificialClass):
     pass
 
 
+# Object_Type mimics builtins.object
 Object_Type = ObjectArtificialClass("builtins.object")
-Object_Type_Value = type_2_value(Object_Type)
 Object_Type.tp_bases = []
 Object_Type.tp_class = Type_Type
 Type_Type.tp_bases = [[Object_Type]]
 
 
-# if MROAnyError, it means mro can not be fully constructed.
-# we only know current class and the rest of mro is Any
 def c3(cls_obj):
     mros = static_c3(cls_obj)
     return mros
@@ -171,7 +185,7 @@ Object_Type.tp_mro = c3(Object_Type)
 
 # redefine __init__ to create other ArtificialClasses
 def __init__(self, tp_qualname: str):
-    self.tp_uuid: str = tp_qualname
+    self.tp_uuid: str = f"arti-clas-{tp_qualname}"
     self.tp_qualname: str = tp_qualname
     self.tp_dict: Namespace = Namespace()
     self.tp_class = Type_Type
@@ -182,3 +196,5 @@ def __init__(self, tp_qualname: str):
 ArtificialClass.__init__ = __init__
 
 None_Type = ArtificialClass("builtins.NoneType")
+Ellipsis_Type = ArtificialClass("builtins.EllipsisType")
+NotImplemented_Type = ArtificialClass("builtins.NotImplementedType")

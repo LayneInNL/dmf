@@ -21,7 +21,6 @@ from dmf.analysis.analysis_types import (
     Str_Instance,
     ByteArray_Instance,
     Bytes_Instance,
-    AnalysisInstance,
     Int_Instance,
     Float_Instance,
     None_Instance,

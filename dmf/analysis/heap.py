@@ -15,9 +15,6 @@ from __future__ import annotations
 
 from typing import Dict
 
-from dmf.analysis.analysis_types import (
-    AnalysisInstance,
-)
 from dmf.analysis.namespace import Namespace, Var
 from dmf.analysis.value import Value
 
@@ -50,13 +47,6 @@ class Heap:
                 self.singletons[ins] = other.singletons[ins]
             else:
                 self.singletons[ins] += other.singletons[ins]
-                # self_dict = self.singletons[ins]
-                # other_dict = other.singletons[ins]
-                # for field in other_dict:
-                #     if field not in self.singletons:
-                #         self_dict[field] = other_dict[field]
-                #     else:
-                #         self_dict[field] += other_dict[field]
         return self
 
     def __repr__(self):

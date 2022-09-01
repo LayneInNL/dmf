@@ -27,7 +27,7 @@ from dmf.analysis.value import type_2_value, Value
 class Typeshed:
     def __init__(self, tp_name: str, tp_module: str, tp_qualname: str):
         # fully qualified name
-        self.tp_uuid: str = tp_qualname
+        self.tp_uuid: str = f"shed-{tp_qualname}"
         # name
         self.tp_name: str = tp_name
         # module
@@ -62,13 +62,13 @@ class TypeshedModule(Typeshed):
 class TypeshedAssign(Typeshed):
     def __init__(self, tp_name, tp_module, tp_qualname, tp_code: ast.Assign):
         super().__init__(tp_name, tp_module, tp_qualname)
-        self.tp_code = tp_code
+        self.tp_code: ast.Assign = tp_code
 
 
 class TypeshedAnnAssign(Typeshed):
     def __init__(self, tp_name, tp_module, tp_qualname, tp_code: ast.AnnAssign):
         super().__init__(tp_name, tp_module, tp_qualname)
-        self.tp_code = tp_code
+        self.tp_code: ast.AnnAssign = tp_code
 
 
 class TypeshedClass(Typeshed):
@@ -86,8 +86,6 @@ class TypeshedFunction(Typeshed):
         super().__init__(tp_name, tp_module, tp_qualname)
         self.ordinaries: List[ast.FunctionDef] = []
         self.getters: List[ast.FunctionDef] = []
-        self.setters: List[ast.FunctionDef] = []
-        self.deleters: List[ast.FunctionDef] = []
 
 
 class TypeshedPossibleImportedName(Typeshed):
@@ -166,7 +164,7 @@ class ModuleVisitor(ast.NodeVisitor):
         # no function named function_name detected
         if function_name not in self.module_dict:
             typeshed_function = TypeshedFunction(
-                function_name, self.module_name, f"{self.qualname}-{function_name}"
+                function_name, self.module_name, f"{self.qualname}.{function_name}"
             )
             value = type_2_value(typeshed_function)
             self.module_dict.write_local_value(function_name, value)
@@ -181,26 +179,10 @@ class ModuleVisitor(ast.NodeVisitor):
                 # 1. Normal functions(without decorators)
                 # 2. Descriptor functions(@property, @xxx.setter and @xxx.deleter)
                 # 3. other functions( such as @abstractmethod, @classmethod)
-                getter, setter, deleter = False, False, False
                 for decorator in node.decorator_list:
                     if isinstance(decorator, ast.Name) and decorator.id == "property":
                         typeshed_function.getters.append(node)
-                        getter = True
-                    elif (
-                        isinstance(decorator, ast.Attribute)
-                        and decorator.attr == "setter"
-                    ):
-                        typeshed_function.setters.append(node)
-                        setter = True
-                    elif (
-                        isinstance(decorator, ast.Attribute)
-                        and decorator.attr == "deleter"
-                    ):
-                        typeshed_function.deleters.append(node)
-                        deleter = True
-                if any([getter, setter, deleter]):
-                    if getter + setter + deleter > 1:
-                        raise NotImplementedError
+                        break
                 else:
                     typeshed_function.ordinaries.append(node)
 
@@ -215,7 +197,7 @@ class ModuleVisitor(ast.NodeVisitor):
         typeshed_class = TypeshedClass(
             tp_name=class_name,
             tp_module=self.module_name,
-            tp_qualname=f"{self.qualname}-{class_name}",
+            tp_qualname=f"{self.qualname}.{class_name}",
             tp_dict=class_body_dict,
         )
         value = type_2_value(typeshed_class)
@@ -231,7 +213,7 @@ class ModuleVisitor(ast.NodeVisitor):
             typeshed_assign = TypeshedAssign(
                 tp_name=target.id,
                 tp_module=self.module_name,
-                tp_qualname=f"{self.qualname}-{target.id}",
+                tp_qualname=f"{self.qualname}.{target.id}",
                 tp_code=node,
             )
             value = type_2_value(typeshed_assign)
@@ -246,7 +228,7 @@ class ModuleVisitor(ast.NodeVisitor):
         typeshed_annassign = TypeshedAnnAssign(
             tp_name=target.id,
             tp_module=self.module_name,
-            tp_qualname=f"{self.qualname}-{target.id}",
+            tp_qualname=f"{self.qualname}.{target.id}",
             tp_code=node,
         )
         value = type_2_value(typeshed_annassign)
@@ -266,7 +248,7 @@ class ModuleVisitor(ast.NodeVisitor):
                 typeshed_importedmodule = TypeshedImportedModule(
                     tp_name=alias.asname,
                     tp_module=self.module_name,
-                    tp_qualname=f"{self.qualname}-{alias.asname}",
+                    tp_qualname=f"{self.qualname}.{alias.asname}",
                     tp_imported_module=alias.name,
                 )
                 value = type_2_value(typeshed_importedmodule)
@@ -326,10 +308,7 @@ class ModuleVisitor(ast.NodeVisitor):
 # further parse typeshed types to standard typeshed types.
 # for instance, importedname to typeshedclass
 # but insert other types as normal
-def resolve_typeshed_types(attributes: Value) -> Value:
-    if attributes.is_Any():
-        return Value.make_any()
-
+def resolve_typeshed_value(attributes: Value) -> Value:
     value = Value()
     for attribute in attributes:
         if isinstance(attribute, Typeshed):
@@ -341,14 +320,14 @@ def resolve_typeshed_types(attributes: Value) -> Value:
     return value
 
 
-def resolve_typeshed_type(attribute):
+def resolve_typeshed_type(attribute: Typeshed):
     # maybe in curr module, maybe a submodule
     if isinstance(attribute, TypeshedPossibleImportedName):
         res = parse_typeshed_module(attribute.tp_imported_module)
         # in curr module
         if attribute.tp_imported_name in res.tp_dict:
             new_attribute: Value = res.tp_dict.read_value(attribute.tp_imported_name)
-            return resolve_typeshed_types(new_attribute)
+            return resolve_typeshed_value(new_attribute)
         else:
             return parse_typeshed_module(
                 f"{attribute.tp_imported_module}.{attribute.tp_imported_name}"
@@ -364,7 +343,7 @@ def resolve_typeshed_type(attribute):
             new_attributes: Value = module.tp_dict.read_value(
                 attribute.tp_imported_name
             )
-            tmp_value = resolve_typeshed_types(new_attributes)
+            tmp_value = resolve_typeshed_value(new_attributes)
             value.inject(tmp_value)
         return value
     # can't be simplified
@@ -388,6 +367,6 @@ def extract_1value(classes: Value):
     return classes.value_2_list()[0]
 
 
-def import_a_module_from_typeshed(module_name: str) -> TypeshedModule:
-    module: TypeshedModule = parse_typeshed_module(module_name)
+def import_a_module_from_typeshed(module_name: str) -> Value:
+    module: Value = parse_typeshed_module(module_name)
     return module

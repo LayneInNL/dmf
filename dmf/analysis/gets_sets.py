@@ -20,29 +20,25 @@ from dmf.analysis.analysis_types import (
     AnalysisModule,
     AnalysisMethod,
     refine_type,
-    AnalysisDescriptorGetFunction,
     None_Instance,
-    AnalysisDescriptorSetFunction,
     AnalysisClass,
     refine_value,
     Constructor,
-    PropertyArtificialClass,
-    AnalysisPropertyGetFunction,
-    ClassmethodArtificialClass,
-    AnalysisClassmethodMethod,
-    StaticmethodArtificialClass,
-    Super_Type,
     SuperArtificialClass,
+    AnalysisDescriptorGetter,
+    AnalysisDescriptorSetter,
+    ClassmethodAnalysisInstance,
+    PropertyAnalysisInstance,
+    StaticmethodAnalysisInstance,
 )
 from dmf.analysis.artificial_basic_types import (
     ArtificialClass,
     ArtificialFunction,
     ArtificialMethod,
 )
-from dmf.analysis.special_types import Bases_Any, MRO_Any
+from dmf.analysis.special_types import MRO_Any
 from dmf.analysis.typeshed_types import (
     TypeshedModule,
-    TypeshedFunction,
     TypeshedInstance,
     Typeshed,
 )
@@ -222,75 +218,61 @@ def GenericGetAttr(obj, name):
         return Value.make_any(), Value.make_any()
 
     # traverse descrs
-    for descr in descrs:
+    for class_variable in descrs:
         # if descr is a function, there is an implicit __set__
-        if isinstance(descr, AnalysisFunction):
-            one_descr = AnalysisMethod(tp_function=descr, tp_instance=obj)
+        if isinstance(class_variable, AnalysisFunction):
+            one_descr = AnalysisMethod(tp_function=class_variable, tp_instance=obj)
             descr_value.inject(one_descr)
         # if descr is a function, there is an implicit __set__
-        elif isinstance(descr, ArtificialFunction):
-            one_descr = ArtificialMethod(tp_function=descr, tp_instance=obj)
+        elif isinstance(class_variable, ArtificialFunction):
+            one_descr = ArtificialMethod(tp_function=class_variable, tp_instance=obj)
             descr_value.inject(one_descr)
         # if descr is a typeshed, we already know its information.
         # So we have to translate it into abstract value
         # @property def test(): int, in this case we extract int
         # def test(): int, in this case we extract test function
-        elif isinstance(descr, Typeshed):
-            one_value = refine_type(descr)
+        elif isinstance(class_variable, Typeshed):
+            one_value = refine_type(class_variable)
             res_value.inject(one_value)
         else:
             # go through normal cases
-            descr_type = _py_type(descr)
-            if isinstance(descr_type, PropertyArtificialClass):
-                fgets = sys.heap.read_field_from_address(descr.tp_address, "fget")
-                if fgets.is_Any():
-                    return Value.make_any(), Value.make_any()
+            class_variable_type = _py_type(class_variable)
+            if isinstance(class_variable, PropertyAnalysisInstance):
+                fgets = class_variable.tp_dict.read_value(
+                    class_variable.tp_container[0]
+                )
                 for fget in fgets:
-                    if isinstance(fget, AnalysisFunction):
-                        one_descr = AnalysisPropertyGetFunction(obj, fget)
-                        descr_value.inject(one_descr)
-                    else:
-                        raise NotImplementedError(fget)
-            elif isinstance(descr_type, ClassmethodArtificialClass):
-                functions = sys.heap.read_field_from_address(
-                    descr.tp_address, "function"
+                    obj_value = type_2_value(obj)
+                    one_descr = AnalysisDescriptorGetter(fget, obj_value)
+                    descr_value.inject(one_descr)
+            elif isinstance(class_variable, ClassmethodAnalysisInstance):
+                functions = class_variable.tp_dict.read_value(
+                    class_variable.tp_container
                 )
-                if functions.is_Any():
-                    return Value.make_any(), Value.make_any()
                 for function in functions:
-                    if isinstance(function, AnalysisFunction):
-                        one_res = AnalysisClassmethodMethod(
-                            tp_function=function, tp_instance=obj_type
-                        )
-                        res_value.inject(one_res)
-                    else:
-                        raise NotImplementedError(function)
-            elif isinstance(descr_type, StaticmethodArtificialClass):
-                functions = sys.heap.read_field_from_address(
-                    descr.tp_address, "function"
+                    one_res = AnalysisMethod(tp_function=function, tp_instance=obj_type)
+                    res_value.inject(one_res)
+            elif isinstance(class_variable, StaticmethodAnalysisInstance):
+                functions = class_variable.tp_dict.read_value(
+                    class_variable.tp_container
                 )
-                if functions.is_Any():
-                    return Value.make_any(), Value.make_any()
                 for function in functions:
-                    if isinstance(function, AnalysisFunction):
-                        res_value.inject(function)
-                    else:
-                        raise NotImplementedError(function)
-
+                    res_value.inject(function)
             else:
-                descr_tp_gets = _pytype_lookup(descr_type, "__get__")
-                if descr_tp_gets.is_Any():
-                    return Value.make_any(), Value.make_any()
-
-                for descr_tp_get in descr_tp_gets:
+                class_variable_type_gets = _pytype_lookup(
+                    class_variable_type, "__get__"
+                )
+                for class_variable_type_get in class_variable_type_gets:
                     # descr_tp_get must be AnalysisFunction
-                    if isinstance(descr_tp_get, AnalysisFunction):
-                        # self = descr, obj = obj, type=tp
-                        one_descr = AnalysisDescriptorGetFunction(
-                            tp_self=descr,
-                            tp_obj=obj,
-                            tp_objtype=obj_type,
-                            tp_function=descr_tp_get,
+                    if isinstance(class_variable_type_get, AnalysisFunction):
+                        descr_value = type_2_value(class_variable)
+                        obj_value = type_2_value(obj)
+                        obj_type_value = type_2_value(obj_type)
+                        one_descr = AnalysisDescriptorGetter(
+                            class_variable_type_get,
+                            descr_value,
+                            obj_value,
+                            obj_type_value,
                         )
                         descr_value.inject(one_descr)
                     else:
@@ -309,33 +291,42 @@ def GenericGetAttr(obj, name):
 def type_getattro(type, name) -> Tuple[Value, Value]:
     res_value, descr_value = Value(), Value()
 
-    descrs = _pytype_lookup(type, name)
-    if descrs.is_Any():
-        return Value.make_any(), Value.make_any()
-
-    for descr in descrs:
+    class_variables = _pytype_lookup(type, name)
+    for class_variable in class_variables:
         # the __get__ of function is id.
-        if isinstance(descr, (AnalysisFunction, ArtificialFunction)):
-            res_value.inject(descr)
-        elif isinstance(descr, TypeshedFunction):
-            typeshed_value = refine_type(descr)
+        if isinstance(class_variable, (AnalysisFunction, ArtificialFunction)):
+            res_value.inject(class_variable)
+        elif isinstance(class_variable, Typeshed):
+            typeshed_value = refine_type(class_variable)
             res_value.inject(typeshed_value)
-        elif isinstance(descr, Constructor):
-            res_value.inject(descr)
+        elif isinstance(class_variable, Constructor):
+            res_value.inject(class_variable)
+        # property object itself
+        elif isinstance(class_variable, PropertyAnalysisInstance):
+            res_value.inject(class_variable)
+        # classmethod object
+        elif isinstance(class_variable, ClassmethodAnalysisInstance):
+            functions = class_variable.tp_dict.read_value(class_variable.tp_container)
+            for function in functions:
+                one_res = AnalysisMethod(
+                    tp_function=function, tp_instance=class_variable
+                )
+                res_value.inject(one_res)
+        # static method object
+        elif isinstance(class_variable, StaticmethodAnalysisInstance):
+            functions = class_variable.tp_dict.read_value(class_variable.tp_container)
+            for function in functions:
+                res_value.inject(function)
         else:
-            descriptor_type = _py_type(descr)
-
-            descriptor_type_gets = _pytype_lookup(descriptor_type, "__get__")
-            if descriptor_type_gets.is_Any():
-                return Value.make_any(), Value.make_any()
-
-            for descriptor_type_get in descriptor_type_gets:
-                if isinstance(descriptor_type_get, AnalysisFunction):
-                    one_descr = AnalysisDescriptorGetFunction(
-                        tp_self=descr,
-                        tp_obj=None_Instance,
-                        tp_objtype=type,
-                        tp_function=descriptor_type,
+            class_variable_type = _py_type(class_variable)
+            class_variable_type_gets = _pytype_lookup(class_variable_type, "__get__")
+            for class_variable_type_get in class_variable_type_gets:
+                if isinstance(class_variable_type_get, AnalysisFunction):
+                    descr_value = type_2_value(class_variable)
+                    obj_value = type_2_value(None_Instance)
+                    obj_type_value = type_2_value(type)
+                    one_descr = AnalysisDescriptorGetter(
+                        class_variable_type_get, descr_value, obj_value, obj_type_value
                     )
                     descr_value.inject(one_descr)
                 else:
@@ -345,8 +336,8 @@ def type_getattro(type, name) -> Tuple[Value, Value]:
         one_res = type.tp_dict.read_value(name)
         res_value.inject_value(one_res)
 
-    if descrs is not None:
-        res_value.inject_value(descrs)
+    if class_variables is not None:
+        res_value.inject_value(class_variables)
 
     return res_value, descr_value
 
@@ -354,36 +345,25 @@ def type_getattro(type, name) -> Tuple[Value, Value]:
 def GenericSetAttr(obj, name, value):
     descr_value = Value()
 
-    obj_types = _py_type(obj)
-    if obj_types.is_Any():
-        return Value.make_any()
-
+    obj_type = _py_type(obj)
     # look up class dict
-    for obj_type in obj_types:
-        descriptors = _pytype_lookup_set(obj_type, name, value)
-        if descriptors.is_Any():
-            return Value.make_any()
+    class_variables = _pytype_lookup_set(obj_type, name, value)
+    for class_variable in class_variables:
+        class_variable_type = _py_type(class_variable)
 
-        for descriptor in descriptors:
-            descriptor_types = _py_type(descriptor)
-            if descriptor_types.is_Any():
-                return Value.make_any()
-
-            for descriptor_type in descriptor_types:
-                descriptor_type_sets = _pytype_lookup(descriptor_type, "__set__")
-                if descriptor_type_sets.is_Any():
-                    return Value.make_any()
-
-                for descriptor_type_set in descriptor_type_sets:
-                    if isinstance(descriptor_type_set, AnalysisFunction):
-                        one_descr = AnalysisDescriptorSetFunction(
-                            tp_self=descriptor_type,
-                            tp_obj=type_2_value(obj),
-                            tp_value=value,
-                        )
-                        descr_value.inject(one_descr)
-                    else:
-                        raise NotImplementedError(descriptor_type_set)
+        # check if there is a __set__
+        descriptor_type_sets = _pytype_lookup(class_variable_type, "__set__")
+        for descriptor_type_set in descriptor_type_sets:
+            if isinstance(descriptor_type_set, AnalysisFunction):
+                descr_value = type_2_value(class_variables)
+                obj_value = type_2_value(obj)
+                value_value = value
+                one_descr = AnalysisDescriptorSetter(
+                    descriptor_type_set, descr_value, obj_value, value_value
+                )
+                descr_value.inject(one_descr)
+            else:
+                raise NotImplementedError(descriptor_type_set)
 
     # instance dict assignment
     obj.tp_dict.write_local_value(name, value)
