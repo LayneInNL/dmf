@@ -37,6 +37,7 @@ from dmf.analysis.analysis_types import (
 from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
 from dmf.analysis.artificial_basic_types import ArtificialMethod
 from dmf.analysis.builtin_functions import import_a_module
+from dmf.analysis.context_sensitivity import merge, record
 from dmf.analysis.gets_sets import getattrs, _getattr, setattrs, _setattr
 from dmf.analysis.implicit_names import (
     POS_ARG_LEN,
@@ -77,7 +78,6 @@ from dmf.log.logger import logger
 Namespace_Local = "local"
 Namespace_Nonlocal = "nonlocal"
 Namespace_Global = "global"
-Unused_Name = "UNUSED_NAME"
 
 AdditionalEntryInfo = namedtuple(
     "AdditionalEntryInfo",
@@ -90,14 +90,6 @@ AdditionalEntryInfo = namedtuple(
         "generator_info",
     ],
 )
-
-# points-to analysis
-def record(label: int, context: Tuple):
-    return label
-
-
-def merge(label: int, heap, context: Tuple):
-    return context[-1:] + (label,)
 
 
 class Analysis(AnalysisBase):
@@ -125,8 +117,6 @@ class Analysis(AnalysisBase):
         )
         self.analysis_effect_list = {}
 
-        self.analyzed_program_points = {self.extremal_point}
-
     def compute_fixed_point(self):
         self.initialize()
         self.iterate()
@@ -139,8 +129,6 @@ class Analysis(AnalysisBase):
         self.analysis_list[self.extremal_point] = self.extremal_value
 
     def _push_state_to(self, state: State, program_point: ProgramPoint):
-        sys.program_point = program_point
-        logger.warning(f"Current detect flow sys.program_point {sys.program_point}")
         old: State | BOTTOM = self.analysis_list[program_point]
         if not compare_states(state, old):
             state: State = merge_states(state, old)
@@ -175,8 +163,6 @@ class Analysis(AnalysisBase):
                 )
             except:
                 pass
-            else:
-                pass
         self.transfer(self.final_point)
 
     # based on current program point, update self.IF
@@ -194,23 +180,23 @@ class Analysis(AnalysisBase):
             # curr_state is the previous program point
             next_state: State = self.analysis_list[program_point]
             dummy_value: Value = Value()
-            next_next_state: State = deepcopy_state(next_state)
+            next_next_state: State = deepcopy_state(next_state, program_point)
+
+            # class definition
             if self.is_classdef_call_point(program_point):
-                self._detect_flow_classdef(
-                    program_point, next_state, next_next_state, dummy_value
-                )
+                self._add_analysisclass_interflow(program_point)
             elif self.is_normal_call_point(program_point):
                 self._detect_flow_call(
                     program_point, next_state, next_next_state, dummy_value
                 )
-                next_next_class_state = deepcopy_state(next_state)
+                next_next_class_state = deepcopy_state(next_state, program_point)
                 dummy_class_value = Value()
                 self._detect_flow_call_class(
                     program_point, next_state, next_next_class_state, dummy_class_value
                 )
             # init function during class initialization
             elif self.is_class_init_call_point(program_point):
-                self.detect_flow_artificial_init(
+                self.detect_flow_class_init(
                     program_point, next_state, next_next_state, dummy_value
                 )
             elif self.is_getter_call_point(program_point):
@@ -257,6 +243,32 @@ class Analysis(AnalysisBase):
         ast.FloorDiv: "__rfloordiv__",
     }
 
+    # deal with cases such as class xxx
+    def _add_analysisclass_interflow(self, program_point: ProgramPoint):
+        """
+        prev
+        |
+        curr(call)
+                entry
+
+                exit
+        return
+        """
+        call_lab, call_ctx = program_point
+        entry_lab, exit_lab = self.add_sub_cfg(call_lab)
+        ret_lab = self.get_classdef_return_label(call_lab)
+        self.inter_flows.add(
+            (
+                (call_lab, call_ctx),
+                (entry_lab, call_ctx),
+                (exit_lab, call_ctx),
+                (ret_lab, call_ctx),
+            )
+        )
+        self.entry_program_point_info[(entry_lab, call_ctx)] = AdditionalEntryInfo(
+            None, None, None, None, None, False
+        )
+
     # detect flows of functions which have labels
     def _add_analysisfunction_interflow(
         self, program_point: ProgramPoint, type: AnalysisFunction, ret_lab: int
@@ -286,7 +298,7 @@ class Analysis(AnalysisBase):
         self.inter_flows.add(inter_flow)
 
     def _add_analysismethod_interflow(
-        self, program_point: ProgramPoint, type: AnalysisMethod, ret_lab
+        self, program_point: ProgramPoint, type: AnalysisMethod, ret_lab: int
     ):
 
         call_lab, call_ctx = program_point
@@ -348,12 +360,14 @@ class Analysis(AnalysisBase):
             one_value = new_state.compute_value_of_expr(expr)
             dummy_value.inject(one_value)
         elif isinstance(expr, ast.Yield):
-            one_value = new_state.compute_value_of_expr(expr.value)
+            one_value = new_state.compute_value_of_expr(expr)
             # used by generators
             return_value = new_state.stack.read_var(RETURN_FLAG)
             return_value.inject(one_value)
             new_state.stack.write_var(RETURN_FLAG, "local", return_value)
-
+            dummy_value.inject(one_value)
+        elif isinstance(expr, ast.NameConstant):
+            one_value = new_state.compute_value_of_expr(expr)
             dummy_value.inject(one_value)
         elif isinstance(expr, ast.BinOp):
             operator_name = self._numeric_methods[type(expr.op)]
@@ -396,7 +410,7 @@ class Analysis(AnalysisBase):
 
     # deal with calling __init__ implicitly during class initialization.
     # this will only happen when xxx = Class().
-    def detect_flow_artificial_init(
+    def detect_flow_class_init(
         self,
         program_point: ProgramPoint,
         old_state: State,
@@ -445,7 +459,6 @@ class Analysis(AnalysisBase):
         ret_lab, dummy_ret_lab = self.get_getter_return_label(call_lab)
         direct_res, descr_gets = getattrs(value, call_stmt.attr)
 
-        dummy_value = Value()
         dummy_value.inject(direct_res)
 
         for descr_get in descr_gets:
@@ -472,9 +485,8 @@ class Analysis(AnalysisBase):
                 )
                 self.inter_flows.add(inter_flow)
             else:
+                raise NotImplementedError(descr_get)
                 dummy_value.inject(descr_get)
-                # continue
-                # raise NotImplementedError(descr_get)
 
         dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
@@ -484,10 +496,6 @@ class Analysis(AnalysisBase):
         self, program_point, old_state: State, new_state: State, dummy_value: Value
     ):
         call_stmt: ast.Assign = self.get_stmt_by_point(program_point)
-        assert isinstance(call_stmt, ast.Assign), call_stmt
-        assert len(call_stmt.targets) == 1 and isinstance(
-            call_stmt.targets[0], ast.Attribute
-        )
         attribute: ast.Attribute = call_stmt.targets[0]
         attr: str = call_stmt.targets[0].attr
 
@@ -497,20 +505,22 @@ class Analysis(AnalysisBase):
         objs = new_state.compute_value_of_expr(attribute.value)
         value = new_state.compute_value_of_expr(call_stmt.value)
 
+        # direct_res, descr_sets = getattrs(objs, attr)
         descr_sets = setattrs(objs, attr, value)
-        if descr_sets.is_Any():
-            dummy_value.transform_to_Any()
-
         for descr_set in descr_sets:
-            if isinstance(descr_set, AnalysisMethod):
+            if isinstance(descr_set, AnalysisDescriptorSetter):
                 entry_lab, exit_lab = descr_set.tp_function.tp_code
-                instance = descr_set.tp_instance
-                new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
+                new_ctx: Tuple = merge(call_lab, None, call_ctx)
 
                 self.entry_program_point_info[
                     (entry_lab, new_ctx)
                 ] = AdditionalEntryInfo(
-                    instance, None, descr_set.tp_module, None, None, False
+                    None,
+                    None,
+                    descr_set.tp_function.tp_module,
+                    descr_set.tp_function.tp_defaults,
+                    descr_set.tp_function.tp_kwdefaults,
+                    False,
                 )
 
                 inter_flow = (
@@ -521,41 +531,9 @@ class Analysis(AnalysisBase):
                 )
                 self.inter_flows.add(inter_flow)
             else:
-                raise NotImplementedError
+                raise NotImplementedError(descr_set)
 
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
-
-    # deal with cases such as class xxx
-    def _detect_flow_classdef(
-        self,
-        program_point: ProgramPoint,
-        old_state: State,
-        new_state: State,
-        dummy_value: Value,
-    ):
-        """
-        prev
-        |
-        curr(call)
-                entry
-
-                exit
-        return
-        """
-        call_lab, call_ctx = program_point
-        entry_lab, exit_lab = self.add_sub_cfg(call_lab)
-        return_lab = self.get_classdef_return_label(call_lab)
-        self.inter_flows.add(
-            (
-                (call_lab, call_ctx),
-                (entry_lab, call_ctx),
-                (exit_lab, call_ctx),
-                (return_lab, call_ctx),
-            )
-        )
-        self.entry_program_point_info[(entry_lab, call_ctx)] = AdditionalEntryInfo(
-            None, None, None, None, None, False
-        )
 
     def _detect_flow_call_class(
         self,
@@ -609,10 +587,10 @@ class Analysis(AnalysisBase):
             elif isinstance(type, AnalysisClass):
                 logger.info("Skip AnalysisClass")
             elif isinstance(type, AnalysisFunction):
-                ret_lab = self.get_func_return_label(call_lab)
+                ret_lab, _ = self.get_func_return_label(call_lab)
                 self._add_analysisfunction_interflow(program_point, type, ret_lab)
             elif isinstance(type, AnalysisMethod):
-                ret_lab = self.get_func_return_label(call_lab)
+                ret_lab, _ = self.get_func_return_label(call_lab)
                 self._add_analysismethod_interflow(program_point, type, ret_lab)
             elif isinstance(type, AnalysisInstance):
                 pass
@@ -654,11 +632,11 @@ class Analysis(AnalysisBase):
 
         # temp variables created by var = init and var1 = var.__init__
         # when merge at final label, if we didn't set it up, it would be TOP
-        new_dummy_label, init_dummy_label = self.get_func_dummy_labels(call_lab)
-        new_dummy_stmt = self.get_stmt_by_label(new_dummy_label)
-        init_dummy_stmt = self.get_stmt_by_label(init_dummy_label)
-        new_state.stack.write_var(new_dummy_stmt.id, Namespace_Local, Value())
-        new_state.stack.write_var(init_dummy_stmt.id, Namespace_Local, Value())
+        # new_dummy_label, init_dummy_label = self.get_func_dummy_labels(call_lab)
+        # new_dummy_stmt = self.get_stmt_by_label(new_dummy_label)
+        # init_dummy_stmt = self.get_stmt_by_label(init_dummy_label)
+        # new_state.stack.write_var(new_dummy_stmt.id, Namespace_Local, Value())
+        # new_state.stack.write_var(init_dummy_stmt.id, Namespace_Local, Value())
 
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
@@ -693,14 +671,12 @@ class Analysis(AnalysisBase):
                 )
 
     def transfer(self, program_point: ProgramPoint) -> State | BOTTOM:
-        sys.program_point = program_point
-        logger.warning(f"Current transfer sys.program_point {sys.program_point}")
         # if old_state is BOTTOM, skip this transfer
         old_state: State = self.analysis_list[program_point]
         if is_bot_state(old_state):
             return BOTTOM
 
-        new_state: State = deepcopy_state(old_state)
+        new_state: State = deepcopy_state(old_state, program_point)
         if self.is_dummy_point(program_point):
             return self.transfer_dummy(program_point, old_state, new_state)
         elif self.is_call_point(program_point):
@@ -840,7 +816,7 @@ class Analysis(AnalysisBase):
             # f(obj)
             if isinstance(one_descr, AnalysisDescriptorGetter):
                 descriptor_args = one_descr.tp_args
-                for idx, arg in enumerate(descriptor_args):
+                for idx, arg in enumerate(descriptor_args, 1):
                     new_stack.write_var(str(idx), Namespace_Local, arg)
                 setattr(
                     new_stack.frames[-1].f_locals, POS_ARG_LEN, len(descriptor_args)
@@ -872,7 +848,7 @@ class Analysis(AnalysisBase):
             for attr_typ in descr_sets:
                 if isinstance(attr_typ, AnalysisDescriptorSetter):
                     args = attr_typ.tp_args
-                    for idx, arg in args:
+                    for idx, arg in enumerate(args, 1):
                         new_stack.write_var(str(idx), Namespace_Local, arg)
                     setattr(new_stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
 

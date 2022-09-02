@@ -1147,10 +1147,12 @@ def refine_type(typeshed_type):
         visitor = TypeExprVisitor(typeshed_type.tp_module)
         value = visitor.visit(typeshed_type.tp_code.annotation)
         return value
+    elif isinstance(typeshed_type, TypeshedInstance):
+        return typeshed_type
     elif isinstance(typeshed_type, TypeshedAssign):
-        raise NotImplementedError
+        raise NotImplementedError(typeshed_type)
     else:
-        raise NotImplementedError
+        raise NotImplementedError(typeshed_type)
 
 
 def resolve_ordinary_types(self):

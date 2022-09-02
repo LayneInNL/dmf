@@ -102,6 +102,8 @@ class State:
         elif isinstance(expr, ast.Name):
             value = self.stack.read_var(expr.id)
             return value
+        elif isinstance(expr, ast.Yield):
+            return self.compute_value_of_expr(expr.value)
         elif isinstance(expr, ast.Attribute):
             receiver_value: Value = self.compute_value_of_expr(expr.value)
             value = getattrs(receiver_value, expr.attr)
@@ -123,13 +125,14 @@ class State:
             raise NotImplementedError(expr)
 
 
-def deepcopy_state(state: State) -> State:
+def deepcopy_state(state: State, program_point) -> State:
     memo = {}
     new_state = deepcopy(state, memo)
     sys.stack = new_state.stack
     sys.heap = new_state.heap
     sys.analysis_modules = new_state.analysis_modules
     sys.fake_analysis_modules = new_state.fake_analysis_modules
+    sys.program_point = program_point
     return new_state
 
 

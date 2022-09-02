@@ -42,11 +42,18 @@ class Heap:
         return True
 
     def __iadd__(self, other: Heap):
-        for ins in other.singletons:
-            if ins not in self.singletons:
-                self.singletons[ins] = other.singletons[ins]
+        for heap_address in other.singletons:
+            if heap_address not in self.singletons:
+                self.singletons[heap_address] = other.singletons[heap_address]
             else:
-                self.singletons[ins] += other.singletons[ins]
+                self_namespace = self.singletons[heap_address]
+                other_namespace = other.singletons[heap_address]
+                for field in other_namespace:
+                    field: Var
+                    if field.name not in self_namespace:
+                        self_namespace[field] = other_namespace[field]
+                    else:
+                        self_namespace[field] += other_namespace[field]
         return self
 
     def __repr__(self):

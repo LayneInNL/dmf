@@ -29,15 +29,11 @@
 # b = a.x
 
 
-class Base:
-    def test(self):
-        return 1
+class Test:
+    pass
 
 
-class Derive(Base):
-    def test(self):
-        return super(Derive, self).test()
-
-
-d = Derive()
-res = d.test()
+t = Test()
+t.x = 1
+t.x = "hello"
+result = t.x

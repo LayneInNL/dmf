@@ -11,5 +11,13 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-a = 1 + 2
-b = 1 - 2
+# points-to analysis
+from typing import Tuple
+
+
+def record(label: int, context: Tuple):
+    return label
+
+
+def merge(label: int, heap: int, context: Tuple):
+    return context[-1:] + (label,)
