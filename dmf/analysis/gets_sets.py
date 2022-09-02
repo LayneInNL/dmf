@@ -214,8 +214,6 @@ def GenericGetAttr(obj, name):
 
     # try finding descriptors
     descrs = _pytype_lookup(obj_type, name, mros)
-    if descrs.is_Any():
-        return Value.make_any(), Value.make_any()
 
     # traverse descrs
     for class_variable in descrs:

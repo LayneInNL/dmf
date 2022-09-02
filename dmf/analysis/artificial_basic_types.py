@@ -17,6 +17,7 @@ from typing import List
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.special_types import Bases_Any, MRO_Any
 from dmf.analysis.value import type_2_value, Value
+from dmf.log.logger import logger
 
 
 class Singleton:
@@ -51,7 +52,15 @@ class ArtificialFunction(Artificial):
         self.tp_dict: Namespace = Namespace()
 
     def __call__(self, *args, **kwargs):
-        return self.tp_code(*args, **kwargs)
+        value = Value()
+        try:
+            result = self.tp_code(*args, **kwargs)
+        except TypeError:
+            logger.critical(f"Function call failed")
+        else:
+            value.inject(result)
+        finally:
+            return value
 
     def __le__(self, other):
         result = self.tp_dict <= other.tp_dict
@@ -73,13 +82,21 @@ class ArtificialMethod(Artificial):
         self.tp_instance = tp_instance
 
     def __call__(self, *args, **kwargs):
-        return self.tp_function(type_2_value(self.tp_instance), *args, **kwargs)
+        value = Value()
+        try:
+            result = self.tp_function(type_2_value(self.tp_instance), *args, **kwargs)
+        except TypeError:
+            logger.critical(f"Method call failed")
+        else:
+            value.inject(result)
+        finally:
+            return value
 
     def __le__(self, other):
-        return self.tp_function <= other.tp_functioin
+        return self.tp_function <= other.tp_function
 
     def __iadd__(self, other):
-        self.tp_function += other.tp_functioin
+        self.tp_function += other.tp_function
         return self
 
     def __repr__(self):
@@ -105,6 +122,9 @@ class ArtificialClass(Artificial):
 
     def __repr__(self):
         return f"artificial-class {self.tp_uuid}"
+
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError
 
 
 # mimic builtins.type

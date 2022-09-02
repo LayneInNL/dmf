@@ -207,6 +207,7 @@ class Analysis(AnalysisBase):
                 self._detect_flow_call_class(
                     program_point, next_state, next_next_class_state, dummy_class_value
                 )
+            # init function during class initialization
             elif self.is_class_init_call_point(program_point):
                 self.detect_flow_artificial_init(
                     program_point, next_state, next_next_state, dummy_value
@@ -255,6 +256,68 @@ class Analysis(AnalysisBase):
         ast.FloorDiv: "__rfloordiv__",
     }
 
+    # detect flows of functions which have labels
+    def _add_analysisfunction_interflow(
+        self, program_point: ProgramPoint, type: AnalysisFunction, ret_lab: int
+    ):
+        call_lab, call_ctx = program_point
+        entry_lab, exit_lab = type.tp_code
+
+        # used by generator
+        tp_address = record(call_lab, call_ctx)
+
+        new_ctx: Tuple = merge(call_lab, None, call_ctx)
+        self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
+            None,
+            None,
+            type.tp_module,
+            type.tp_defaults,
+            type.tp_kwdefaults,
+            (type.tp_generator, tp_address) if type.tp_generator else type.tp_generator,
+        )
+
+        inter_flow = (
+            (call_lab, call_ctx),
+            (entry_lab, new_ctx),
+            (exit_lab, new_ctx),
+            (ret_lab, call_ctx),
+        )
+        self.inter_flows.add(inter_flow)
+
+    def _add_analysismethod_interflow(
+        self, program_point: ProgramPoint, type: AnalysisMethod, ret_lab
+    ):
+
+        call_lab, call_ctx = program_point
+        entry_lab, exit_lab = type.tp_function.tp_code
+        instance: AnalysisInstance = type.tp_instance
+        function: AnalysisFunction = type.tp_function
+        if hasattr(instance, "tp_address"):
+            # instance is an instance
+            new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
+        else:
+            # instance is a class, encountered in @classmethod
+            new_ctx: Tuple = merge(call_lab, None, call_ctx)
+
+        self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
+            type_2_value(instance),
+            INIT_FLAG if self.is_class_init_call_point(program_point) else None,
+            type.tp_module,
+            function.tp_defaults,
+            function.tp_kwdefaults,
+            False,
+        )
+
+        inter_flow = (
+            (call_lab, call_ctx),
+            (entry_lab, new_ctx),
+            (exit_lab, new_ctx),
+            (ret_lab, call_ctx),
+        )
+        self.inter_flows.add(inter_flow)
+
+    # detect flows of magic methods.
+    # for example, a + b we retrieve a.__add__
     def _detect_flow_magic(
         self,
         program_point: ProgramPoint,
@@ -299,13 +362,27 @@ class Analysis(AnalysisBase):
             lhs = expr.left
             # left expr value
             lhs_value = new_state.compute_value_of_expr(lhs)
-            operator_direct_res, operator_descr_res = getattrs(lhs_value, operator_name)
-            for one_operator_direct_res in operator_direct_res:
-                if isinstance(one_operator_direct_res, TypeshedFunction):
-                    one_value = one_operator_direct_res.resolve_ordinary_types()
+            direct_res, descr_res = getattrs(lhs_value, operator_name)
+            for one_descr_res in descr_res:
+                # we're only like AnalysisMethod. a+b = a.__add__(b).
+                # a.__add__ is a method
+                if isinstance(one_descr_res, AnalysisMethod):
+                    self._add_analysismethod_interflow(
+                        program_point, one_descr_res, ret_lab
+                    )
+                else:
+                    raise NotImplementedError(one_descr_res)
+
+            for one_direct_res in direct_res:
+                if isinstance(one_direct_res, AnalysisFunction):
+                    # AnalysisFunction not possible
+                    pass
+                elif isinstance(one_direct_res, TypeshedFunction):
+                    one_value = one_direct_res.resolve_ordinary_types()
                     dummy_value.inject(one_value)
                 else:
-                    raise NotImplementedError(one_operator_direct_res)
+                    raise NotImplementedError(one_direct_res)
+
             rhs = expr.right
         else:
             raise NotImplementedError(expr)
@@ -315,65 +392,6 @@ class Analysis(AnalysisBase):
         assert isinstance(dummy_ret_expr, ast.Name)
         new_state.stack.write_var(dummy_ret_expr.id, Namespace_Local, dummy_value)
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
-
-    def _lambda_constructor(
-        self,
-        program_point: ProgramPoint,
-        old_state: State,
-        new_state: State,
-        dummy_value: Value,
-        typ: Constructor,
-    ):
-        # correspond to object.__new__(cls)
-        # it has the form of temp_func(cls)
-
-        stmt = self.get_stmt_by_point(program_point)
-        assert len(stmt.args) == 1
-
-        call_lab, call_ctx = program_point
-        addr = record(call_lab, call_ctx)
-        new_stack, new_heap = new_state.stack, new_state.heap
-        types = new_state.compute_value_of_expr(stmt.args[0])
-        for cls in types:
-            instance = typ(addr, cls)
-            new_heap.write_instance_to_heap(instance)
-            dummy_value.inject_type(instance)
-
-    def _detect_flow_artificial_function(
-        self,
-        program_point: ProgramPoint,
-        old_state: State,
-        new_state: State,
-        dummy_value: Value,
-        typ: ArtificialFunction,
-    ):
-        call_stmt = self.get_stmt_by_point(program_point)
-
-        args, keywords = compute_func_args(
-            new_state, call_stmt.args, call_stmt.keywords
-        )
-        try:
-            res = typ(*args, **keywords)
-        except TypeError:
-            logger.critical(f"Functioin call failed")
-        else:
-            dummy_value.inject(res)
-
-    def _detect_flow_artificial_method(
-        self,
-        program_point: ProgramPoint,
-        old_state: State,
-        new_state: State,
-        dummy_value: Value,
-        typ: ArtificialMethod,
-    ):
-        call_stmt = self.get_stmt_by_point(program_point)
-
-        args, keywords = compute_func_args(
-            new_state, call_stmt.args, call_stmt.keywords
-        )
-        res = typ(*args, **keywords)
-        dummy_value.inject(res)
 
     # deal with calling __init__ implicitly during class initialization.
     # this will only happen when xxx = Class().
@@ -389,38 +407,23 @@ class Analysis(AnalysisBase):
 
         call_stmt: ast.Call = self.get_stmt_by_label(call_lab)
         new_stack, new_heap = new_state.stack, new_state.heap
+        args, keywords = compute_func_args(
+            new_state, call_stmt.args, call_stmt.keywords
+        )
         # new_stack, new_heap = new_state
-        value: Value = new_state.compute_value_of_expr(call_stmt.func)
+        inits: Value = new_state.compute_value_of_expr(call_stmt.func)
 
-        for val in value:
-            if isinstance(val, AnalysisMethod):
-                entry_lab, exit_lab = val.tp_function.tp_code
-                instance = val.tp_instance
-                new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
-
-                self.entry_program_point_info[
-                    (entry_lab, new_ctx)
-                ] = AdditionalEntryInfo(
-                    instance, INIT_FLAG, val.tp_module, None, None, False
-                )
-
-                inter_flow = (
-                    (call_lab, call_ctx),
-                    (entry_lab, new_ctx),
-                    (exit_lab, new_ctx),
-                    (ret_lab, call_ctx),
-                )
-                self.inter_flows.add(inter_flow)
-            elif isinstance(val, ArtificialMethod):
-                args, keywords = compute_func_args(
-                    new_state, call_stmt.args, call_stmt.keywords
-                )
-                one_direct_res = val(*args, **keywords)
+        # special init
+        # one case is user defined function
+        # one case is artificial function
+        for init in inits:
+            if isinstance(init, AnalysisMethod):
+                self._add_analysismethod_interflow(program_point, init, ret_lab)
+            elif isinstance(init, ArtificialMethod):
+                one_direct_res = init(*args, **keywords)
                 dummy_value.inject(one_direct_res)
             else:
                 pass
-            # else:
-            #     dummy_value.inject_type(val)
 
         dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
@@ -600,36 +603,41 @@ class Analysis(AnalysisBase):
         value: Value = new_state.compute_value_of_expr(call_stmt.func)
         # iterate all types to find which is callable
         for type in value:
-            # if type is Any, just insert it
             if type is Any:
                 dummy_value.inject(type)
             elif isinstance(type, AnalysisClass):
                 logger.info("Skip AnalysisClass")
+            elif isinstance(type, AnalysisFunction):
+                ret_lab = self.get_func_return_label(call_lab)
+                self._add_analysisfunction_interflow(program_point, type, ret_lab)
+            elif isinstance(type, AnalysisMethod):
+                ret_lab = self.get_func_return_label(call_lab)
+                self._add_analysismethod_interflow(program_point, type, ret_lab)
+            elif isinstance(type, AnalysisInstance):
+                pass
+            # artificial related types
             elif isinstance(type, ArtificialClass):
                 one_direct_res = type(address, type, *computed_args, **computed_kwargs)
                 dummy_value.inject(one_direct_res)
             elif isinstance(type, ArtificialFunction):
-                self._detect_flow_artificial_function(
-                    program_point, old_state, new_state, dummy_value, type
-                )
-            elif isinstance(type, AnalysisFunction):
-                self._detect_flow_function(
-                    program_point, old_state, new_state, dummy_value, type
-                )
-            elif isinstance(type, AnalysisMethod):
-                self._detect_flow_method(
-                    program_point, old_state, new_state, dummy_value, type
-                )
+                res = type(*computed_args, **computed_kwargs)
+                dummy_value.inject(res)
             elif isinstance(type, ArtificialMethod):
-                self._detect_flow_artificial_method(
-                    program_point, old_state, new_state, dummy_value, type
-                )
+                res = type(*computed_args, **computed_kwargs)
+                dummy_value.inject(res)
             elif isinstance(type, Constructor):
-                self._lambda_constructor(
-                    program_point, old_state, new_state, dummy_value, type
-                )
-            elif isinstance(type, AnalysisInstance):
-                pass
+                # correspond to object.__new__(cls)
+                # it has the form of temp_func(cls)
+                stmt = self.get_stmt_by_point(program_point)
+                new_stack, new_heap = new_state.stack, new_state.heap
+                types = new_state.compute_value_of_expr(stmt.args[0])
+                assert len(types) == 1
+                for cls in types:
+                    tp_dict = sys.heap.write_instance_to_heap(address)
+                    instance = type(address, cls, tp_dict)
+                    new_heap.write_instance_to_heap(instance)
+                    dummy_value.inject_type(instance)
+
             # type is a typeshed class, for example, slice
             elif isinstance(type, TypeshedClass):
                 typeshed_instance = TypeshedInstance(
@@ -642,6 +650,15 @@ class Analysis(AnalysisBase):
         _, dummy_ret_lab = self.get_func_return_label(call_lab)
         dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_state.stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
+
+        # temp variables created by var = init and var1 = var.__init__
+        # when merge at final label, if we didn't set it up, it would be TOP
+        new_dummy_label, init_dummy_label = self.get_func_dummy_labels(call_lab)
+        new_dummy_stmt = self.get_stmt_by_label(new_dummy_label)
+        init_dummy_stmt = self.get_stmt_by_label(init_dummy_label)
+        new_state.stack.write_var(new_dummy_stmt.id, Namespace_Local, Value())
+        new_state.stack.write_var(init_dummy_stmt.id, Namespace_Local, Value())
+
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     # deal with class initialization
@@ -659,8 +676,8 @@ class Analysis(AnalysisBase):
         new_stack, new_heap = new_state.stack, new_state.heap
 
         tp_address = record(call_lab, call_ctx)
-        new_method, new_method_descr = _getattr(type, "__new__")
-        assert len(new_method_descr) == 0, new_method_descr
+        new_method, _ = _getattr(type, "__new__")
+
         for new in new_method:
             if isinstance(new, Constructor):
                 one_direct_res = new(
@@ -668,92 +685,11 @@ class Analysis(AnalysisBase):
                 )
                 dummy_value.inject(one_direct_res)
             elif isinstance(new, AnalysisFunction):
-                entry_lab, exit_lab = new.tp_code
+                analysis_method = AnalysisMethod(tp_function=new, tp_instance=type)
                 ret_lab, _ = self.get_special_new_return_label(call_lab)
-                new_ctx = merge(call_lab, None, call_ctx)
-                inter_flow = (
-                    (call_lab, call_ctx),
-                    (entry_lab, new_ctx),
-                    (exit_lab, new_ctx),
-                    (ret_lab, call_ctx),
+                self._add_analysismethod_interflow(
+                    program_point, analysis_method, ret_lab
                 )
-                self.inter_flows.add(inter_flow)
-                self.entry_program_point_info[
-                    (entry_lab, new_ctx)
-                ] = AdditionalEntryInfo(
-                    type_2_value(type), None, type.tp_module, None, None, False
-                )
-
-    # detect flows of functions which have labels
-    def _detect_flow_function(
-        self,
-        program_point: ProgramPoint,
-        old_state: State,
-        new_state: State,
-        dummy_value: Value,
-        type: AnalysisFunction,
-    ):
-        call_lab, call_ctx = program_point
-        entry_lab, exit_lab = type.tp_code
-        ret_lab, _ = self.get_func_return_label(call_lab)
-
-        # used by generator
-        tp_address = record(call_lab, call_ctx)
-
-        new_ctx: Tuple = merge(call_lab, None, call_ctx)
-        inter_flow = (
-            (call_lab, call_ctx),
-            (entry_lab, new_ctx),
-            (exit_lab, new_ctx),
-            (ret_lab, call_ctx),
-        )
-        self.inter_flows.add(inter_flow)
-        self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
-            None,
-            None,
-            type.tp_module,
-            type.tp_defaults,
-            type.tp_kwdefaults,
-            (type.tp_generator, tp_address) if type.tp_generator else type.tp_generator,
-        )
-
-    # detect flow of analysis methods which have labels
-    def _detect_flow_method(
-        self,
-        program_point: ProgramPoint,
-        old_state: State,
-        new_state: State,
-        dummy_value: Value,
-        type: AnalysisMethod,
-    ):
-        call_lab, call_ctx = program_point
-        entry_lab, exit_lab = type.tp_function.tp_code
-        instance = type.tp_instance
-        function = type.tp_function
-        if hasattr(instance, "tp_address"):
-            # instance is an instance
-            new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
-        else:
-            # instance is a class, encountered in @classmethod
-            new_ctx: Tuple = merge(call_lab, None, call_ctx)
-
-        ret_lab, _ = self.get_func_return_label(call_lab)
-        self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
-            type_2_value(instance),
-            None,
-            type.tp_module,
-            function.tp_defaults,
-            function.tp_kwdefaults,
-            False,
-        )
-
-        inter_flow = (
-            (call_lab, call_ctx),
-            (entry_lab, new_ctx),
-            (exit_lab, new_ctx),
-            (ret_lab, call_ctx),
-        )
-        self.inter_flows.add(inter_flow)
 
     def transfer(self, program_point: ProgramPoint) -> State | BOTTOM:
         sys.program_point = program_point
@@ -819,6 +755,25 @@ class Analysis(AnalysisBase):
             return self._transfer_call_setter(program_point, old_state, new_state)
         elif self.is_magic_call_point(program_point):
             return self._transfer_call_magic(program_point, old_state, new_state)
+        else:
+            raise NotImplementedError
+
+    # calculate
+    def _transfer_call_magic(
+        self, program_point: ProgramPoint, old_state: State, new_state: State
+    ):
+        # add a new frame
+        new_state.stack.add_new_frame()
+        # get expr
+        call_expr: ast.expr = self.get_stmt_by_point(program_point)
+        if isinstance(call_expr, ast.BinOp):
+            rhs = call_expr.right
+            rhs_value = new_state.compute_value_of_expr(rhs)
+            new_state.stack.write_var(str(1), Namespace_Local, rhs_value)
+
+            # set the length of pos args
+            setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, 1)
+            return new_state
         else:
             raise NotImplementedError
 
@@ -1218,7 +1173,6 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Delete,
     ) -> State:
-        # new_stack = new_state[0]
         new_stack, new_heap = new_state.stack, new_state.heap
         assert len(stmt.targets) == 1, stmt
         assert isinstance(stmt.targets[0], ast.Name), stmt

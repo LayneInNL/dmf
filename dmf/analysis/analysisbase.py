@@ -195,6 +195,11 @@ class AnalysisBase:
         logger.info(f"{label} not in setter_inter_flows")
         raise KeyError
 
+    def get_func_dummy_labels(self, label):
+        for l1, l2, l3, l4, l5, l6, l7, l8, l9 in self.call_return_inter_flows:
+            if label == l1:
+                return l3, l6
+
     def get_special_init_return_label(self, label):
         for l1, l2, l3 in self.special_init_flows:
             if label == l1:
