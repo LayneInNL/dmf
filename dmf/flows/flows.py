@@ -117,6 +117,7 @@ class CFG:
         self.getter_inter_flows: Set[Tuple[int, int, int]] = set()
         self.special_init_inter_flows: Set[Tuple[int, int, int]] = set()
         self.magic_inter_flows: Set[Tuple[int, int, int]] = set()
+        self.magic_return_inter_flows: Set[Tuple[int, int, int]] = set()
 
         self.call_labels: Set[int] = set()
         self.return_labels: Set[int] = set()
@@ -156,6 +157,13 @@ class CFG:
                     additional += "Possibly return of magic methods"
                 if id3 == block.bid:
                     additional += "Dummy possibly return of magic methods"
+            for id1, id2, id3 in self.magic_return_inter_flows:
+                if id1 == block.bid:
+                    additional += "Possibly invoke of left magic methods"
+                if id2 == block.bid:
+                    additional += "Possibly return of left magic methods"
+                if id3 == block.bid:
+                    additional += "Dummy possibly return of left magic methods"
 
             for (
                 id1,
@@ -343,6 +351,10 @@ class CFGVisitor(ast.NodeVisitor):
             self.cfg.call_labels.add(l1)
             self.cfg.return_labels.add(l2)
         for l1, l2, dummy in self.cfg.magic_inter_flows:
+            self.cfg.flows -= {(l1, l2)}
+            self.cfg.call_labels.add(l1)
+            self.cfg.return_labels.add(l2)
+        for l1, l2, dummy in self.cfg.magic_return_inter_flows:
             self.cfg.flows -= {(l1, l2)}
             self.cfg.call_labels.add(l1)
             self.cfg.return_labels.add(l2)
@@ -628,14 +640,13 @@ class CFGVisitor(ast.NodeVisitor):
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
             for target in node.targets:
-                if isinstance(target, ast.Name):
+                if isinstance(target, (ast.Name, ast.List, ast.Tuple)):
                     tmp_assign = ast.Assign(targets=[target], value=node.value)
                     add_stmt(self.curr_block, tmp_assign)
                     self.curr_block = self.add_edge(
                         self.curr_block.bid, self.new_block().bid
                     )
                 elif isinstance(target, ast.Attribute):
-                    assert isinstance(target.value, ast.Name)
                     tmp_assign = ast.Assign(targets=[target], value=node.value)
                     call_node = self.curr_block
                     add_stmt(call_node, tmp_assign)
@@ -658,25 +669,27 @@ class CFGVisitor(ast.NodeVisitor):
                     )
 
                 elif isinstance(target, ast.Subscript):
-                    assert isinstance(target.value, ast.Name)
                     decomposed_slice_expr, target.slice = self.decompose_expr(
                         target.slice
                     )
                     self.populate_body(decomposed_slice_expr)
                     tmp_assign = ast.Assign(targets=[target], value=node.value)
-                    add_stmt(self.curr_block, tmp_assign)
-                    self.curr_block = self.add_edge(
-                        self.curr_block.bid, self.new_block().bid
+                    call_node = self.curr_block
+                    add_stmt(call_node, tmp_assign)
+
+                    return_node = self.add_edge(call_node.bid, self.new_block().bid)
+                    add_stmt(return_node, tmp_assign)
+
+                    dummy_return_node = self.add_edge(
+                        return_node.bid, self.new_block().bid
                     )
-                elif isinstance(target, (ast.List, ast.Tuple)):
-                    # we should not decompose elts in containers
-                    expr_sequence = []
-                    for idx, elt in enumerate(target.elts):
-                        *decompose_expr, target.elts[idx] = self.visit(elt)
-                        expr_sequence.extend(decompose_expr)
-                    self.populate_body(expr_sequence)
-                    tmp_assign = ast.Assign(targets=[target], value=node.value)
-                    add_stmt(self.curr_block, tmp_assign)
+                    add_stmt(dummy_return_node, tmp_assign)
+
+                    self.cfg.dummy_labels.add(dummy_return_node.bid)
+                    self.cfg.magic_return_inter_flows.add(
+                        (call_node.bid, return_node.bid, dummy_return_node.bid)
+                    )
+                    self.curr_block = dummy_return_node
                     self.curr_block = self.add_edge(
                         self.curr_block.bid, self.new_block().bid
                     )

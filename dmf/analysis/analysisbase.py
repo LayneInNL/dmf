@@ -35,6 +35,7 @@ class AnalysisBase:
         self.setter_inter_flows = sys.setter_flow_tuples
         self.getter_inter_flows = sys.getter_flow_tuples
         self.magic_inter_flows = sys.magic_inter_tuples
+        self.magic_return_inter_flows = sys.magic_return_inter_tuples
         self.special_init_flows = sys.special_init_inter_flows
 
         self.inter_flows: Set[
@@ -101,6 +102,12 @@ class AnalysisBase:
                 return True
         return False
 
+    def is_magic_return_call_label(self, label):
+        for call, *_ in self.magic_return_inter_flows:
+            if label == call:
+                return True
+        return False
+
     def is_getter_call_point(self, program_point: ProgramPoint):
         label, _ = program_point
         return self.is_getter_call_label(label)
@@ -108,6 +115,10 @@ class AnalysisBase:
     def is_magic_call_point(self, program_point: ProgramPoint):
         label, _ = program_point
         return self.is_magic_call_label(label)
+
+    def is_magic_return_call_point(self, program_point: ProgramPoint):
+        label, _ = program_point
+        return self.is_magic_return_call_label(label)
 
     def is_setter_call_label(self, label):
         for call, *_ in self.setter_inter_flows:

@@ -47,6 +47,7 @@ from dmf.analysis.implicit_names import (
     GENERATOR,
     GENERATOR_ADDRESS,
 )
+from dmf.analysis.name_extractor import NameExtractor
 from dmf.analysis.special_types import Any
 from dmf.analysis.state import (
     compute_function_defaults,
@@ -736,8 +737,13 @@ class Analysis(AnalysisBase):
         target: ast.expr = stmt.targets[0]
         if isinstance(target, ast.Name):
             new_stack.write_var(target.id, Namespace_Local, rhs_value)
+        elif isinstance(target, (ast.List, ast.Tuple)):
+            name_extractor = NameExtractor()
+            all_names = name_extractor.build(target)
+            for name in all_names:
+                new_stack.write_var(name, Namespace_Local, Value.make_any())
         else:
-            assert False
+            raise NotImplementedError(target)
         return new_state
 
     def transfer_call(
@@ -942,12 +948,18 @@ class Analysis(AnalysisBase):
         elif isinstance(stmt, ast.Name):
             return self.transfer_return_name(program_point, old_state, new_state, stmt)
         elif isinstance(stmt, ast.Assign):
-            assert isinstance(stmt.targets[0], ast.Attribute), stmt
-            return self.transfer_return_setter(
-                program_point, old_state, new_state, stmt
-            )
+            if isinstance(stmt.targets[0], ast.Attribute):
+                return self.transfer_return_setter(
+                    program_point, old_state, new_state, stmt
+                )
+            elif isinstance(stmt.targets[0], ast.Subscript):
+                return self.transfer_return_setter(
+                    program_point, old_state, new_state, stmt
+                )
+            else:
+                raise NotImplementedError(stmt)
         else:
-            raise NotImplementedError
+            raise NotImplementedError(stmt)
 
     def transfer_return_setter(
         self,
