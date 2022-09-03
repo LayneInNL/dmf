@@ -32,10 +32,8 @@ class AnalysisBase:
         self.return_labels = sys.return_labels
         self.call_return_inter_flows = sys.call_flow_tuples
         self.classdef_inter_flows = sys.classdef_flow_tuples
-        self.setter_inter_flows = sys.setter_flow_tuples
-        self.getter_inter_flows = sys.getter_flow_tuples
-        self.magic_inter_flows = sys.magic_inter_tuples
-        self.magic_return_inter_flows = sys.magic_return_inter_tuples
+        self.magic_right_inter_flows = sys.magic_right_inter_tuples
+        self.magic_left_inter_flows = sys.magic_left_inter_tuples
         self.special_init_flows = sys.special_init_inter_flows
 
         self.inter_flows: Set[
@@ -90,45 +88,25 @@ class AnalysisBase:
         label, _ = program_point
         return self.is_special_init_call_label(label)
 
-    def is_getter_call_label(self, label):
-        for call, *_ in self.getter_inter_flows:
-            if label == call:
-                return True
-        return False
-
     def is_magic_call_label(self, label):
-        for call, *_ in self.magic_inter_flows:
+        for call, *_ in self.magic_right_inter_flows:
             if label == call:
                 return True
         return False
 
     def is_magic_return_call_label(self, label):
-        for call, *_ in self.magic_return_inter_flows:
+        for call, *_ in self.magic_left_inter_flows:
             if label == call:
                 return True
         return False
 
-    def is_getter_call_point(self, program_point: ProgramPoint):
-        label, _ = program_point
-        return self.is_getter_call_label(label)
-
-    def is_magic_call_point(self, program_point: ProgramPoint):
+    def is_right_magic_call_point(self, program_point: ProgramPoint):
         label, _ = program_point
         return self.is_magic_call_label(label)
 
-    def is_magic_return_call_point(self, program_point: ProgramPoint):
+    def is_left_magic_call_point(self, program_point: ProgramPoint):
         label, _ = program_point
         return self.is_magic_return_call_label(label)
-
-    def is_setter_call_label(self, label):
-        for call, *_ in self.setter_inter_flows:
-            if label == call:
-                return True
-        return False
-
-    def is_setter_call_point(self, program_point: ProgramPoint):
-        label, _ = program_point
-        return self.is_setter_call_label(label)
 
     def is_classdef_call_label(self, label: int):
         for (
@@ -167,20 +145,18 @@ class AnalysisBase:
                 return return_label
         raise KeyError
 
-    def get_getter_return_label(self, label):
-        for call_label, return_label, dummy_return_label in self.getter_inter_flows:
+    def get_right_magic_return_label(self, label):
+        for (
+            call_label,
+            return_label,
+            dummy_return_label,
+        ) in self.magic_right_inter_flows:
             if label == call_label:
                 return return_label, dummy_return_label
         raise KeyError
 
-    def get_magic_return_label(self, label):
-        for call_label, return_label, dummy_return_label in self.magic_inter_flows:
-            if label == call_label:
-                return return_label, dummy_return_label
-        raise KeyError
-
-    def get_setter_return_label(self, label):
-        for call_label, return_label, dummy_return_label in self.setter_inter_flows:
+    def get_left_magic_return_label(self, label):
+        for call_label, return_label, dummy_return_label in self.magic_left_inter_flows:
             if label == call_label:
                 return return_label, dummy_return_label
         raise KeyError

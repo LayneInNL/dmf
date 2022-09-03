@@ -113,11 +113,9 @@ class CFG:
             Tuple[int, int, int, int, int, int, int, int, int]
         ] = set()
         self.classdef_inter_flows: Set[Tuple[int, int]] = set()
-        self.setter_inter_flows: Set[Tuple[int, int, int]] = set()
-        self.getter_inter_flows: Set[Tuple[int, int, int]] = set()
         self.special_init_inter_flows: Set[Tuple[int, int, int]] = set()
-        self.magic_inter_flows: Set[Tuple[int, int, int]] = set()
-        self.magic_return_inter_flows: Set[Tuple[int, int, int]] = set()
+        self.magic_right_inter_flows: Set[Tuple[int, int, int]] = set()
+        self.magic_left_inter_flows: Set[Tuple[int, int, int]] = set()
 
         self.call_labels: Set[int] = set()
         self.return_labels: Set[int] = set()
@@ -135,35 +133,20 @@ class CFG:
                 if id2 == block.bid:
                     additional += "Return from the class"
 
-            for id1, id2, id3 in self.setter_inter_flows:
+            for id1, id2, id3 in self.magic_right_inter_flows:
                 if id1 == block.bid:
-                    additional += "Call descriptor setter"
+                    additional += "right magic methods"
                 if id2 == block.bid:
-                    additional += "Return from descriptor setter"
+                    additional += "return of right magic methods"
                 if id3 == block.bid:
-                    additional += "Dummy return from descriptor setter"
-
-            for id1, id2, id3 in self.getter_inter_flows:
+                    additional += "Dummy return of right magic methods"
+            for id1, id2, id3 in self.magic_left_inter_flows:
                 if id1 == block.bid:
-                    additional += "Call descriptor getter"
+                    additional += "left magic methods"
                 if id2 == block.bid:
-                    additional += "Return from descriptor getter"
+                    additional += "return of left magic methods"
                 if id3 == block.bid:
-                    additional += "Dummy return from descriptor getter"
-            for id1, id2, id3 in self.magic_inter_flows:
-                if id1 == block.bid:
-                    additional += "Possibly invoke magic methods"
-                if id2 == block.bid:
-                    additional += "Possibly return of magic methods"
-                if id3 == block.bid:
-                    additional += "Dummy possibly return of magic methods"
-            for id1, id2, id3 in self.magic_return_inter_flows:
-                if id1 == block.bid:
-                    additional += "Possibly invoke of left magic methods"
-                if id2 == block.bid:
-                    additional += "Possibly return of left magic methods"
-                if id3 == block.bid:
-                    additional += "Dummy possibly return of left magic methods"
+                    additional += "Dummy return of left magic methods"
 
             for (
                 id1,
@@ -342,19 +325,11 @@ class CFGVisitor(ast.NodeVisitor):
             self.cfg.flows -= {(l1, l2)}
             self.cfg.call_labels.add(l1)
             self.cfg.return_labels.add(l2)
-        for l1, l2, dummy in self.cfg.setter_inter_flows:
+        for l1, l2, dummy in self.cfg.magic_right_inter_flows:
             self.cfg.flows -= {(l1, l2)}
             self.cfg.call_labels.add(l1)
             self.cfg.return_labels.add(l2)
-        for l1, l2, dummy in self.cfg.getter_inter_flows:
-            self.cfg.flows -= {(l1, l2)}
-            self.cfg.call_labels.add(l1)
-            self.cfg.return_labels.add(l2)
-        for l1, l2, dummy in self.cfg.magic_inter_flows:
-            self.cfg.flows -= {(l1, l2)}
-            self.cfg.call_labels.add(l1)
-            self.cfg.return_labels.add(l2)
-        for l1, l2, dummy in self.cfg.magic_return_inter_flows:
+        for l1, l2, dummy in self.cfg.magic_left_inter_flows:
             self.cfg.flows -= {(l1, l2)}
             self.cfg.call_labels.add(l1)
             self.cfg.return_labels.add(l2)
@@ -600,7 +575,7 @@ class CFGVisitor(ast.NodeVisitor):
                 self.cfg.special_init_inter_flows.add(
                     (init_call_node.bid, init_return_node.bid, dummy_return_node.bid)
                 )
-                self.cfg.getter_inter_flows.add(
+                self.cfg.magic_right_inter_flows.add(
                     (
                         init_attribute_node.bid,
                         init_attribute_assign_node.bid,
@@ -625,16 +600,10 @@ class CFGVisitor(ast.NodeVisitor):
 
                 self.cfg.dummy_labels.add(dummy_return_node.bid)
 
-                if isinstance(node.value, ast.Attribute):
-                    # update attribute info
-                    self.cfg.getter_inter_flows.add(
-                        (call_node.bid, return_node.bid, dummy_return_node.bid)
-                    )
-                else:
-                    # update atribute info
-                    self.cfg.magic_inter_flows.add(
-                        (call_node.bid, return_node.bid, dummy_return_node.bid)
-                    )
+                # update atribute info
+                self.cfg.magic_right_inter_flows.add(
+                    (call_node.bid, return_node.bid, dummy_return_node.bid)
+                )
                 node.value = temp_return_name
                 self.curr_block = dummy_return_node
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
@@ -646,7 +615,13 @@ class CFGVisitor(ast.NodeVisitor):
                     self.curr_block = self.add_edge(
                         self.curr_block.bid, self.new_block().bid
                     )
-                elif isinstance(target, ast.Attribute):
+                elif isinstance(target, (ast.Subscript, ast.Attribute)):
+                    # if target is subscript, decompose slice first
+                    if isinstance(target, ast.Subscript):
+                        decomposed_slice_expr, target.slice = self.decompose_expr(
+                            target.slice
+                        )
+                        self.populate_body(decomposed_slice_expr)
                     tmp_assign = ast.Assign(targets=[target], value=node.value)
                     call_node = self.curr_block
                     add_stmt(call_node, tmp_assign)
@@ -660,33 +635,7 @@ class CFGVisitor(ast.NodeVisitor):
                     add_stmt(dummy_return_node, tmp_assign)
 
                     self.cfg.dummy_labels.add(dummy_return_node.bid)
-                    self.cfg.setter_inter_flows.add(
-                        (call_node.bid, return_node.bid, dummy_return_node.bid)
-                    )
-                    self.curr_block = dummy_return_node
-                    self.curr_block = self.add_edge(
-                        self.curr_block.bid, self.new_block().bid
-                    )
-
-                elif isinstance(target, ast.Subscript):
-                    decomposed_slice_expr, target.slice = self.decompose_expr(
-                        target.slice
-                    )
-                    self.populate_body(decomposed_slice_expr)
-                    tmp_assign = ast.Assign(targets=[target], value=node.value)
-                    call_node = self.curr_block
-                    add_stmt(call_node, tmp_assign)
-
-                    return_node = self.add_edge(call_node.bid, self.new_block().bid)
-                    add_stmt(return_node, tmp_assign)
-
-                    dummy_return_node = self.add_edge(
-                        return_node.bid, self.new_block().bid
-                    )
-                    add_stmt(dummy_return_node, tmp_assign)
-
-                    self.cfg.dummy_labels.add(dummy_return_node.bid)
-                    self.cfg.magic_return_inter_flows.add(
+                    self.cfg.magic_left_inter_flows.add(
                         (call_node.bid, return_node.bid, dummy_return_node.bid)
                     )
                     self.curr_block = dummy_return_node
