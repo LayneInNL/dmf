@@ -233,8 +233,6 @@ def GenericGetAttr(obj, name):
             res_value.inject(one_value)
         else:
             # go through normal cases
-            if class_variable is Any:
-                print("hello")
             class_variable_type = _py_type(class_variable)
             if isinstance(class_variable, PropertyAnalysisInstance):
                 fgets = class_variable.tp_dict.read_value(

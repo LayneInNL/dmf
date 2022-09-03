@@ -12,11 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-
-class Test:
-    pass
-
-
-t = Test()
-res = type(t)
-new_class = type(1, 2, 3)
+# var = 1
+# res = var.real
+# func = var.conjugate()
+var = object.__module__

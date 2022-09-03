@@ -84,8 +84,19 @@ class TypeshedClass(Typeshed):
 class TypeshedFunction(Typeshed):
     def __init__(self, tp_name, tp_module, tp_qualname):
         super().__init__(tp_name, tp_module, tp_qualname)
-        self.ordinaries: List[ast.FunctionDef] = []
-        self.getters: List[ast.FunctionDef] = []
+        self.functions: List[ast.FunctionDef] = []
+
+    def add_one_function(self, function: ast.FunctionDef):
+        self.functions.append(function)
+
+
+class TypeshedDescriptorGetter(Typeshed):
+    def __init__(self, tp_name, tp_module, tp_qualname):
+        super().__init__(tp_name, tp_module, tp_qualname)
+        self.functions: List[ast.FunctionDef] = []
+
+    def add_one_function(self, function: ast.FunctionDef):
+        self.functions.append(function)
 
 
 class TypeshedPossibleImportedName(Typeshed):
@@ -163,28 +174,40 @@ class ModuleVisitor(ast.NodeVisitor):
 
         # no function named function_name detected
         if function_name not in self.module_dict:
-            typeshed_function = TypeshedFunction(
+            is_property = False
+            for decorator in node.decorator_list:
+                if isinstance(decorator, ast.Name) and decorator.id == "property":
+                    is_property = True
+                    break
+
+            if is_property:
+                func_class = TypeshedDescriptorGetter
+            else:
+                func_class = TypeshedFunction
+            typeshed_function = func_class(
                 function_name, self.module_name, f"{self.qualname}.{function_name}"
             )
             value = type_2_value(typeshed_function)
             self.module_dict.write_local_value(function_name, value)
+
         functions: Value = self.module_dict.read_value(function_name)
 
+        has_property = False
+        for decorator in node.decorator_list:
+            if isinstance(decorator, ast.Name) and decorator.id == "property":
+                has_property = True
+
+        if node.decorator_list and not has_property:
+            # other decorators, ignore
+            return
+
+        # as far as I know, the decorators of
+        # ast.FunctionDef in typeshed could be classified as three categories:
+        # 1. Normal functions(without decorators)
+        # 2. Descriptor functions(@property, @xxx.setter and @xxx.deleter)
+        # 3. other functions( such as @abstractmethod, @classmethod)
         for typeshed_function in functions:
-            if not node.decorator_list:
-                typeshed_function.ordinaries.append(node)
-            else:
-                # as far as I know, the decorators of
-                # ast.FunctionDef in typeshed could be classified as three categories:
-                # 1. Normal functions(without decorators)
-                # 2. Descriptor functions(@property, @xxx.setter and @xxx.deleter)
-                # 3. other functions( such as @abstractmethod, @classmethod)
-                for decorator in node.decorator_list:
-                    if isinstance(decorator, ast.Name) and decorator.id == "property":
-                        typeshed_function.getters.append(node)
-                        break
-                else:
-                    typeshed_function.ordinaries.append(node)
+            typeshed_function.add_one_function(node)
 
     def visit_ClassDef(self, node: ast.ClassDef):
         class_name = node.name
@@ -311,16 +334,17 @@ class ModuleVisitor(ast.NodeVisitor):
 def resolve_typeshed_value(attributes: Value) -> Value:
     value = Value()
     for attribute in attributes:
+        # if type is Typeshed, resolve is needed
         if isinstance(attribute, Typeshed):
             tmp = resolve_typeshed_type(attribute)
             value.inject(tmp)
+        # else just insert it into value
         else:
             value.inject(attribute)
-
     return value
 
 
-def resolve_typeshed_type(attribute: Typeshed):
+def resolve_typeshed_type(attribute: Typeshed) -> Value:
     # maybe in curr module, maybe a submodule
     if isinstance(attribute, TypeshedPossibleImportedName):
         res = parse_typeshed_module(attribute.tp_imported_module)
@@ -347,17 +371,19 @@ def resolve_typeshed_type(attribute: Typeshed):
             value.inject(tmp_value)
         return value
     # can't be simplified
-    elif isinstance(attribute, TypeshedClass):
-        return attribute
-    # can't be simplified
-    elif isinstance(attribute, TypeshedFunction):
-        return attribute
-    elif isinstance(attribute, TypeshedAssign):
-        raise NotImplementedError(attribute)
-    elif isinstance(attribute, TypeshedAnnAssign):
-        return attribute
-    elif isinstance(attribute, TypeshedModule):
-        return attribute
+    elif isinstance(
+        attribute,
+        (
+            TypeshedClass,
+            TypeshedFunction,
+            TypeshedDescriptorGetter,
+            TypeshedAnnAssign,
+            TypeshedModule,
+        ),
+    ):
+        value = Value()
+        value.inject(attribute)
+        return value
     else:
         raise NotImplementedError(attribute)
 

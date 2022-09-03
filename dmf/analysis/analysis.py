@@ -29,6 +29,7 @@ from dmf.analysis.analysis_types import (
     Generator_Type,
     AnalysisDescriptorGetter,
     AnalysisDescriptorSetter,
+    TypeExprVisitor,
 )
 from dmf.analysis.analysis_types import (
     Constructor,
@@ -393,8 +394,7 @@ class Analysis(AnalysisBase):
                     # AnalysisFunction not possible
                     pass
                 elif isinstance(one_direct_res, TypeshedFunction):
-                    one_value = one_direct_res.resolve_ordinary_types()
-                    dummy_value.inject(one_value)
+                    raise NotImplementedError(one_direct_res)
                 else:
                     raise NotImplementedError(one_direct_res)
 
@@ -593,15 +593,12 @@ class Analysis(AnalysisBase):
                 ret_lab, _ = self.get_func_return_label(call_lab)
                 self._add_analysismethod_interflow(program_point, type, ret_lab)
             elif isinstance(type, AnalysisInstance):
-                pass
+                raise NotImplementedError(type)
             # artificial related types
             elif isinstance(type, ArtificialClass):
                 one_direct_res = type(address, type, *computed_args, **computed_kwargs)
                 dummy_value.inject(one_direct_res)
-            elif isinstance(type, ArtificialFunction):
-                res = type(*computed_args, **computed_kwargs)
-                dummy_value.inject(res)
-            elif isinstance(type, ArtificialMethod):
+            elif isinstance(type, (ArtificialFunction, ArtificialMethod)):
                 res = type(*computed_args, **computed_kwargs)
                 dummy_value.inject(res)
             elif isinstance(type, Constructor):
@@ -623,6 +620,14 @@ class Analysis(AnalysisBase):
                     type.tp_name, type.tp_module, type.tp_qualname, type
                 )
                 dummy_value.inject(typeshed_instance)
+            elif isinstance(type, TypeshedFunction):
+                functions = type.functions
+                one_value = Value()
+                visitor = TypeExprVisitor(type.tp_module)
+                for function in functions:
+                    function_return_return = visitor.visit(function.returns)
+                    one_value.inject(function_return_return)
+                dummy_value.inject(one_value)
             else:
                 raise NotImplementedError(type)
 

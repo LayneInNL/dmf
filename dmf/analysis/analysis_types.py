@@ -44,6 +44,8 @@ from dmf.analysis.typeshed_types import (
     extract_1value,
     Typeshed,
     resolve_typeshed_value,
+    TypeshedDescriptorGetter,
+    resolve_typeshed_type,
 )
 from dmf.analysis.value import Value, type_2_value
 from dmf.log.logger import logger
@@ -1109,9 +1111,7 @@ class TypeExprVisitor(ast.NodeVisitor):
 # for instance, test: int to Int_Type
 # but insert other types as normal
 def refine_value(value_to_to_refined: Value):
-    if value_to_to_refined.is_Any():
-        return Value.make_any()
-
+    # at first resolve typeshed attributes, if any
     normalized_types = resolve_typeshed_value(value_to_to_refined)
 
     value = Value()
@@ -1125,45 +1125,27 @@ def refine_value(value_to_to_refined: Value):
     return value
 
 
-def refine_type(typeshed_type):
-
-    if isinstance(typeshed_type, TypeshedModule):
-        return typeshed_type
-    elif isinstance(typeshed_type, TypeshedClass):
-        return typeshed_type
-    elif isinstance(typeshed_type, TypeshedFunction):
-        if typeshed_type.ordinaries:
-            return typeshed_type
-        else:
-            value = Value()
-            if typeshed_type.getters:
-                for getter in typeshed_type.getters:
-                    visitor: TypeExprVisitor = TypeExprVisitor(typeshed_type.tp_module)
-                    value.inject(visitor.visit(getter))
-            elif typeshed_type.setters or typeshed_type.deleters:
-                value.inject(None_Instance)
-            return value
-    elif isinstance(typeshed_type, TypeshedAnnAssign):
-        visitor = TypeExprVisitor(typeshed_type.tp_module)
-        value = visitor.visit(typeshed_type.tp_code.annotation)
-        return value
-    elif isinstance(typeshed_type, TypeshedInstance):
-        return typeshed_type
-    elif isinstance(typeshed_type, TypeshedAssign):
-        raise NotImplementedError(typeshed_type)
+def refine_type(typeshed_type) -> Value:
+    if isinstance(typeshed_type, Typeshed):
+        typeshed_type_value = resolve_typeshed_type(typeshed_type)
     else:
-        raise NotImplementedError(typeshed_type)
-
-
-def resolve_ordinary_types(self):
-    module = self.tp_module
-    visitor = TypeExprVisitor(module)
+        return type_2_value(typeshed_type)
 
     value = Value()
-    for ordinary in self.ordinaries:
-        one_value = visitor.visit(ordinary.returns)
-        value.inject(one_value)
+    for typeshed_type in typeshed_type_value:
+        if isinstance(
+            typeshed_type,
+            (TypeshedModule, TypeshedClass, TypeshedFunction, TypeshedInstance),
+        ):
+            value.inject(typeshed_type)
+        elif isinstance(typeshed_type, TypeshedDescriptorGetter):
+            # extract returns of functions
+            for getter in typeshed_type.functions:
+                visitor: TypeExprVisitor = TypeExprVisitor(typeshed_type.tp_module)
+                value.inject(visitor.visit(getter.returns))
+        elif isinstance(typeshed_type, TypeshedAnnAssign):
+            visitor = TypeExprVisitor(typeshed_type.tp_module)
+            value.inject(visitor.visit(typeshed_type.tp_code.annotation))
+        else:
+            raise NotImplementedError(typeshed_type)
     return value
-
-
-TypeshedFunction.resolve_ordinary_types = resolve_ordinary_types
