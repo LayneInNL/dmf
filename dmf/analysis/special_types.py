@@ -33,7 +33,8 @@ class SingletonInstanceWithDeepcopy:
 
 class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
     def __init__(self):
-        self.tp_uuid = id(self)
+        self.tp_uuid = -1024
+        self.tp_class = self
 
     def __repr__(self):
         return "Any"

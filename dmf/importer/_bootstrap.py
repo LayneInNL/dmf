@@ -725,7 +725,7 @@ def _load_unlocked(spec):
                 tp_code=(entry_lab, exit_lab),
             )
             sys.analysis_modules[module.__name__] = real_analysis_module
-            analysis = sys.Analysis(real_analysis_module.tp_qualname)
+            analysis = sys.Analysis(real_analysis_module.tp_name)
             analysis.compute_fixed_point()
             # spec.loader.exec_module(module)
 

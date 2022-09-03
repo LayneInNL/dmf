@@ -17,7 +17,7 @@ from typing import List
 
 import astor
 
-from dmf.analysis.artificial_basic_types import Type_Type, c3
+from dmf.analysis.artificial_basic_types import Type_Type, c3, Object_Type
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.special_types import MRO_Any, Bases_Any
 from dmf.analysis.typeshed import get_stub_file
@@ -47,13 +47,7 @@ class TypeshedModule(Typeshed):
         self, tp_name: str, tp_module: str, tp_qualname: str, tp_dict: Namespace
     ):
         super().__init__(tp_name, tp_module, tp_qualname)
-        # self.tp_class = Module_Type
         self.tp_dict: Namespace = tp_dict
-
-    def getattr(self, name):
-        if name in self.tp_dict:
-            return self.tp_dict.read_value(name)
-        raise AttributeError(name)
 
     def __repr__(self):
         return f"typeshed module object {self.tp_name}"
@@ -75,7 +69,6 @@ class TypeshedClass(Typeshed):
     def __init__(self, tp_name, tp_module, tp_qualname, tp_dict: Namespace):
         super().__init__(tp_name, tp_module, tp_qualname)
         self.tp_dict = tp_dict
-        self.tp_mro = [[self, MRO_Any]]
         self.tp_class = Type_Type
         self.tp_bases = [[Bases_Any]]
         self.tp_mro = c3(self)
@@ -377,6 +370,7 @@ def resolve_typeshed_type(attribute: Typeshed) -> Value:
             TypeshedClass,
             TypeshedFunction,
             TypeshedDescriptorGetter,
+            TypeshedAssign,
             TypeshedAnnAssign,
             TypeshedModule,
         ),

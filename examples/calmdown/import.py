@@ -21,4 +21,6 @@
 
 import io
 
-res = io.SEEK_CUR
+res = io.open
+
+import import_dir

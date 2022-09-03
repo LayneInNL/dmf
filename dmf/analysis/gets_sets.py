@@ -157,7 +157,6 @@ def _setattr(obj, name, value) -> Value:
 
 def _getattr(obj, name) -> Tuple[Value, Value]:
 
-    obj_type = _py_type(obj)
     # get the __getattribute__ of this obj
     # tp_getattributes = _pytype_lookup(obj_type, "__getattribute__")
     # if len(tp_getattributes) == 0:
@@ -173,24 +172,14 @@ def _getattr(obj, name) -> Tuple[Value, Value]:
     elif isinstance(obj, AnalysisFunction):
         return GenericGetAttr(obj, name)
     elif isinstance(obj, (AnalysisModule, TypeshedModule)):
-        direct_res, descr_gets = Value(), Value()
-        try:
-            res = obj.getattr(name)
-            res = refine_value(res)
-        except AttributeError:
-            return direct_res, descr_gets
+        direct_result, descriptor_result = Value(), Value()
+        if name in obj.tp_dict:
+            instance_value = obj.tp_dict.read_value(name)
+            direct_result.inject(instance_value)
+            direct_result = refine_value(direct_result)
         else:
-            direct_res.inject(res)
-            return res, descr_gets
-    elif isinstance(obj, TypeshedModule):
-        direct_res, descr_gets = Value(), Value()
-        try:
-            res = obj.getattr(name)
-        except AttributeError:
-            return direct_res, descr_gets
-        else:
-            direct_res.inject(res)
-            return direct_res, descr_gets
+            raise NotImplementedError(name)
+        return direct_result, descriptor_result
     else:
         raise NotImplementedError(obj)
     # else:

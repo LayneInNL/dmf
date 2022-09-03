@@ -778,6 +778,8 @@ class AnalysisModule:
     def __init__(self, tp_name: str, tp_package: str, tp_code):
         # tp_uuid is module name
         self.tp_uuid: str = tp_name
+        # same as tp_name
+        self.tp_name: str = tp_name
         self.tp_class = Module_Type
         self.tp_package: str = tp_package
         self.tp_dict: Namespace = Namespace()
@@ -785,11 +787,6 @@ class AnalysisModule:
         setattr(self.tp_dict, NAME_FLAG, self.tp_uuid)
         # entry and exit label of a module
         self.tp_code = tp_code
-
-    def getattr(self, name: str):
-        if name in self.tp_dict:
-            return self.tp_dict.read_value(name)
-        raise AttributeError(name)
 
     def __le__(self, other: AnalysisModule):
         return self.tp_dict <= other.tp_dict
@@ -1044,7 +1041,17 @@ class TypeExprVisitor(ast.NodeVisitor):
         raise NotImplementedError
 
     def visit_Attribute(self, node: ast.Attribute):
-        raise NotImplementedError
+        value = Value()
+
+        receiver_visitor = TypeExprVisitor(self.module)
+        receiver_value = receiver_visitor.visit(node.value)
+        receiver_value = refine_value(receiver_value)
+        for one in receiver_value:
+            if node.attr in one.tp_dict:
+                value.inject(one.tp_dict.read_value(node.attr))
+            else:
+                raise NotImplementedError(node)
+        return value
 
     def visit_Subscript(self, node: ast.Subscript):
         if not isinstance(node.value, ast.Name):
@@ -1095,16 +1102,15 @@ class TypeExprVisitor(ast.NodeVisitor):
         elif id == "dict":
             raise NotImplementedError
         else:
-            return Value.make_any()
             # check if it's in module
-            module: _TypeshedModule = parse_typeshed_module(self.module)
-            if id in module.tp_dict:
-                name_info = module.get_name(id)
-                res = refine_type(name_info)
-                value.inject(res)
-                return value
-            else:
-                raise NotImplementedError
+            value = Value()
+            modules: Value = parse_typeshed_module(self.module)
+            for module in modules:
+                if id in module.tp_dict:
+                    name_info = module.tp_dict.read_value(id)
+                    res = refine_value(name_info)
+                    value.inject(res)
+            return value
 
 
 # further parse types
@@ -1146,6 +1152,9 @@ def refine_type(typeshed_type) -> Value:
         elif isinstance(typeshed_type, TypeshedAnnAssign):
             visitor = TypeExprVisitor(typeshed_type.tp_module)
             value.inject(visitor.visit(typeshed_type.tp_code.annotation))
+        elif isinstance(typeshed_type, TypeshedAssign):
+            visitor = TypeExprVisitor(typeshed_type.tp_module)
+            value.inject(visitor.visit(typeshed_type.tp_code.value))
         else:
             raise NotImplementedError(typeshed_type)
     return value
