@@ -39,6 +39,12 @@ class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
     def __repr__(self):
         return "Any"
 
+    def __getattr__(self, item):
+        return self
+
+    def __call__(self, *args, **kwargs):
+        return self
+
     def values(self):
         return [self]
 

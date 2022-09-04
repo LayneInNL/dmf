@@ -27,8 +27,8 @@ from dmf.analysis.analysis_types import (
     None_Instance,
     AnalysisInstance,
     Generator_Type,
-    AnalysisDescriptorGetter,
-    AnalysisDescriptorSetter,
+    AnalysisDescriptor,
+    AnalysisDescriptor,
     TypeExprVisitor,
     Int_Type,
 )
@@ -246,7 +246,7 @@ class Analysis(AnalysisBase):
     def _add_analysisdescriptor_interflow(
         self,
         program_point: ProgramPoint,
-        type: AnalysisDescriptorGetter | AnalysisDescriptorSetter,
+        type: AnalysisDescriptor | AnalysisDescriptor,
         ret_lab: int,
     ):
         call_lab, call_ctx = program_point
@@ -358,7 +358,7 @@ class Analysis(AnalysisBase):
             )
 
             for descriptor in descriptor_result:
-                if isinstance(descriptor, AnalysisDescriptorSetter):
+                if isinstance(descriptor, AnalysisDescriptor):
                     self._add_analysisdescriptor_interflow(
                         program_point, descriptor, ret_lab
                     )
@@ -525,7 +525,7 @@ class Analysis(AnalysisBase):
 
             # add flows of possible descriptors
             for descriptor in descriptor_result:
-                if isinstance(descriptor, AnalysisDescriptorGetter):
+                if isinstance(descriptor, AnalysisDescriptor):
                     self._add_analysisfunction_interflow(
                         program_point, descriptor.tp_function, ret_lab
                     )
@@ -812,7 +812,7 @@ class Analysis(AnalysisBase):
             for receiver_type in receiver_value:
                 descriptor_result = _setattr(receiver_type, attribute.attr, rhs_value)
                 for descriptor in descriptor_result:
-                    if isinstance(descriptor, AnalysisDescriptorSetter):
+                    if isinstance(descriptor, AnalysisDescriptor):
                         args = descriptor.tp_args
                         for idx, arg in enumerate(args, 1):
                             new_state.stack.write_var(str(idx), Namespace_Local, arg)
@@ -843,7 +843,7 @@ class Analysis(AnalysisBase):
             receiver_value = new_state.compute_value_of_expr(call_expr.value)
             _, descriptor_result = getattrs(receiver_value, call_expr.attr)
             for descriptor in descriptor_result:
-                if isinstance(descriptor, AnalysisDescriptorGetter):
+                if isinstance(descriptor, AnalysisDescriptor):
                     args = descriptor.tp_args
                     for idx, arg in enumerate(args, 1):
                         new_state.stack.write_var(str(idx), Namespace_Local, arg)

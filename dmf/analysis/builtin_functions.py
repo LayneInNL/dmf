@@ -26,6 +26,7 @@ from dmf.analysis.analysis_types import (
     None_Instance,
     List_Type,
     Dict_Type,
+    AnalysisDescriptor,
 )
 from dmf.analysis.artificial_basic_types import (
     ArtificialFunction,
@@ -412,36 +413,29 @@ _setup()
 def _setup_builtin_types():
     # mimic builtins.iter
     def iter(objs, sentinel=None):
-        if objs.is_Any():
-            return Value.make_any()
-
         if sentinel is not None:
             return Value.make_any()
 
         value = Value()
-
         direct_res, descr_res = getattrs(objs, "__iter__")
-        if direct_res.is_Any() or descr_res.is_Any():
-            return Value.make_any()
-
         for one_direct_res in direct_res:
             if isinstance(one_direct_res, ArtificialFunction):
                 res = one_direct_res(objs)
                 value.inject(res)
+            elif isinstance(one_direct_res, ArtificialMethod):
+                pass
+                # res = one_direct_res(objs)
+                # value.inject(res)
             elif isinstance(one_direct_res, AnalysisFunction):
-                value.inject(one_direct_res)
+                pass
+                # value.inject(one_direct_res)
+            elif isinstance(one_direct_res, AnalysisMethod):
+                one_res = AnalysisDescriptor(
+                    one_direct_res.tp_function, type_2_value(one_direct_res.tp_instance)
+                )
+                value.inject(one_res)
             else:
                 raise NotImplementedError
-
-        for one_descr_res in descr_res:
-            if isinstance(one_descr_res, ArtificialMethod):
-                pass
-                # res = one_descr_res(objs)
-                # value.inject(res)
-            elif isinstance(one_descr_res, AnalysisMethod):
-                value.inject(one_descr_res)
-            else:
-                raise NotImplementedError(one_descr_res)
 
         return value
 
@@ -450,26 +444,18 @@ def _setup_builtin_types():
 
     def next(objs, default=None):
         value = Value()
-        direct_res, descr_res = getattrs(objs, "__next__")
+        direct_res, _ = getattrs(objs, "__next__")
 
         for one_direct_res in direct_res:
             if isinstance(one_direct_res, ArtificialFunction):
                 res = one_direct_res(objs)
                 value.inject(res)
+            elif isinstance(one_direct_res, ArtificialMethod):
+                pass
             elif isinstance(one_direct_res, AnalysisFunction):
                 value.inject(one_direct_res)
             else:
                 raise NotImplementedError
-
-        for one_descr_res in descr_res:
-            if isinstance(one_descr_res, ArtificialMethod):
-                pass
-                # res = one_descr_res(objs)
-                # value.inject(res)
-            elif isinstance(one_descr_res, AnalysisMethod):
-                value.inject(one_descr_res)
-            else:
-                raise NotImplementedError(one_descr_res)
 
         if default is not None:
             return value.inject(default)

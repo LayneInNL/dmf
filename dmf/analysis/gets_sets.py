@@ -25,8 +25,8 @@ from dmf.analysis.analysis_types import (
     refine_value,
     Constructor,
     SuperArtificialClass,
-    AnalysisDescriptorGetter,
-    AnalysisDescriptorSetter,
+    AnalysisDescriptor,
+    AnalysisDescriptor,
     ClassmethodAnalysisInstance,
     PropertyAnalysisInstance,
     StaticmethodAnalysisInstance,
@@ -229,7 +229,7 @@ def GenericGetAttr(obj, name):
                 )
                 for fget in fgets:
                     obj_value = type_2_value(obj)
-                    one_value = AnalysisDescriptorGetter(fget, obj_value)
+                    one_value = AnalysisDescriptor(fget, obj_value)
                     descr_value.inject(one_value)
             elif isinstance(class_variable, ClassmethodAnalysisInstance):
                 functions = class_variable.tp_dict.read_value(
@@ -259,7 +259,7 @@ def GenericGetAttr(obj, name):
                         descr_value = type_2_value(class_variable)
                         obj_value = type_2_value(obj)
                         obj_type_value = type_2_value(obj_type)
-                        one_value = AnalysisDescriptorGetter(
+                        one_value = AnalysisDescriptor(
                             class_variable_type_get,
                             descr_value,
                             obj_value,
@@ -316,7 +316,7 @@ def type_getattro(type, name) -> Tuple[Value, Value]:
                     descr_value = type_2_value(class_variable)
                     obj_value = type_2_value(None_Instance)
                     obj_type_value = type_2_value(type)
-                    one_descr = AnalysisDescriptorGetter(
+                    one_descr = AnalysisDescriptor(
                         class_variable_type_get, descr_value, obj_value, obj_type_value
                     )
                     descr_value.inject(one_descr)
@@ -345,7 +345,7 @@ def GenericSetAttr(obj, name, value):
             for fset in fsets:
                 obj_value = type_2_value(obj)
                 value_value = value
-                one_value = AnalysisDescriptorSetter(fset, obj_value, value_value)
+                one_value = AnalysisDescriptor(fset, obj_value, value_value)
                 descr_value.inject(one_value)
         else:
             class_variable_type = _py_type(class_variable)
@@ -360,7 +360,7 @@ def GenericSetAttr(obj, name, value):
                     descr_value = type_2_value(class_variables)
                     obj_value = type_2_value(obj)
                     value_value = value
-                    one_descr = AnalysisDescriptorSetter(
+                    one_descr = AnalysisDescriptor(
                         descriptor_type_set, descr_value, obj_value, value_value
                     )
                     descr_value.inject(one_descr)

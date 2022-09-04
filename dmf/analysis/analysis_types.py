@@ -30,6 +30,7 @@ from dmf.analysis.artificial_basic_types import (
     NotImplemented_Type,
     Ellipsis_Type,
 )
+from dmf.analysis.context_sensitivity import record
 from dmf.analysis.implicit_names import PACKAGE_FLAG, NAME_FLAG
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.special_types import MRO_Any
@@ -351,28 +352,33 @@ def _setup_List_Type():
         return type_2_value(None_Instance)
 
     def extend(self, iterable):
-        self.tp_dict.write_local_value(self.tp_container, Value.make_any())
+        for one_self in self:
+            one_self.tp_dict.write_local_value(one_self.tp_container, Value.make_any())
         return type_2_value(None_Instance)
 
     def insert(self, i, x):
         value = Value()
         value.inject(x)
 
-        prev_value = self.tp_value.read_value(self.tp_contaier)
-        value.inject(prev_value)
-
-        self.tp_dict.write_local_value(self.tp_contaier, value)
+        for one_self in self:
+            prev_value = one_self.tp_value.read_value(one_self.tp_contaier)
+            value.inject(prev_value)
+            one_self.tp_dict.write_local_value(one_self.tp_contaier, value)
         return type_2_value(None_Instance)
 
     def remove(self, x):
         return type_2_value(None_Instance)
 
     def pop(self, i=None):
-        prev_value = self.tp_dict.read_value(self.tp_container)
-        return prev_value
+        value = Value()
+        for one_self in self:
+            prev_value = one_self.tp_dict.read_value(one_self.tp_container)
+            value.inject(prev_value)
+        return value
 
     def clear(self):
-        self.tp_dict.write_local_value(self.tp_container, Value())
+        for one_self in self:
+            one_self.tp_dict.write_local_value(one_self.tp_container, Value())
         return type_2_value(None_Instance)
 
     def index(self, x, start=None, end=None):
@@ -392,14 +398,16 @@ def _setup_List_Type():
 
     def __iter__(self):
         value = Value()
-        for type in self:
-            if isinstance(type, ListAnalysisInstance):
-                iterator_tp_address = f"{type.tp_address}-list-iterator"
-                list_value = type.tp_dict.read_value(type.tp_container)
+        for one_self in self:
+            if isinstance(one_self, ListAnalysisInstance):
+                program_point = sys.program_point
+                heap_address = record(program_point[0], program_point[1])
+                iterator_tp_address = f"{one_self.tp_address}-{heap_address}"
+                list_value = one_self.tp_dict.read_value(one_self.tp_container)
                 one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
                 value.inject(one_type)
             else:
-                raise NotImplementedError(type.tp_class)
+                raise NotImplementedError(one_self.tp_class)
         return value
 
     methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
@@ -479,73 +487,6 @@ Set_Type.tp_fallback = Typeshed_Set_Type
 builtin_module_dict.write_local_value("set", type_2_value(Set_Type))
 
 
-def _setup_Set_Type():
-    def add(self, x):
-        value = Value()
-        value.inject(x)
-        prev_value = self.tp_dict.read_value(self.tp_container)
-        value.inject(prev_value)
-        self.tp_dict.write_local_value(self.tp_container, value)
-        return type_2_value(None_Instance)
-
-    def clear(self):
-        self.tp_dict.write_local_value(self.tp_container, Value())
-        return type_2_value(None_Instance)
-
-    def copy(self):
-        return type_2_value(self)
-
-    def discard(self):
-        return type_2_value(None_Instance)
-
-    def difference(self, *args, **kwargs):
-        return Value.make_any()
-
-    def difference_update(self, *args, **kwargs):
-        return Value.make_any()
-
-    def intersection(self, *args, **kwargs):
-        return Value.make_any()
-
-    def intersection_update(self, *args, **kwargs):
-        return Value.make_any()
-
-    def isdisjoint(self, *args, **kwargs):
-        return type_2_value(Bool_Instance)
-
-    def issubset(self, *args, **kwargs):
-        return type_2_value(Bool_Instance)
-
-    def issuperset(self, *args, **kwargs):
-        return type_2_value(Bool_Instance)
-
-    def pop(self, *args, **kwargs):
-        value = self.tp_dict.read_value(self.tp_container)
-        return value
-
-    def remove(self, *args, **kwargs):
-        return type_2_value(None_Instance)
-
-    def symmetric_difference(self, *args, **kwargs):
-        return Value.make_any()
-
-    def symmetric_difference_update(self, *args, **kwargs):
-        return Value.make_any()
-
-    def union(self, *args, **kwargs):
-        return Value.make_any()
-
-    methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
-    for method in methods:
-        arti_method = ArtificialFunction(
-            tp_function=method, tp_qualname=f"builtins.set.{method.__name__}"
-        )
-        Set_Type.tp_dict.write_local_value(method.__name__, type_2_value(arti_method))
-
-
-_setup_Set_Type()
-
-
 class FrozensetArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *arguments):
         if len(arguments) == 0:
@@ -565,9 +506,60 @@ Frozenset_Type.tp_fallback = Typeshed_Frozenset_Type
 builtin_module_dict.write_local_value("frozenset", type_2_value(Frozenset_Type))
 
 
+def _setup_Set_Type():
+    def add(self, x):
+        for one_self in self:
+            value = Value()
+            value.inject(x)
+            prev_value = one_self.tp_dict.read_value(one_self.tp_container)
+            value.inject(prev_value)
+            one_self.tp_dict.write_local_value(one_self.tp_container, value)
+        return type_2_value(None_Instance)
+
+    def clear(self):
+        for one_self in self:
+            one_self.tp_dict.write_local_value(one_self.tp_container, Value())
+        return type_2_value(None_Instance)
+
+    def discard(self):
+        return type_2_value(None_Instance)
+
+    def difference_update(self, *args, **kwargs):
+        return Value.make_any()
+
+    def intersection_update(self, *args, **kwargs):
+        return Value.make_any()
+
+    def pop(self, *args, **kwargs):
+        value = Value()
+        for one_self in self:
+            one_value = one_self.tp_dict.read_value(one_self.tp_container)
+            value.inject(one_value)
+        return value
+
+    def remove(self, *args, **kwargs):
+        return type_2_value(None_Instance)
+
+    def symmetric_difference(self, *args, **kwargs):
+        return Value.make_any()
+
+    def symmetric_difference_update(self, *args, **kwargs):
+        return Value.make_any()
+
+    methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
+    for method in methods:
+        arti_method = ArtificialFunction(
+            tp_function=method, tp_qualname=f"builtins.set.{method.__name__}"
+        )
+        Set_Type.tp_dict.write_local_value(method.__name__, type_2_value(arti_method))
+
+
+_setup_Set_Type()
+
+
 def _setup_FrozenSet_Type():
     def copy(self):
-        return type_2_value(self)
+        return self
 
     def difference(self, *args, **kwargs):
         return Value.make_any()
@@ -595,6 +587,7 @@ def _setup_FrozenSet_Type():
         arti_method = ArtificialFunction(
             tp_function=method, tp_qualname=f"builtins.frozenset.{method.__name__}"
         )
+        Set_Type.tp_dict.write_local_value(method.__name__, type_2_value(arti_method))
         Frozenset_Type.tp_dict.write_local_value(
             method.__name__, type_2_value(arti_method)
         )
@@ -605,6 +598,9 @@ _setup_FrozenSet_Type()
 
 class DictArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *arguments):
+        # class dict(**kwargs)¶
+        # class dict(mapping, **kwargs)
+        # class dict(iterable, **kwargs)
         if len(arguments) == 0:
             init_key_value = Value()
             init_value_value = Value()
@@ -627,59 +623,110 @@ builtin_module_dict.write_local_value("dict", type_2_value(Dict_Type))
 def _setup_Dict_Type():
     def get(self, key, default=None):
         value = Value()
-        prev_value = self.tp_dict.read_value(self.tp_container[1])
-        value.inject(prev_value)
+        for one_self in self:
+            prev_value = one_self.tp_dict.read_value(one_self.tp_container[1])
+            value.inject(prev_value)
+
         if default is not None:
             value.inject(default)
         return value
 
     def setdefault(self, key, default=None):
         value = Value()
-        prev_value = self.tp_dict.read_value(self.tp_container[1])
-        value.inject(prev_value)
+        for one_self in self:
+            prev_value = one_self.tp_dict.read_value(one_self.tp_container[1])
+            value.inject(prev_value)
+
         if default is not None:
             value.inject(default)
+
         return value
 
     def pop(self, key, default=None):
         value = Value()
-        prev_value = self.tp_dict.read_value(self.tp_container[1])
-        value.inject(prev_value)
+        for one_self in self:
+            prev_value = one_self.tp_dict.read_value(one_self.tp_container[1])
+            value.inject(prev_value)
+
         if default is not None:
             value.inject(default)
+
         return value
 
     def popitem(self):
         value = Value()
-        key_value = self.tp_dict.read_value(self.tp_container[0])
-        value.inject(key_value)
-        value_value = self.tp_dict.read_value(self.tp_container[1])
-        value.inject(value_value)
-        one_tuple = Tuple_Type(f"{self.tp_address}-popitem", Tuple_Type, value)
+        for one_self in self:
+            key_value = one_self.tp_dict.read_value(one_self.tp_container[0])
+            value.inject(key_value)
+            value_value = one_self.tp_dict.read_value(one_self.tp_container[1])
+            value.inject(value_value)
+        program_point = sys.program_point
+        tp_address = record(program_point[0], program_point[1])
+        one_tuple = Tuple_Type(f"{tp_address}", Tuple_Type, value)
         return type_2_value(one_tuple)
 
     def keys(self):
-        raise NotImplementedError
+        value = Value()
+        for one_self in self:
+            key_value = one_self.tp_dict.read_value(one_self.tp_container[0])
+            program_point = sys.program_point
+            heap_address = record(program_point[0], program_point[1])
+            tp_address = f"{one_self.tp_address}-{heap_address}"
+            one_iterator = Iterator_Type(tp_address, Iterator_Type, key_value)
+            value.inject(one_iterator)
+        return value
 
     def items(self):
-        raise NotImplementedError
+        value = Value()
+        for one_self in self:
+            program_point = sys.program_point
+            heap_address = record(program_point[0], program_point[1])
+            tp_address = f"{one_self.tp_address}-{heap_address}"
+            one_iterator = Iterator_Type(tp_address, Iterator_Type, Value.make_any())
+            value.inject(one_iterator)
+        return value
 
     def values(self):
-        raise NotImplementedError
+        value = Value()
+        for one_self in self:
+            value_value = one_self.tp_dict.read_value(one_self.tp_container[1])
+            program_point = sys.program_point
+            heap_address = record(program_point[0], program_point[1])
+            tp_address = f"{one_self.tp_address}-{heap_address}"
+            one_iterator = Iterator_Type(tp_address, Iterator_Type, value_value)
+            value.inject(one_iterator)
+        return value
 
     def update(self, other):
+        # other could be AnalysisInstance
+        for one_self in self:
+            one_self.tp_dict.write_local_value(
+                one_self.tp_container[0], Value.make_any()
+            )
+            one_self.tp_dict.write_local_value(
+                one_self.tp_container[1], Value.make_any()
+            )
         return type_2_value(None_Instance)
 
     def fromkeys(self, iterable, value=None):
-        raise NotImplementedError
+        program_point = sys.program_point
+        heap_address = record(program_point[0], program_point[1])
+        tp_address = f"{heap_address}"
+
+        if value is None:
+            value = type_2_value(None_Instance)
+
+        one_dict = Dict_Type(tp_address, Dict_Type, iterable, value)
+        return type_2_value(one_dict)
 
     def clear(self):
-        self.tp_dict.write_local_value(self.tp_container[0], Value())
-        self.tp_dict.write_local_value(self.tp_container[1], Value())
+        for one_self in self:
+            one_self.tp_dict.write_local_value(one_self.tp_container[0], Value())
+            one_self.tp_dict.write_local_value(one_self.tp_container[1], Value())
         return type_2_value(None_Instance)
 
     def copy(self):
-        return type_2_value(self)
+        return self
 
     methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
     for method in methods:
@@ -864,29 +911,11 @@ class AnalysisMethod:
         return f"analysis-method {self.tp_uuid}"
 
 
-class AnalysisDescriptorGetter:
+class AnalysisDescriptor:
     def __init__(self, tp_function, *args):
-        self.tp_uuid = f"{tp_function.tp_uuid}-getter"
+        self.tp_uuid = f"{tp_function.tp_uuid}-descriptor"
         # tp_function is the descriptor function
         self.tp_function = tp_function
-        self.tp_args = args
-
-    def __le__(self, other):
-        return True
-
-    def __iadd__(self, other):
-        return self
-
-    def __repr__(self):
-        return self.tp_uuid
-
-
-class AnalysisDescriptorSetter:
-    def __init__(self, tp_function, *args):
-        self.tp_uuid = f"{tp_function.tp_uuid}-setter"
-        # tp_function is the descriptor function
-        self.tp_function = tp_function
-        # args is a list of values
         self.tp_args = args
 
     def __le__(self, other):
