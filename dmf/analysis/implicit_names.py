@@ -52,3 +52,20 @@ reversed_numeric_methods = {
     ast.BitAnd: "__rand__",
     ast.FloorDiv: "__rfloordiv__",
 }
+
+augmented_numeric_methods = {
+    ast.Add: "__iadd__",
+    ast.Sub: "__isub__",
+    ast.Mult: "__imul__",
+    ast.Div: "__itruediv__",
+    ast.FloorDiv: "__rfloordiv__",
+    ast.Mod: "__imod__",
+    ast.Pow: "__ipow__",
+    ast.LShift: "__ilshift__",
+    ast.RShift: "__irshift__",
+    ast.BitAnd: "__iand__",
+    ast.BitXor: "__ixor__",
+    ast.Or: "__ior__",
+}
+
+unary_methods = {ast.UAdd: "__pos__", ast.USub: "__neg__", ast.Invert: "__invert__"}

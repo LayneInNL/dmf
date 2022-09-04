@@ -119,8 +119,8 @@ class TypeshedImportedName(Typeshed):
 # typeshed instance
 class TypeshedInstance(Typeshed):
     def __init__(self, tp_name: str, tp_module: str, tp_qualname: str, tp_class):
+        tp_qualname = f"{tp_qualname}-instance"
         super().__init__(tp_name, tp_module, tp_qualname)
-        self.tp_uuid = f"{self.tp_qualname}-instance"
         self.tp_class = tp_class
         self.tp_dict: Namespace = Namespace()
 

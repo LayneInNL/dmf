@@ -74,7 +74,35 @@ class State:
         return self
 
     def compute_value_of_expr(self, expr: ast.expr):
-        if isinstance(expr, ast.Num):
+        if isinstance(expr, ast.BoolOp):
+            raise NotImplementedError(expr)
+        elif isinstance(expr, ast.BinOp):
+            raise NotImplementedError(expr)
+        elif isinstance(expr, ast.UnaryOp):
+            raise NotImplementedError(expr)
+        elif isinstance(
+            expr,
+            (
+                ast.Lambda,
+                ast.IfExp,
+                ast.Dict,
+                ast.Set,
+                ast.ListComp,
+                ast.SetComp,
+                ast.GeneratorExp,
+                ast.Await,
+                ast.Call,
+            ),
+        ):
+            raise NotImplementedError(expr)
+        elif isinstance(expr, ast.Yield):
+            raise NotImplementedError(expr)
+        elif isinstance(expr, ast.YieldFrom):
+            return Value.make_any()
+        elif isinstance(expr, ast.Compare):
+            value = type_2_value(Bool_Instance)
+            return value
+        elif isinstance(expr, ast.Num):
             if isinstance(expr.n, int):
                 value = type_2_value(Int_Instance)
                 return value
@@ -83,6 +111,12 @@ class State:
                 return value
             elif isinstance(expr.n, complex):
                 raise NotImplementedError(expr)
+        elif isinstance(expr, (ast.Str, ast.JoinedStr, ast.FormattedValue)):
+            value = type_2_value(Str_Instance)
+            return value
+        elif isinstance(expr, ast.Bytes):
+            value = type_2_value(Bytes_Instance)
+            return value
         elif isinstance(expr, ast.NameConstant):
             if expr.value is None:
                 value = type_2_value(None_Instance)
@@ -90,38 +124,24 @@ class State:
             else:
                 value = type_2_value(Bool_Instance)
                 return value
-        elif isinstance(expr, (ast.Str, ast.JoinedStr)):
-            value = type_2_value(Str_Instance)
-            return value
-        elif isinstance(expr, ast.Bytes):
-            value = type_2_value(Bytes_Instance)
-            return value
-        elif isinstance(expr, ast.Compare):
-            value = type_2_value(Bool_Instance)
-            return value
-        elif isinstance(expr, ast.Name):
-            value = self.stack.read_var(expr.id)
-            return value
-        elif isinstance(expr, ast.Yield):
-            return self.compute_value_of_expr(expr.value)
-        elif isinstance(expr, ast.Attribute):
-            receiver_value: Value = self.compute_value_of_expr(expr.value)
-            value = getattrs(receiver_value, expr.attr)
-            return value
-        elif isinstance(expr, ast.BinOp):
-            # operator = Add | Sub | Mult | MatMult | Div | Mod | Pow | LShift
-            #                  | RShift | BitOr | BitXor | BitAnd | FloorDiv
-            if isinstance(expr.op, ast.Add):
-
-                pass
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.Constant):
-            raise NotImplementedError(expr)
         elif isinstance(expr, ast.Ellipsis):
             value = type_2_value(Ellipsis_Instance)
             return value
+        elif isinstance(expr, ast.Constant):
+            raise NotImplementedError(expr)
+        elif isinstance(expr, (ast.Attribute, ast.Subscript)):
+            raise NotImplementedError(expr)
+        elif isinstance(expr, ast.Starred):
+            raise NotImplementedError(expr)
+        elif isinstance(expr, ast.Name):
+            value = self.stack.read_var(expr.id)
+            return value
+        elif isinstance(expr, ast.List):
+            print(sys.program_point)
+            raise NotImplementedError(expr)
+        elif isinstance(expr, ast.Tuple):
+            raise NotImplementedError(expr)
         else:
-            logger.warn(expr)
             raise NotImplementedError(expr)
 
 

@@ -30,6 +30,7 @@ from dmf.analysis.analysis_types import (
     AnalysisDescriptorGetter,
     AnalysisDescriptorSetter,
     TypeExprVisitor,
+    Int_Type,
 )
 from dmf.analysis.analysis_types import (
     Constructor,
@@ -50,6 +51,8 @@ from dmf.analysis.implicit_names import (
     GENERATOR_ADDRESS,
     numeric_methods,
     reversed_numeric_methods,
+    augmented_numeric_methods,
+    unary_methods,
 )
 from dmf.analysis.name_extractor import NameExtractor
 from dmf.analysis.special_types import Any
@@ -372,6 +375,35 @@ class Analysis(AnalysisBase):
         new_state.stack.write_var(dummy_ret_expr.id, Namespace_Local, dummy_value)
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
+    def _magic_method_detector(self, program_point, descriptor_result, ret_lab):
+        for one_descr_res in descriptor_result:
+            # we're only like AnalysisMethod. a+b = a.__add__(b).
+            # a.__add__ is a method
+            # it must be user-defined
+            if isinstance(one_descr_res, AnalysisMethod):
+                self._add_analysismethod_interflow(
+                    program_point, one_descr_res, ret_lab
+                )
+            else:
+                raise NotImplementedError(one_descr_res)
+
+    def _nonmagic_method_detector(self, direct_result, *args):
+        value = Value()
+        for one_direct_res in direct_result:
+            # such as list.__le__
+            if isinstance(one_direct_res, ArtificialMethod):
+                arti_method_value = one_direct_res(*args)
+                value.inject(arti_method_value)
+            # such as int.__add__
+            elif isinstance(one_direct_res, TypeshedFunction):
+                typeshed_visitor = TypeExprVisitor(one_direct_res.tp_module)
+                for function in one_direct_res.functions:
+                    typeshed_value = typeshed_visitor.visit(function.returns)
+                    value.inject(typeshed_value)
+            else:
+                raise NotImplementedError(one_direct_res)
+        return value
+
     # detect flows of magic methods.
     # for example, a + b we retrieve a.__add__
     def _detect_flow_right_magic(
@@ -392,91 +424,103 @@ class Analysis(AnalysisBase):
         # used to push dummy value to dummy point
         dummy_value = Value()
 
-        # no magic method
-        if isinstance(expr, ast.BoolOp):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.BinOp):
+        if isinstance(expr, ast.BinOp):
+            # retrieve magic methods
             operator_name = numeric_methods[type(expr.op)]
+            # retrieve reversed magic methods
             reversed_operator_name = reversed_numeric_methods[type(expr.op)]
+            # retrieve augmented magic methods
+            augmented_operator_name = augmented_numeric_methods[type(expr.op)]
 
             # left expr
             lhs = expr.left
             # left expr value
             lhs_value = new_state.compute_value_of_expr(lhs)
-            direct_res, descr_res = getattrs(lhs_value, operator_name)
-            for one_descr_res in descr_res:
-                # we're only like AnalysisMethod. a+b = a.__add__(b).
-                # a.__add__ is a method
-                if isinstance(one_descr_res, AnalysisMethod):
-                    self._add_analysismethod_interflow(
-                        program_point, one_descr_res, ret_lab
-                    )
-                else:
-                    raise NotImplementedError(one_descr_res)
-
-            for one_direct_res in direct_res:
-                if isinstance(one_direct_res, AnalysisFunction):
-                    # AnalysisFunction not possible
-                    pass
-                elif isinstance(one_direct_res, TypeshedFunction):
-                    raise NotImplementedError(one_direct_res)
-                else:
-                    raise NotImplementedError(one_direct_res)
-
             rhs = expr.right
+            rhs_value = new_state.compute_value_of_expr(rhs)
+
+            direct_res, descr_res = getattrs(lhs_value, operator_name)
+            self._magic_method_detector(program_point, descr_res, ret_lab)
+            one_value = self._nonmagic_method_detector(direct_res, rhs_value)
+            dummy_value.inject(one_value)
+
         elif isinstance(expr, ast.UnaryOp):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, (ast.Lambda, ast.IfExp)):
+            if isinstance(expr.op, ast.Not):
+                one_value = new_state.compute_value_of_expr(
+                    ast.NameConstant(value=True)
+                )
+            else:
+                unary_method_name = unary_methods[type(expr.op)]
+                rhs_value = new_state.compute_value_of_expr(expr.operand)
+                direct_result, descriptor_result = getattrs(
+                    rhs_value, unary_method_name
+                )
+                self._magic_method_detector(program_point, descriptor_result, ret_lab)
+                one_value = self._nonmagic_method_detector(direct_result)
+
+            dummy_value.inject(one_value)
+
+        elif isinstance(
+            expr,
+            (
+                ast.BoolOp,
+                ast.Lambda,
+                ast.IfExp,
+                ast.Call,
+                ast.ListComp,
+                ast.SetComp,
+                ast.DictComp,
+                ast.GeneratorExp,
+                ast.Await,
+                ast.Constant,
+            ),
+        ):
             raise NotImplementedError(expr)
         elif isinstance(
             expr,
             (
                 ast.Dict,
                 ast.Set,
-                ast.ListComp,
-                ast.SetComp,
-                ast.DictComp,
-                ast.GeneratorExp,
-                ast.Await,
             ),
         ):
             raise NotImplementedError(expr)
         elif isinstance(expr, ast.Yield):
-            one_value = new_state.compute_value_of_expr(expr)
+            one_value = new_state.compute_value_of_expr(expr.value)
             # used by generators
             return_value = new_state.stack.read_var(RETURN_FLAG)
             return_value.inject(one_value)
             new_state.stack.write_var(RETURN_FLAG, "local", return_value)
-            dummy_value.inject(one_value)
+            # this return value is controlled by .send or just a None
+            dummy_value.inject(Value.make_any())
         elif isinstance(expr, ast.YieldFrom):
-            raise NotImplementedError(expr)
+            # yield from gets value from the delegated iterator.
+            one_value = new_state.compute_value_of_expr(expr)
+            new_state.stack.write_var(RETURN_FLAG, "local", Value.make_any())
+            dummy_value.inject(one_value)
         elif isinstance(expr, ast.Compare):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.Call):
-            raise NotImplementedError(expr)
+            # ignore magic methods for now
+            one_value = new_state.compute_value_of_expr(expr)
+            dummy_value.inject(one_value)
         elif isinstance(expr, ast.Num):
             one_value = new_state.compute_value_of_expr(expr)
             dummy_value.inject(one_value)
-        elif isinstance(expr, ast.Str):
+        elif isinstance(
+            expr,
+            (
+                ast.Str,
+                ast.FormattedValue,
+                ast.JoinedStr,
+                ast.Bytes,
+                ast.NameConstant,
+                ast.Ellipsis,
+            ),
+        ):
             one_value = new_state.compute_value_of_expr(expr)
             dummy_value.inject(one_value)
-        elif isinstance(expr, ast.FormattedValue):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.JoinedStr):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.Bytes):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.NameConstant):
-            one_value = new_state.compute_value_of_expr(expr)
-            dummy_value.inject(one_value)
-        elif isinstance(expr, ast.Ellipsis):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.Constant):
-            raise NotImplementedError(expr)
         elif isinstance(expr, ast.Attribute):
             # compute receiver value
-            receiver_value = new_state.compute_value_of_expr(expr.value)
-            direct_result, descriptor_result = getattrs(receiver_value, expr.attr)
+            lhs_value = new_state.compute_value_of_expr(expr.value)
+            direct_result, descriptor_result = getattrs(lhs_value, expr.attr)
             dummy_value.inject(direct_result)
 
             # add flows of possible descriptors
@@ -495,7 +539,8 @@ class Analysis(AnalysisBase):
             one_value = new_state.compute_value_of_expr(expr)
             dummy_value.inject(one_value)
         elif isinstance(expr, (ast.List, ast.Tuple)):
-            raise NotImplementedError(expr)
+            one_value = new_state.compute_value_of_expr(expr)
+            dummy_value.inject(one_value)
         else:
             raise NotImplementedError(expr)
 

@@ -340,13 +340,14 @@ builtin_module_dict.write_local_value("list", type_2_value(List_Type))
 
 
 def _setup_List_Type():
-    def append(self, x):
+    def append(self: Value, x):
         value = Value()
         value.inject(x)
 
-        prev_value = self.tp_dict.read_value(self.tp_container)
-        value.inject(prev_value)
-        self.tp_dict.write_local_value(self.tp_container, value)
+        for one_self in self:
+            prev_value = one_self.tp_dict.read_value(one_self.tp_container)
+            value.inject(prev_value)
+            one_self.tp_dict.write_local_value(one_self.tp_container, value)
         return type_2_value(None_Instance)
 
     def extend(self, iterable):
@@ -432,6 +433,16 @@ builtin_module_dict.write_local_value("tuple", type_2_value(Tuple_Type))
 
 
 def _setup_Tuple_Type():
+    def fake_append(self: Value, x):
+        value = Value()
+        value.inject(x)
+
+        for one_self in self:
+            prev_value = one_self.tp_dict.read_value(one_self.tp_container)
+            value.inject(prev_value)
+            one_self.tp_dict.write_local_value(one_self.tp_container, value)
+        return type_2_value(None_Instance)
+
     def index(self, x, start=None, end=None):
         return type_2_value(Int_Instance)
 

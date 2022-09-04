@@ -585,7 +585,6 @@ class CFGVisitor(ast.NodeVisitor):
                 node.value = init_var
                 self.curr_block = dummy_return_node
             else:
-                # call x.y
                 temp_return_name = ast.Name(id=TempVariableName.generate())
 
                 call_node = self.curr_block
@@ -1072,20 +1071,39 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Dict(self, node: ast.Dict) -> Any:
         seq = []
-        for idx, key in enumerate(node.keys):
-            seq1, node.keys[idx] = self.decompose_expr(key)
-            seq.extend(seq1)
-            seq1, node.values[idx] = self.decompose_expr(node.values[idx])
-            seq.extend(seq1)
-
-        return seq + [node]
+        temp_dict_name = ast.Name(id=TempVariableName.generate())
+        temp_dict_assign = ast.Assign(
+            targets=[temp_dict_name],
+            value=ast.Call(func=ast.Name(id="dict"), args=[], keywords=[]),
+        )
+        seq.append(temp_dict_assign)
+        for key, value in zip(node.keys, node.values):
+            # x[y] = z
+            temp_list_append = ast.Assign(
+                targets=[ast.Subscript(value=temp_dict_name, slice=key)], value=value
+            )
+            seq.append(temp_list_append)
+        return seq + [temp_dict_name]
 
     def visit_Set(self, node: ast.Set) -> Any:
         seq = []
+        temp_list_name = ast.Name(id=TempVariableName.generate())
+        temp_list_assign = ast.Assign(
+            targets=[temp_list_name],
+            value=ast.Call(func=ast.Name(id="set"), args=[], keywords=[]),
+        )
+        seq.append(temp_list_assign)
         for idx, elt in enumerate(node.elts):
-            seq1, node.elts[idx] = self.decompose_expr(elt)
-            seq.extend(seq1)
-        return seq + [node]
+            temp_list_append = ast.Expr(
+                value=ast.Call(
+                    # list.append
+                    func=ast.Attribute(value=temp_list_name, attr="add"),
+                    args=[elt],
+                    keywords=[],
+                )
+            )
+            seq.append(temp_list_append)
+        return seq + [temp_list_name]
 
     def visit_ListComp(self, node: ast.ListComp) -> Any:
 
@@ -1394,6 +1412,7 @@ class CFGVisitor(ast.NodeVisitor):
     # x.y
     # -> tmp = x.y
     def visit_Attribute(self, node) -> Any:
+        print(astor.to_source(node))
         seq, node.value = self.decompose_expr(node.value)
         return seq + [node]
 
@@ -1414,13 +1433,43 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_List(self, node: ast.List) -> Any:
         seq = []
+        temp_list_name = ast.Name(id=TempVariableName.generate())
+        temp_list_assign = ast.Assign(
+            targets=[temp_list_name],
+            value=ast.Call(func=ast.Name(id="list"), args=[], keywords=[]),
+        )
+        seq.append(temp_list_assign)
         for idx, elt in enumerate(node.elts):
-            seq1, node.elts[idx] = self.decompose_expr(elt)
-            seq.extend(seq1)
-        return seq + [node]
+            temp_list_append = ast.Expr(
+                value=ast.Call(
+                    # list.append
+                    func=ast.Attribute(value=temp_list_name, attr="append"),
+                    args=[elt],
+                    keywords=[],
+                )
+            )
+            seq.append(temp_list_append)
+        return seq + [temp_list_name]
 
     def visit_Tuple(self, node: ast.Tuple) -> Any:
-        return self.visit_List(node)
+        seq = []
+        temp_list_name = ast.Name(id=TempVariableName.generate())
+        temp_list_assign = ast.Assign(
+            targets=[temp_list_name],
+            value=ast.Call(func=ast.Name(id="tuple"), args=[], keywords=[]),
+        )
+        seq.append(temp_list_assign)
+        for idx, elt in enumerate(node.elts):
+            temp_list_append = ast.Expr(
+                value=ast.Call(
+                    # list.append
+                    func=ast.Attribute(value=temp_list_name, attr="fake_append"),
+                    args=[elt],
+                    keywords=[],
+                )
+            )
+            seq.append(temp_list_append)
+        return seq + [temp_list_name]
 
     def visit_Slice(self, node: ast.Slice) -> Any:
         seq = []
