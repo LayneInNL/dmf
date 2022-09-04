@@ -457,6 +457,20 @@ def _setup_Tuple_Type():
     def count(self, x):
         return type_2_value(Int_Instance)
 
+    def __iter__(self):
+        value = Value()
+        for one_self in self:
+            if isinstance(one_self, TupleAnalysisInstance):
+                program_point = sys.program_point
+                heap_address = record(program_point[0], program_point[1])
+                iterator_tp_address = f"{one_self.tp_address}-{heap_address}"
+                list_value = one_self.tp_dict.read_value(one_self.tp_container)
+                one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
+                value.inject(one_type)
+            else:
+                raise NotImplementedError(one_self.tp_class)
+        return value
+
     list_methods = filter(
         lambda symbol: isinstance(symbol, FunctionType), locals().values()
     )
@@ -507,6 +521,30 @@ builtin_module_dict.write_local_value("frozenset", type_2_value(Frozenset_Type))
 
 
 def _setup_Set_Type():
+    def copy(self):
+        return self
+
+    def difference(self, *args, **kwargs):
+        return Value.make_any()
+
+    def intersection(self, *args, **kwargs):
+        return Value.make_any()
+
+    def isdisjoint(self, *args, **kwargs):
+        return type_2_value(Bool_Instance)
+
+    def issubset(self, *args, **kwargs):
+        return type_2_value(Bool_Instance)
+
+    def issuperset(self, *args, **kwargs):
+        return type_2_value(Bool_Instance)
+
+    def symmetric_difference(self, *args, **kwargs):
+        return Value.make_any()
+
+    def union(self, *args, **kwargs):
+        return Value.make_any()
+
     def add(self, x):
         for one_self in self:
             value = Value()
@@ -546,6 +584,20 @@ def _setup_Set_Type():
     def symmetric_difference_update(self, *args, **kwargs):
         return Value.make_any()
 
+    def __iter__(self):
+        value = Value()
+        for one_self in self:
+            if isinstance(one_self, SetAnalysisInstance):
+                program_point = sys.program_point
+                heap_address = record(program_point[0], program_point[1])
+                iterator_tp_address = f"{one_self.tp_address}-{heap_address}"
+                list_value = one_self.tp_dict.read_value(one_self.tp_container)
+                one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
+                value.inject(one_type)
+            else:
+                raise NotImplementedError(one_self.tp_class)
+        return value
+
     methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
     for method in methods:
         arti_method = ArtificialFunction(
@@ -582,12 +634,25 @@ def _setup_FrozenSet_Type():
     def union(self, *args, **kwargs):
         return Value.make_any()
 
+    def __iter__(self):
+        value = Value()
+        for one_self in self:
+            if isinstance(one_self, FrozenSetAnalysisInstance):
+                program_point = sys.program_point
+                heap_address = record(program_point[0], program_point[1])
+                iterator_tp_address = f"{one_self.tp_address}-{heap_address}"
+                list_value = one_self.tp_dict.read_value(one_self.tp_container)
+                one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
+                value.inject(one_type)
+            else:
+                raise NotImplementedError(one_self.tp_class)
+        return value
+
     methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
     for method in methods:
         arti_method = ArtificialFunction(
             tp_function=method, tp_qualname=f"builtins.frozenset.{method.__name__}"
         )
-        Set_Type.tp_dict.write_local_value(method.__name__, type_2_value(arti_method))
         Frozenset_Type.tp_dict.write_local_value(
             method.__name__, type_2_value(arti_method)
         )
@@ -676,15 +741,19 @@ def _setup_Dict_Type():
             value.inject(one_iterator)
         return value
 
+    def __iter__(self):
+        return keys(self)
+
     def items(self):
-        value = Value()
-        for one_self in self:
-            program_point = sys.program_point
-            heap_address = record(program_point[0], program_point[1])
-            tp_address = f"{one_self.tp_address}-{heap_address}"
-            one_iterator = Iterator_Type(tp_address, Iterator_Type, Value.make_any())
-            value.inject(one_iterator)
-        return value
+        return Value.make_any()
+        # value = Value()
+        # for one_self in self:
+        #     program_point = sys.program_point
+        #     heap_address = record(program_point[0], program_point[1])
+        #     tp_address = f"{one_self.tp_address}-{heap_address}"
+        #     one_iterator = Iterator_Type(tp_address, Iterator_Type, Value.make_any())
+        #     value.inject(one_iterator)
+        # return value
 
     def values(self):
         value = Value()
