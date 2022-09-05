@@ -213,6 +213,10 @@ class Analysis(AnalysisBase):
                 self._detect_flow_left_magic(
                     program_point, next_state, next_next_state, dummy_value
                 )
+            elif self.is_del_magic_call_point(program_point):
+                self._detect_flow_del_magic(
+                    program_point, next_state, next_next_state, dummy_value
+                )
             else:
                 raise NotImplementedError(program_point)
 
@@ -334,6 +338,50 @@ class Analysis(AnalysisBase):
             (ret_lab, call_ctx),
         )
         self.inter_flows.add(inter_flow)
+
+    # find out implicit special methods of del statement
+    def _detect_flow_del_magic(
+        self,
+        program_point: ProgramPoint,
+        old_state: State,
+        new_state: State,
+        dummy_value: Value,
+    ):
+        stmt: ast.Delete = self.get_stmt_by_point(program_point)
+        target: ast.expr = stmt.targets[0]
+
+        call_lab, call_ctx = program_point
+        ret_lab, dummy_ret_lab = self.get_del_magic_return_label(call_lab)
+
+        # del name
+        if isinstance(target, ast.Name):
+            new_state.stack.delete_var(target.id)
+        # find out descriptors
+        elif isinstance(target, ast.Attribute):
+            receiver_value = new_state.compute_value_of_expr(target.value)
+            descriptor_result = setattrs(receiver_value, target.attr, None)
+            for descriptor in descriptor_result:
+                if isinstance(descriptor, AnalysisDescriptor):
+                    self._add_analysisdescriptor_interflow(
+                        program_point, descriptor, ret_lab
+                    )
+                else:
+                    raise NotImplementedError(descriptor)
+        elif isinstance(target, ast.Subscript):
+            receiver_value = new_state.compute_value_of_expr(target.value)
+            for one_receiver in receiver_value:
+                direct_result, _ = _getattr(one_receiver, "__delitem__")
+                for one_direct in direct_result:
+                    if isinstance(one_direct, AnalysisFunction):
+                        self._add_analysisfunction_interflow(
+                            program_point, one_direct, ret_lab
+                        )
+                    else:
+                        pass
+        else:
+            raise NotImplementedError(program_point)
+
+        self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     # find out implicit function calls for lhs expression
     # for instance, x.y = xxx, may be a descriptor
@@ -731,14 +779,6 @@ class Analysis(AnalysisBase):
         dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_state.stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
 
-        # temp variables created by var = init and var1 = var.__init__
-        # when merge at final label, if we didn't set it up, it would be TOP
-        # new_dummy_label, init_dummy_label = self.get_func_dummy_labels(call_lab)
-        # new_dummy_stmt = self.get_stmt_by_label(new_dummy_label)
-        # init_dummy_stmt = self.get_stmt_by_label(init_dummy_label)
-        # new_state.stack.write_var(new_dummy_stmt.id, Namespace_Local, Value())
-        # new_state.stack.write_var(init_dummy_stmt.id, Namespace_Local, Value())
-
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     # deal with class initialization
@@ -836,8 +876,44 @@ class Analysis(AnalysisBase):
             return self._transfer_call_right_magic(program_point, old_state, new_state)
         elif self.is_left_magic_call_point(program_point):
             return self._transfer_call_left_magic(program_point, old_state, new_state)
+        elif self.is_del_magic_call_point(program_point):
+            return self._transfer_call_del_magic(program_point, old_state, new_state)
         else:
             raise NotImplementedError
+
+    def _transfer_call_del_magic(
+        self, program_point: ProgramPoint, old_state: State, new_state: State
+    ):
+        # add a new frame
+        new_state.stack.add_new_frame()
+        # get expr
+        del_stmt: ast.Delete = self.get_stmt_by_point(program_point)
+        target: ast.expr = del_stmt.targets[0]
+        if isinstance(target, ast.Attribute):
+            # del x.y
+            receiver_value = new_state.compute_value_of_expr(target.value)
+            for receiver_type in receiver_value:
+                descriptor_result = _setattr(receiver_type, target.attr, None)
+                for descriptor in descriptor_result:
+                    if isinstance(descriptor, AnalysisDescriptor):
+                        args = descriptor.tp_args
+                        for idx, arg in enumerate(args, 1):
+                            new_state.stack.write_var(str(idx), Namespace_Local, arg)
+                        setattr(
+                            new_state.stack.frames[-1].f_locals, POS_ARG_LEN, len(args)
+                        )
+            return new_state
+        elif isinstance(target, ast.Subscript):
+            # del a[1]
+            receiver_value = new_state.compute_value_of_expr(target.value)
+            key_value = new_state.compute_value_of_expr(target.slice)
+            args = [receiver_value, key_value]
+            for idx, arg in enumerate(args, 1):
+                new_state.stack.write_var(str(idx), Namespace_Local, arg)
+            setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
+            return new_state
+        else:
+            raise NotImplementedError(program_point)
 
     def _transfer_call_left_magic(
         self, program_point: ProgramPoint, old_state: State, new_state: State
@@ -1023,6 +1099,11 @@ class Analysis(AnalysisBase):
                 )
             else:
                 raise NotImplementedError(stmt)
+        elif isinstance(stmt, ast.Delete):
+            return self.transfer_return_setter(
+                program_point, old_state, new_state, stmt
+            )
+
         else:
             raise NotImplementedError(stmt)
 

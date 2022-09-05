@@ -34,6 +34,7 @@ class AnalysisBase:
         self.classdef_inter_flows = sys.classdef_flow_tuples
         self.magic_right_inter_flows = sys.magic_right_inter_tuples
         self.magic_left_inter_flows = sys.magic_left_inter_tuples
+        self.magic_del_inter_flows = sys.magic_del_inter_tuples
         self.special_init_flows = sys.special_init_inter_flows
 
         self.inter_flows: Set[
@@ -88,25 +89,35 @@ class AnalysisBase:
         label, _ = program_point
         return self.is_special_init_call_label(label)
 
-    def is_magic_call_label(self, label):
+    def is_right_magic_call_label(self, label):
         for call, *_ in self.magic_right_inter_flows:
-            if label == call:
-                return True
-        return False
-
-    def is_magic_return_call_label(self, label):
-        for call, *_ in self.magic_left_inter_flows:
             if label == call:
                 return True
         return False
 
     def is_right_magic_call_point(self, program_point: ProgramPoint):
         label, _ = program_point
-        return self.is_magic_call_label(label)
+        return self.is_right_magic_call_label(label)
+
+    def is_del_magic_call_label(self, label):
+        for call, *_ in self.magic_del_inter_flows:
+            if label == call:
+                return True
+        return False
+
+    def is_del_magic_call_point(self, program_point: ProgramPoint):
+        label, _ = program_point
+        return self.is_del_magic_call_label(label)
+
+    def is_left_magic_call_label(self, label):
+        for call, *_ in self.magic_left_inter_flows:
+            if label == call:
+                return True
+        return False
 
     def is_left_magic_call_point(self, program_point: ProgramPoint):
         label, _ = program_point
-        return self.is_magic_return_call_label(label)
+        return self.is_left_magic_call_label(label)
 
     def is_classdef_call_label(self, label: int):
         for (
@@ -155,6 +166,12 @@ class AnalysisBase:
                 return return_label, dummy_return_label
         raise KeyError
 
+    def get_del_magic_return_label(self, label):
+        for call_label, return_label, dummy_return_label in self.magic_del_inter_flows:
+            if label == call_label:
+                return return_label, dummy_return_label
+        raise KeyError
+
     def get_left_magic_return_label(self, label):
         for call_label, return_label, dummy_return_label in self.magic_left_inter_flows:
             if label == call_label:
@@ -171,21 +188,7 @@ class AnalysisBase:
         for l1, l2, l3, l4, l5, l6, l7, l8, l9 in self.call_return_inter_flows:
             if label == l1:
                 return l8, l9
-        logger.info(f"{label} not in call_return_inter_flows")
-        for call_label, return_label, dummy_return_label in self.getter_inter_flows:
-            if label == call_label:
-                return return_label, dummy_return_label
-        logger.info(f"{label} not in getter_inter_flows")
-        for call_label, return_label, dummy_return_label in self.setter_inter_flows:
-            if label == call_label:
-                return return_label, dummy_return_label
-        logger.info(f"{label} not in setter_inter_flows")
         raise KeyError
-
-    def get_func_dummy_labels(self, label):
-        for l1, l2, l3, l4, l5, l6, l7, l8, l9 in self.call_return_inter_flows:
-            if label == l1:
-                return l3, l6
 
     def get_special_init_return_label(self, label):
         for l1, l2, l3 in self.special_init_flows:

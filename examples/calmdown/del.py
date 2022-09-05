@@ -13,11 +13,17 @@
 #  limitations under the License.
 
 a = 1
+del a
+# del x.y
+# del a[1]
+# a = 1
+#
+#
+class test:
+    def __delitem__(self, key):
+        self.x = 1
+        return None
 
 
-def test():
-    global a
-    del a
-
-
-test()
+t = test()
+del t[1]

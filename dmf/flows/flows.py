@@ -116,6 +116,7 @@ class CFG:
         self.special_init_inter_flows: Set[Tuple[int, int, int]] = set()
         self.magic_right_inter_flows: Set[Tuple[int, int, int]] = set()
         self.magic_left_inter_flows: Set[Tuple[int, int, int]] = set()
+        self.magic_del_inter_flows: Set[Tuple[int, int, int]] = set()
 
         self.call_labels: Set[int] = set()
         self.return_labels: Set[int] = set()
@@ -147,6 +148,13 @@ class CFG:
                     additional += "return of left magic methods"
                 if id3 == block.bid:
                     additional += "Dummy return of left magic methods"
+            for id1, id2, id3 in self.magic_del_inter_flows:
+                if id1 == block.bid:
+                    additional += "delete magic methods"
+                if id2 == block.bid:
+                    additional += "return of delete magic methods"
+                if id3 == block.bid:
+                    additional += "Dummy return of delete magic methods"
 
             for (
                 id1,
@@ -160,23 +168,23 @@ class CFG:
                 id9,
             ) in self.call_return_inter_flows:
                 if id1 == block.bid:
-                    additional += "Call label"
+                    additional += "Call"
                 if id2 == block.bid:
-                    additional += "__new__ return label"
+                    additional += "__new__ return"
                 if id3 == block.bid:
-                    additional += "Dummy __new__ return label"
-                # if id4 == block.bid:
-                #     additional += "Call descriptor getter"
-                # if id5 == block.bid:
-                #     additional += "Return from descriptor getter"
-                # if id6 == block.bid:
-                #     additional += "Dummy return from descriptor getter"
+                    additional += "Dummy __new__ return"
+                if id4 == block.bid:
+                    additional += "find __init__"
+                if id5 == block.bid:
+                    additional += "Return from find __init__"
+                if id6 == block.bid:
+                    additional += "Dummy return from find __init__"
                 if id7 == block.bid:
-                    additional += "__init__ call label"
+                    additional += "__init__ call"
                 if id8 == block.bid:
-                    additional += "Return label"
+                    additional += "Return"
                 if id9 == block.bid:
-                    additional += "Dummy return label"
+                    additional += "Dummy return"
             self.graph.node(str(block.bid), label=block.stmt_to_code() + additional)
             for next_bid in block.next:
                 self._traverse(self.blocks[next_bid], visited)
@@ -330,6 +338,10 @@ class CFGVisitor(ast.NodeVisitor):
             self.cfg.call_labels.add(l1)
             self.cfg.return_labels.add(l2)
         for l1, l2, dummy in self.cfg.magic_left_inter_flows:
+            self.cfg.flows -= {(l1, l2)}
+            self.cfg.call_labels.add(l1)
+            self.cfg.return_labels.add(l2)
+        for l1, l2, dummy in self.cfg.magic_del_inter_flows:
             self.cfg.flows -= {(l1, l2)}
             self.cfg.call_labels.add(l1)
             self.cfg.return_labels.add(l2)
@@ -487,8 +499,20 @@ class CFGVisitor(ast.NodeVisitor):
             delete_node = ast.Delete(targets=decomposed_expr_sequence[-1:])
             decomposed_expr_sequence = decomposed_expr_sequence[:-1]
             self.populate_body(decomposed_expr_sequence)
-            add_stmt(self.curr_block, delete_node)
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
+            call_node = self.curr_block
+            add_stmt(call_node, delete_node)
+            return_node = self.add_edge(call_node.bid, self.new_block().bid)
+            add_stmt(return_node, delete_node)
+            dummy_return_node = self.add_edge(return_node.bid, self.new_block().bid)
+            add_stmt(dummy_return_node, delete_node)
+
+            self.cfg.magic_del_inter_flows.add(
+                (call_node.bid, return_node.bid, dummy_return_node.bid)
+            )
+            self.cfg.dummy_labels.add(dummy_return_node.bid)
+
+            self.curr_block = self.add_edge(dummy_return_node.bid, self.new_block().bid)
 
     def visit_Assign(self, node: ast.Assign) -> None:
 

@@ -342,33 +342,60 @@ def GenericSetAttr(obj, name, value):
     for class_variable in class_variables:
         # check property instance
         if isinstance(class_variable, PropertyAnalysisInstance):
-            fsets = class_variable.tp_dict.read_value(class_variable.tp_container[1])
-            for fset in fsets:
-                obj_value = type_2_value(obj)
-                value_value = value
-                one_value = AnalysisDescriptor(fset, obj_value, value_value)
-                descr_value.inject(one_value)
+            if value is None:
+                # delattr
+                fdels = class_variable.tp_dict.read_value(
+                    class_variable.tp_container[2]
+                )
+                for fdel in fdels:
+                    obj_value = type_2_value(obj)
+                    one_value = AnalysisDescriptor(fdel, obj_value)
+                    descr_value.inject(one_value)
+            else:
+                # setattr
+                fsets = class_variable.tp_dict.read_value(
+                    class_variable.tp_container[1]
+                )
+                for fset in fsets:
+                    obj_value = type_2_value(obj)
+                    value_value = value
+                    one_value = AnalysisDescriptor(fset, obj_value, value_value)
+                    descr_value.inject(one_value)
         else:
             class_variable_type = _py_type(class_variable)
             if not isinstance(class_variable_type, AnalysisClass):
                 logger.info(f"{class_variable_type} is not class")
                 continue
 
-            # check if there is a __set__
-            descriptor_type_sets = _pytype_lookup(class_variable_type, "__set__")
-            for descriptor_type_set in descriptor_type_sets:
-                if isinstance(descriptor_type_set, AnalysisFunction):
-                    descr_value = type_2_value(class_variables)
-                    obj_value = type_2_value(obj)
-                    value_value = value
-                    one_descr = AnalysisDescriptor(
-                        descriptor_type_set, descr_value, obj_value, value_value
-                    )
-                    descr_value.inject(one_descr)
-                else:
-                    raise NotImplementedError(descriptor_type_set)
+            if value is None:
+                # check if there is a __delete__
+                descriptor_type_dels = _pytype_lookup(class_variable_type, "__delete__")
+                for descriptor_type_del in descriptor_type_dels:
+                    if isinstance(descriptor_type_del, AnalysisFunction):
+                        descr_value = type_2_value(class_variables)
+                        obj_value = type_2_value(obj)
+                        one_descr = AnalysisDescriptor(
+                            descriptor_type_del, descr_value, obj_value
+                        )
+                        descr_value.inject(one_descr)
+                    else:
+                        raise NotImplementedError(descriptor_type_del)
+            else:
+                # check if there is a __set__
+                descriptor_type_dels = _pytype_lookup(class_variable_type, "__set__")
+                for descriptor_type_del in descriptor_type_dels:
+                    if isinstance(descriptor_type_del, AnalysisFunction):
+                        descr_value = type_2_value(class_variables)
+                        obj_value = type_2_value(obj)
+                        value_value = value
+                        one_descr = AnalysisDescriptor(
+                            descriptor_type_del, descr_value, obj_value, value_value
+                        )
+                        descr_value.inject(one_descr)
+                    else:
+                        raise NotImplementedError(descriptor_type_del)
 
-    if not name in obj.tp_dict:
+    if name not in obj.tp_dict:
         obj.tp_dict.write_local_value(name, value)
     else:
         union_value = Value()
