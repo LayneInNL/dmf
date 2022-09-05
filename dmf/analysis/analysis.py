@@ -246,7 +246,7 @@ class Analysis(AnalysisBase):
     def _add_analysisdescriptor_interflow(
         self,
         program_point: ProgramPoint,
-        type: AnalysisDescriptor | AnalysisDescriptor,
+        type: AnalysisDescriptor,
         ret_lab: int,
     ):
         call_lab, call_ctx = program_point
@@ -335,6 +335,9 @@ class Analysis(AnalysisBase):
         )
         self.inter_flows.add(inter_flow)
 
+    # find out implicit function calls for lhs expression
+    # for instance, x.y = xxx, may be a descriptor
+    # x[y] = xxx, call __getitem__
     def _detect_flow_left_magic(
         self,
         program_point: ProgramPoint,
@@ -350,6 +353,7 @@ class Analysis(AnalysisBase):
         call_lab, call_ctx = program_point
         ret_lab, dummy_ret_lab = self.get_left_magic_return_label(call_lab)
 
+        # find out descriptors
         if isinstance(stmt.targets[0], ast.Attribute):
             receiver_value = new_state.compute_value_of_expr(stmt.targets[0].value)
             rhs_value = new_state.compute_value_of_expr(stmt.value)
@@ -364,6 +368,27 @@ class Analysis(AnalysisBase):
                     )
                 else:
                     raise NotImplementedError(descriptor)
+
+            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
+            return
+        elif isinstance(stmt.targets[0], ast.Subscript):
+            rhs_value = new_state.compute_value_of_expr(stmt.value)
+            receiver_value = new_state.compute_value_of_expr(stmt.targets[0].value)
+            # find __setitem__ special methods
+            direct_result, descriptor_result = getattrs(receiver_value, "__setitem__")
+            assert len(descriptor_result) == 0, descriptor_result
+            for one_direct_result in direct_result:
+                if isinstance(one_direct_result, AnalysisMethod):
+                    analysis_descriptor = AnalysisDescriptor(
+                        tp_function=one_direct_result.tp_function
+                    )
+                    self._add_analysisdescriptor_interflow(
+                        program_point, analysis_descriptor, ret_lab
+                    )
+                elif isinstance(one_direct_result, ArtificialMethod):
+                    one_value = one_direct_result(stmt.targets[0].attr, rhs_value)
+                else:
+                    raise NotImplementedError(one_direct_result)
 
             self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
             return
@@ -473,19 +498,16 @@ class Analysis(AnalysisBase):
                 ast.GeneratorExp,
                 ast.Await,
                 ast.Constant,
-            ),
-        ):
-            raise NotImplementedError(expr)
-        elif isinstance(
-            expr,
-            (
+                ast.List,
+                ast.Tuple,
                 ast.Dict,
                 ast.Set,
+                ast.Starred,
             ),
         ):
             raise NotImplementedError(expr)
         elif isinstance(expr, ast.Yield):
-            one_value = new_state.compute_value_of_expr(expr.value)
+            one_value = new_state.compute_value_of_expr(expr)
             # used by generators
             return_value = new_state.stack.read_var(RETURN_FLAG)
             return_value.inject(one_value)
@@ -498,10 +520,8 @@ class Analysis(AnalysisBase):
             new_state.stack.write_var(RETURN_FLAG, "local", Value.make_any())
             dummy_value.inject(one_value)
         elif isinstance(expr, ast.Compare):
-            # ignore magic methods for now
-            one_value = new_state.compute_value_of_expr(expr)
-            dummy_value.inject(one_value)
-        elif isinstance(expr, ast.Num):
+            # left op right
+            # I looked into the example projects, just return bool is fine.
             one_value = new_state.compute_value_of_expr(expr)
             dummy_value.inject(one_value)
         elif isinstance(
@@ -513,6 +533,9 @@ class Analysis(AnalysisBase):
                 ast.Bytes,
                 ast.NameConstant,
                 ast.Ellipsis,
+                ast.Num,
+                ast.Name,
+                ast.Index,
             ),
         ):
             one_value = new_state.compute_value_of_expr(expr)
@@ -532,15 +555,33 @@ class Analysis(AnalysisBase):
                 else:
                     raise NotImplementedError(descriptor)
         elif isinstance(expr, ast.Subscript):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.Starred):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.Name):
-            one_value = new_state.compute_value_of_expr(expr)
-            dummy_value.inject(one_value)
-        elif isinstance(expr, (ast.List, ast.Tuple)):
-            one_value = new_state.compute_value_of_expr(expr)
-            dummy_value.inject(one_value)
+            # deal with something = x.y
+            # at first compute x
+            receiver_value = new_state.compute_value_of_expr(expr.value)
+            field_value = new_state.compute_value_of_expr(expr.slice)
+            for each_receiver in receiver_value:
+                each_subscript_type = each_receiver.tp_class
+                # then find __getitem__ based on its type
+                res, descr_res = _getattr(each_subscript_type, "__getitem__")
+                for each_res in res:
+                    # special methods can be user-defined functions
+                    if isinstance(each_res, AnalysisFunction):
+                        _analysis_method = AnalysisMethod(
+                            tp_function=each_res, tp_instance=each_receiver
+                        )
+                        self._add_analysismethod_interflow(
+                            program_point, _analysis_method, ret_lab
+                        )
+                    # such as list.append
+                    elif isinstance(each_res, ArtificialFunction):
+                        _value = each_res(
+                            type_2_value(each_receiver),
+                            field_value,
+                        )
+                        dummy_value.inject(_value)
+                    elif isinstance(each_res, TypeshedFunction):
+                        _value = each_res.resolve_self_to_value()
+                        dummy_value.inject(_value)
         else:
             raise NotImplementedError(expr)
 
@@ -848,6 +889,15 @@ class Analysis(AnalysisBase):
                     for idx, arg in enumerate(args, 1):
                         new_state.stack.write_var(str(idx), Namespace_Local, arg)
                     setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
+            return new_state
+        elif isinstance(call_expr, ast.Subscript):
+            # object.__getitem__(self, key)
+            # self_value = new_state.compute_value_of_expr(call_expr.value)
+            key_value = new_state.compute_value_of_expr(call_expr.slice)
+            args = [key_value]
+            for idx, arg in enumerate(args, 1):
+                new_state.stack.write_var(str(idx), Namespace_Local, arg)
+            setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
             return new_state
         else:
             raise NotImplementedError(program_point)

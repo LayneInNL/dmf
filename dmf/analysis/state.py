@@ -92,11 +92,13 @@ class State:
                 ast.GeneratorExp,
                 ast.Await,
                 ast.Call,
+                ast.List,
+                ast.Tuple,
             ),
         ):
             raise NotImplementedError(expr)
         elif isinstance(expr, ast.Yield):
-            raise NotImplementedError(expr)
+            return self.compute_value_of_expr(expr.value)
         elif isinstance(expr, ast.YieldFrom):
             return Value.make_any()
         elif isinstance(expr, ast.Compare):
@@ -136,11 +138,9 @@ class State:
         elif isinstance(expr, ast.Name):
             value = self.stack.read_var(expr.id)
             return value
-        elif isinstance(expr, ast.List):
-            print(sys.program_point)
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.Tuple):
-            raise NotImplementedError(expr)
+        elif isinstance(expr, ast.Index):
+            value = self.compute_value_of_expr(expr.value)
+            return value
         else:
             raise NotImplementedError(expr)
 

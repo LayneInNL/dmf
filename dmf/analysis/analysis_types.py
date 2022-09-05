@@ -396,6 +396,22 @@ def _setup_List_Type():
     def copy(self):
         return type_2_value(self)
 
+    def __setitem__(self, key, value):
+        for one_self in self:
+            merged_value = Value()
+            merged_value.inject(value)
+            prev_value = one_self.tp_dict.read_value(one_self.tp_container)
+            merged_value.inject(prev_value)
+            one_self.tp_dict.write_local_value(one_self.tp_container, merged_value)
+        return type_2_value(None_Instance)
+
+    def __getitem__(self, key):
+        value = Value()
+        for one_self in self:
+            prev_value = one_self.tp_dict.read_value(one_self.tp_container)
+            value.inject(prev_value)
+        return value
+
     def __iter__(self):
         value = Value()
         for one_self in self:
@@ -1267,3 +1283,15 @@ def refine_type(typeshed_type) -> Value:
         else:
             raise NotImplementedError(typeshed_type)
     return value
+
+
+def _function_resolve_self_to_value(self: TypeshedFunction, *args, **kwargs):
+    visitor = TypeExprVisitor(self.tp_module)
+    value = Value()
+    for function in self.functions:
+        _val = visitor.visit(function.returns)
+        value.inject(_val)
+    return value
+
+
+TypeshedFunction.resolve_self_to_value = _function_resolve_self_to_value

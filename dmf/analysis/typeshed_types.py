@@ -41,6 +41,11 @@ class Typeshed:
     def __iadd__(self, other):
         return self
 
+    def resolve_self_to_value(self, *args, **kwargs) -> Value:
+        value = Value()
+        value.inject(self)
+        return value
+
 
 class TypeshedModule(Typeshed):
     def __init__(
