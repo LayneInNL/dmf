@@ -201,10 +201,10 @@ def GenericGetAttr(obj, name):
         mros = getattr(tp_dict, "super_mros")
 
     # try finding descriptors
-    descrs = _pytype_lookup(obj_type, name, mros)
+    class_variables = _pytype_lookup(obj_type, name, mros)
 
     # traverse descrs
-    for class_variable in descrs:
+    for class_variable in class_variables:
         # if descr is a function, there is an implicit __set__
         if isinstance(class_variable, AnalysisFunction):
             one_value = AnalysisMethod(tp_function=class_variable, tp_instance=obj)
@@ -218,8 +218,7 @@ def GenericGetAttr(obj, name):
         # @property def test(): int, in this case we extract int
         # def test(): int, in this case we extract test function
         elif isinstance(class_variable, Typeshed):
-            one_value = refine_type(class_variable)
-            res_value.inject(one_value)
+            res_value.inject(class_variable)
         else:
             # go through normal cases
             class_variable_type = _py_type(class_variable)
@@ -274,7 +273,9 @@ def GenericGetAttr(obj, name):
         one_res = tp_dict.read_value(name)
         res_value.inject(one_res)
 
-    res_value.inject(descrs)
+    res_value.inject(class_variables)
+
+    res_value = refine_value(res_value)
 
     return res_value, descr_value
 

@@ -1242,49 +1242,48 @@ class TypeExprVisitor(ast.NodeVisitor):
 # for instance, test: int to Int_Type
 # but insert other types as normal
 def refine_value(value_to_to_refined: Value):
-    # at first resolve typeshed attributes, if any
-    normalized_types = resolve_typeshed_value(value_to_to_refined)
 
-    value = Value()
-    for type in normalized_types:
-        if isinstance(type, Typeshed):
-            sub_value = refine_type(type)
-            value.inject(sub_value)
+    result_value = Value()
+    for one_type in value_to_to_refined:
+        if isinstance(one_type, Typeshed):
+            normalized_typeshed_value = resolve_typeshed_type(one_type)
+            for normalized_typeshed_type in normalized_typeshed_value:
+                if isinstance(normalized_typeshed_type, Typeshed):
+                    normalized_typeshed_type_value = refine_type(
+                        normalized_typeshed_type
+                    )
+                    result_value.inject(normalized_typeshed_type_value)
+                else:
+                    result_value.inject(normalized_typeshed_type)
         else:
-            value.inject(type)
-
-    return value
+            result_value.inject(one_type)
+    return result_value
 
 
 def refine_type(typeshed_type) -> Value:
-    if isinstance(typeshed_type, Typeshed):
-        typeshed_type_value = resolve_typeshed_type(typeshed_type)
-    else:
-        return type_2_value(typeshed_type)
-
     value = Value()
-    for typeshed_type in typeshed_type_value:
-        if isinstance(
-            typeshed_type,
-            (TypeshedModule, TypeshedClass, TypeshedFunction, TypeshedInstance),
-        ):
-            value.inject(typeshed_type)
-        elif isinstance(typeshed_type, TypeshedDescriptorGetter):
-            # extract returns of functions
-            for getter in typeshed_type.functions:
-                visitor: TypeExprVisitor = TypeExprVisitor(typeshed_type.tp_module)
-                value.inject(visitor.visit(getter.returns))
-        elif isinstance(typeshed_type, TypeshedAnnAssign):
-            visitor = TypeExprVisitor(typeshed_type.tp_module)
-            value.inject(visitor.visit(typeshed_type.tp_code.annotation))
-        elif isinstance(typeshed_type, TypeshedAssign):
-            visitor = TypeExprVisitor(typeshed_type.tp_module)
-            value.inject(visitor.visit(typeshed_type.tp_code.value))
-        else:
-            raise NotImplementedError(typeshed_type)
+    if isinstance(
+        typeshed_type,
+        (TypeshedModule, TypeshedClass, TypeshedFunction, TypeshedInstance),
+    ):
+        value.inject(typeshed_type)
+    elif isinstance(typeshed_type, TypeshedDescriptorGetter):
+        # extract returns of functions
+        visitor: TypeExprVisitor = TypeExprVisitor(typeshed_type.tp_module)
+        for getter in typeshed_type.functions:
+            value.inject(visitor.visit(getter.returns))
+    elif isinstance(typeshed_type, TypeshedAnnAssign):
+        visitor = TypeExprVisitor(typeshed_type.tp_module)
+        value.inject(visitor.visit(typeshed_type.tp_code.annotation))
+    elif isinstance(typeshed_type, TypeshedAssign):
+        visitor = TypeExprVisitor(typeshed_type.tp_module)
+        value.inject(visitor.visit(typeshed_type.tp_code.value))
+    else:
+        raise NotImplementedError(typeshed_type)
     return value
 
 
+# resolve type returns to types
 def _function_resolve_self_to_value(self: TypeshedFunction, *args, **kwargs):
     visitor = TypeExprVisitor(self.tp_module)
     value = Value()
@@ -1295,3 +1294,25 @@ def _function_resolve_self_to_value(self: TypeshedFunction, *args, **kwargs):
 
 
 TypeshedFunction.resolve_self_to_value = _function_resolve_self_to_value
+
+# refine property to its type
+def _property_refine_self_to_value(self: TypeshedDescriptorGetter, *args, **kwargs):
+    visitor = TypeExprVisitor(self.tp_module)
+    value = Value()
+    for function in self.functions:
+        _val = visitor.visit(function.returns)
+        value.inject(_val)
+    return value
+
+
+TypeshedDescriptorGetter.refine_self_to_value = _property_refine_self_to_value
+
+
+def _annassign_refine_self_to_value(self: TypeshedAnnAssign, *args, **kwargs):
+    final_self = resolve_typeshed_type(self)
+    visitor = TypeExprVisitor(self.tp_module)
+    value = Value()
+    for function in self.tp_code:
+        _val = visitor.visit(function.returns)
+        value.inject(_val)
+    return value
