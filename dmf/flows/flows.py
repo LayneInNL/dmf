@@ -22,7 +22,14 @@ from typing import Dict, List, Tuple, Set, Optional, Any
 import astor
 import graphviz as gv
 
-from . import temp
+
+class TempVariableName:
+    counter = 0
+
+    @classmethod
+    def generate(cls) -> str:
+        cls.counter += 1
+        return f"_var{cls.counter}"
 
 
 class BlockId:
@@ -34,7 +41,7 @@ class BlockId:
         return cls.counter
 
 
-class BasicBlock(object):
+class BasicBlock:
     def __init__(self, bid: int):
         self.bid: int = bid
         self.stmt = []
@@ -103,16 +110,19 @@ class CFG:
         self.flows: Set[Tuple[int, int]] = set()
 
         self.call_return_inter_flows: Set[
-            Tuple[int, int, int, int, int, int, int]
+            Tuple[int, int, int, int, int, int, int, int, int]
         ] = set()
         self.classdef_inter_flows: Set[Tuple[int, int]] = set()
-        self.setter_inter_flows: Set[Tuple[int, int, int]] = set()
-        self.getter_inter_flows: Set[Tuple[int, int, int]] = set()
         self.special_init_inter_flows: Set[Tuple[int, int, int]] = set()
+        self.magic_right_inter_flows: Set[Tuple[int, int, int]] = set()
+        self.magic_left_inter_flows: Set[Tuple[int, int, int]] = set()
+        self.magic_del_inter_flows: Set[Tuple[int, int, int]] = set()
 
         self.call_labels: Set[int] = set()
         self.return_labels: Set[int] = set()
         self.dummy_labels: Set[int] = set()
+
+        self.is_generator: bool = False
 
     def _traverse(self, block: BasicBlock, visited: Set[int] = set()) -> None:
         if block.bid not in visited:
@@ -124,37 +134,57 @@ class CFG:
                 if id2 == block.bid:
                     additional += "Return from the class"
 
-            for id1, id2, id3 in self.setter_inter_flows:
+            for id1, id2, id3 in self.magic_right_inter_flows:
                 if id1 == block.bid:
-                    additional += "Call descriptor setter"
+                    additional += "right magic methods"
                 if id2 == block.bid:
-                    additional += "Return from descriptor setter"
+                    additional += "return of right magic methods"
                 if id3 == block.bid:
-                    additional += "Dummy return from descriptor setter"
+                    additional += "Dummy return of right magic methods"
+            for id1, id2, id3 in self.magic_left_inter_flows:
+                if id1 == block.bid:
+                    additional += "left magic methods"
+                if id2 == block.bid:
+                    additional += "return of left magic methods"
+                if id3 == block.bid:
+                    additional += "Dummy return of left magic methods"
+            for id1, id2, id3 in self.magic_del_inter_flows:
+                if id1 == block.bid:
+                    additional += "delete magic methods"
+                if id2 == block.bid:
+                    additional += "return of delete magic methods"
+                if id3 == block.bid:
+                    additional += "Dummy return of delete magic methods"
 
-            for id1, id2, id3 in self.getter_inter_flows:
+            for (
+                id1,
+                id2,
+                id3,
+                id4,
+                id5,
+                id6,
+                id7,
+                id8,
+                id9,
+            ) in self.call_return_inter_flows:
                 if id1 == block.bid:
-                    additional += "Call descriptor getter"
+                    additional += "Call"
                 if id2 == block.bid:
-                    additional += "Return from descriptor getter"
+                    additional += "__new__ return"
                 if id3 == block.bid:
-                    additional += "Dummy return from descriptor getter"
-
-            for id1, id2, id3, id4, id5, id6, id7 in self.call_return_inter_flows:
-                if id1 == block.bid:
-                    additional += "Call label"
-                if id2 == block.bid:
-                    additional += "__new__ return label"
-                if id3 == block.bid:
-                    additional += "Dummy __new__ return label"
+                    additional += "Dummy __new__ return"
                 if id4 == block.bid:
-                    additional += "__init__ attribute label"
+                    additional += "find __init__"
                 if id5 == block.bid:
-                    additional += "__init__ call label"
+                    additional += "Return from find __init__"
                 if id6 == block.bid:
-                    additional += "Return label"
+                    additional += "Dummy return from find __init__"
                 if id7 == block.bid:
-                    additional += "Dummy return label"
+                    additional += "__init__ call"
+                if id8 == block.bid:
+                    additional += "Return"
+                if id9 == block.bid:
+                    additional += "Dummy return"
             self.graph.node(str(block.bid), label=block.stmt_to_code() + additional)
             for next_bid in block.next:
                 self._traverse(self.blocks[next_bid], visited)
@@ -200,6 +230,8 @@ class CFGVisitor(ast.NodeVisitor):
         self.final_body_entry_stack: List[BasicBlock] = []
         self.final_body_exit_stack: List[BasicBlock] = []
         self.properties: Dict = defaultdict(lambda: [None] * 4)
+        # check if a function is a generator function by checking if it has yields
+        self.is_generator: bool = False
 
     def build(self, name: str, tree: ast.Module) -> CFG:
         self.cfg = CFG(name)
@@ -243,40 +275,18 @@ class CFGVisitor(ast.NodeVisitor):
             entry_node=self.curr_block.stmt[0].args,
         )
         func_cfg: CFG = visitor.build(tree.name, ast.Module(body=tree.body))
+
+        if visitor.is_generator:
+            func_cfg.is_generator = True
+
         self.cfg.sub_cfgs[func_id] = func_cfg
 
     def add_ClassCFG(self, node: ast.ClassDef):
-        self.single_special_method_check(node.body, set())
 
         class_id = self.curr_block.bid
         visitor: CFGVisitor = CFGVisitor()
         class_cfg: CFG = visitor.build(node.name, ast.Module(body=node.body))
         self.cfg.sub_cfgs[class_id] = class_cfg
-
-    def single_special_method_check(self, body: List[ast.stmt], method_set):
-        for stmt in body:
-            if isinstance(stmt, ast.FunctionDef):
-                func_name = stmt.name
-                if func_name.startswith("__") and func_name.endswith("__"):
-                    if func_name in method_set:
-                        raise NotImplementedError(
-                            "No multiple magic methods with the same name are allowed {}".format(
-                                func_name
-                            )
-                        )
-                    else:
-                        method_set.add(func_name)
-            elif isinstance(stmt, (ast.For, ast.While, ast.If)):
-                self.single_special_method_check(stmt.body, method_set)
-                self.single_special_method_check(stmt.orelse, method_set)
-            elif isinstance(stmt, ast.With):
-                self.single_special_method_check(stmt.body, method_set)
-            elif isinstance(stmt, ast.Try):
-                self.single_special_method_check(stmt.body, method_set)
-                self.single_special_method_check(stmt.orelse, method_set)
-                self.single_special_method_check(stmt.finalbody, method_set)
-            else:
-                pass
 
     def remove_empty_blocks(self, block: BasicBlock, visited: Set[int]) -> None:
         if block.bid not in visited:
@@ -305,7 +315,17 @@ class CFGVisitor(ast.NodeVisitor):
         for fst_id, snd_id in self.cfg.edges:
             self.cfg.flows.add((fst_id, snd_id))
 
-        for l1, l2, dummy, init, l4, l5, dummy2 in self.cfg.call_return_inter_flows:
+        for (
+            l1,
+            l2,
+            dummy,
+            init,
+            init_return,
+            init_dummy_return,
+            l4,
+            l5,
+            dummy2,
+        ) in self.cfg.call_return_inter_flows:
             self.cfg.flows -= {(l1, l2), (l4, l5)}
             self.cfg.call_labels.update({l1, l4})
             self.cfg.return_labels.update({l2, l5})
@@ -313,11 +333,15 @@ class CFGVisitor(ast.NodeVisitor):
             self.cfg.flows -= {(l1, l2)}
             self.cfg.call_labels.add(l1)
             self.cfg.return_labels.add(l2)
-        for l1, l2, dummy in self.cfg.setter_inter_flows:
+        for l1, l2, dummy in self.cfg.magic_right_inter_flows:
             self.cfg.flows -= {(l1, l2)}
             self.cfg.call_labels.add(l1)
             self.cfg.return_labels.add(l2)
-        for l1, l2, dummy in self.cfg.getter_inter_flows:
+        for l1, l2, dummy in self.cfg.magic_left_inter_flows:
+            self.cfg.flows -= {(l1, l2)}
+            self.cfg.call_labels.add(l1)
+            self.cfg.return_labels.add(l2)
+        for l1, l2, dummy in self.cfg.magic_del_inter_flows:
             self.cfg.flows -= {(l1, l2)}
             self.cfg.call_labels.add(l1)
             self.cfg.return_labels.add(l2)
@@ -387,13 +411,13 @@ class CFGVisitor(ast.NodeVisitor):
         elif isinstance(decorator, ast.Attribute):
             # @xxx.setter
             if decorator.attr == property.setter.__name__:
-                tmp_func_name = temp.RandomVariableName.gen_random_name()
+                tmp_func_name = TempVariableName.generate()
                 node.name = tmp_func_name
                 self.properties[decorator.value.id][1] = node.name
                 node.decorator_list = []
             # @xxx.deleter
             elif decorator.attr == property.deleter.__name__:
-                tmp_func_name = temp.RandomVariableName.gen_random_name()
+                tmp_func_name = TempVariableName.generate()
                 node.name = tmp_func_name
                 self.properties[decorator.value.id][2] = node.name
                 node.decorator_list = []
@@ -475,8 +499,20 @@ class CFGVisitor(ast.NodeVisitor):
             delete_node = ast.Delete(targets=decomposed_expr_sequence[-1:])
             decomposed_expr_sequence = decomposed_expr_sequence[:-1]
             self.populate_body(decomposed_expr_sequence)
-            add_stmt(self.curr_block, delete_node)
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
+            call_node = self.curr_block
+            add_stmt(call_node, delete_node)
+            return_node = self.add_edge(call_node.bid, self.new_block().bid)
+            add_stmt(return_node, delete_node)
+            dummy_return_node = self.add_edge(return_node.bid, self.new_block().bid)
+            add_stmt(dummy_return_node, delete_node)
+
+            self.cfg.magic_del_inter_flows.add(
+                (call_node.bid, return_node.bid, dummy_return_node.bid)
+            )
+            self.cfg.dummy_labels.add(dummy_return_node.bid)
+
+            self.curr_block = self.add_edge(dummy_return_node.bid, self.new_block().bid)
 
     def visit_Assign(self, node: ast.Assign) -> None:
 
@@ -484,34 +520,45 @@ class CFGVisitor(ast.NodeVisitor):
 
         if len(new_expr_sequence) == 1:
             if isinstance(node.value, ast.Call):
+                # call node(implicit __new__)
                 call_node = self.curr_block
                 add_stmt(call_node, node.value)
 
-                tmp_var = ast.Name(
-                    id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
-                )
+                # __new__ return node
                 new_node = self.add_edge(call_node.bid, self.new_block().bid)
-                add_stmt(new_node, tmp_var)
+                new_var = ast.Name(id=TempVariableName.generate())
+                add_stmt(new_node, new_var)
+
+                # __new__ dummy return node
                 dummy_new_node = self.add_edge(new_node.bid, self.new_block().bid)
-                add_stmt(dummy_new_node, tmp_var)
+                add_stmt(dummy_new_node, new_var)
                 self.cfg.dummy_labels.add(dummy_new_node.bid)
 
+                # __init__ attr lookup node
                 init_attribute_node = self.add_edge(
                     dummy_new_node.bid, self.new_block().bid
                 )
-                init_attribute_name = ast.Name(
-                    id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
-                )
                 add_stmt(
-                    init_attribute_node,
-                    ast.Assign(
-                        targets=[init_attribute_name],
-                        value=ast.Attribute(value=tmp_var, attr="__init__"),
-                    ),
+                    init_attribute_node, ast.Attribute(value=new_var, attr="__init__")
                 )
 
-                init_call_node = self.add_edge(
+                # __init__ attr assigned
+                init_attribute_assign_node = self.add_edge(
                     init_attribute_node.bid, self.new_block().bid
+                )
+                init_attribute_name = ast.Name(id=TempVariableName.generate())
+                add_stmt(init_attribute_assign_node, init_attribute_name)
+
+                # __init__ attr dummy assigned
+                init_attribute_assign_node_dummy = self.add_edge(
+                    init_attribute_assign_node.bid, self.new_block().bid
+                )
+                self.cfg.dummy_labels.add(init_attribute_assign_node_dummy.bid)
+                add_stmt(init_attribute_assign_node_dummy, init_attribute_name)
+
+                # __init__ call node
+                init_call_node = self.add_edge(
+                    init_attribute_assign_node_dummy.bid, self.new_block().bid
                 )
                 init_call = ast.Call(
                     func=init_attribute_name,
@@ -520,81 +567,104 @@ class CFGVisitor(ast.NodeVisitor):
                 )
                 add_stmt(init_call_node, init_call)
 
-                tmp_var = ast.Name(
-                    id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
-                )
+                # __init__ return node
                 init_return_node = self.add_edge(
                     init_call_node.bid, self.new_block().bid
                 )
-                add_stmt(init_return_node, tmp_var)
+                init_var = ast.Name(id=TempVariableName.generate())
+                add_stmt(init_return_node, init_var)
+
+                # __init__ dummy return node(return node)
                 dummy_return_node = self.add_edge(
                     init_return_node.bid, self.new_block().bid
                 )
-                add_stmt(dummy_return_node, tmp_var)
+                add_stmt(dummy_return_node, init_var)
                 self.cfg.dummy_labels.add(dummy_return_node.bid)
 
+                # update call return flow
                 self.cfg.call_return_inter_flows.add(
                     (
                         call_node.bid,
                         new_node.bid,
                         dummy_new_node.bid,
                         init_attribute_node.bid,
+                        init_attribute_assign_node.bid,
+                        init_attribute_assign_node_dummy.bid,
                         init_call_node.bid,
                         init_return_node.bid,
                         dummy_return_node.bid,
                     )
                 )
+                # update __new__ flow
                 self.cfg.special_init_inter_flows.add(
                     (init_call_node.bid, init_return_node.bid, dummy_return_node.bid)
                 )
-                node.value = tmp_var
-                self.curr_block = dummy_return_node
-            elif isinstance(node.value, ast.Attribute):
-                tmp_var = ast.Name(
-                    id=temp.RandomVariableName.gen_random_name(), ctx=ast.Store()
+                self.cfg.magic_right_inter_flows.add(
+                    (
+                        init_attribute_node.bid,
+                        init_attribute_assign_node.bid,
+                        init_attribute_assign_node_dummy.bid,
+                    )
                 )
+                node.value = init_var
+                self.curr_block = dummy_return_node
+            else:
+                temp_return_name = ast.Name(id=TempVariableName.generate())
+
                 call_node = self.curr_block
                 add_stmt(call_node, node.value)
+
+                # return xxx
                 return_node = self.add_edge(call_node.bid, self.new_block().bid)
-                add_stmt(return_node, tmp_var)
+                add_stmt(return_node, temp_return_name)
+                # dummy xxx
                 dummy_return_node = self.add_edge(return_node.bid, self.new_block().bid)
-                add_stmt(dummy_return_node, tmp_var)
+                add_stmt(dummy_return_node, temp_return_name)
+
                 self.cfg.dummy_labels.add(dummy_return_node.bid)
 
-                self.cfg.getter_inter_flows.add(
+                # update atribute info
+                self.cfg.magic_right_inter_flows.add(
                     (call_node.bid, return_node.bid, dummy_return_node.bid)
                 )
-                node.value = tmp_var
+                node.value = temp_return_name
                 self.curr_block = dummy_return_node
-            # else:
-            #     add_stmt(self.curr_block, node)
             self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
             for target in node.targets:
-                expr_sequence = self.visit(target)
-                self.populate_body(expr_sequence[:-1])
-                lhs_target = expr_sequence[-1]
-                tmp_assign = ast.Assign(targets=[lhs_target], value=node.value)
-                if not isinstance(lhs_target, ast.Name):
+                if isinstance(target, (ast.Name, ast.List, ast.Tuple)):
+                    tmp_assign = ast.Assign(targets=[target], value=node.value)
+                    add_stmt(self.curr_block, tmp_assign)
+                    self.curr_block = self.add_edge(
+                        self.curr_block.bid, self.new_block().bid
+                    )
+                elif isinstance(target, (ast.Subscript, ast.Attribute)):
+                    # if target is subscript, decompose slice first
+                    if isinstance(target, ast.Subscript):
+                        decomposed_slice_expr, target.slice = self.decompose_expr(
+                            target.slice
+                        )
+                        self.populate_body(decomposed_slice_expr)
+                    tmp_assign = ast.Assign(targets=[target], value=node.value)
                     call_node = self.curr_block
                     add_stmt(call_node, tmp_assign)
+
                     return_node = self.add_edge(call_node.bid, self.new_block().bid)
                     add_stmt(return_node, tmp_assign)
+
                     dummy_return_node = self.add_edge(
                         return_node.bid, self.new_block().bid
                     )
                     add_stmt(dummy_return_node, tmp_assign)
-                    self.cfg.dummy_labels.add(dummy_return_node.bid)
 
-                    self.cfg.setter_inter_flows.add(
+                    self.cfg.dummy_labels.add(dummy_return_node.bid)
+                    self.cfg.magic_left_inter_flows.add(
                         (call_node.bid, return_node.bid, dummy_return_node.bid)
                     )
                     self.curr_block = dummy_return_node
-                else:
-                    add_stmt(self.curr_block, tmp_assign)
-                self.curr_block = self.add_edge(
-                    self.curr_block.bid, self.new_block().bid
-                )
+                    self.curr_block = self.add_edge(
+                        self.curr_block.bid, self.new_block().bid
+                    )
             return
 
         new_assign = ast.Assign(targets=node.targets, value=new_expr_sequence[-1])
@@ -618,8 +688,10 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if node.value:
-            new_assign: ast.Assign = ast.Assign(targets=[node.target], value=node.value)
-            self.visit(new_assign)
+            decomposed, node.value = self.decompose_expr(node.value)
+            self.populate_body(decomposed)
+            add_stmt(self.curr_block, node)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_For(self, node: ast.For) -> None:
         iter_call: ast.Call = ast.Call(
@@ -627,7 +699,7 @@ class CFGVisitor(ast.NodeVisitor):
         )
         iter_seq: List = self.visit(iter_call)
 
-        iter_name = ast.Name(id=temp.RandomVariableName.gen_random_name())
+        iter_name = ast.Name(id=TempVariableName.generate())
         new_assign = ast.Assign(
             targets=[iter_name],
             value=iter_seq[-1],
@@ -731,32 +803,32 @@ class CFGVisitor(ast.NodeVisitor):
             node.body = curr_body
             self.visit(node)
         else:
-            manager_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            manager_var = ast.Name(id=TempVariableName.generate())
             manager_assign = ast.Assign(
                 targets=[manager_var], value=node.items[0].context_expr
             )
-            manager_type_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            manager_type_var = ast.Name(id=TempVariableName.generate())
             manager_type_value = ast.Call(
                 func=ast.Name(id="type"), args=[manager_var], keywords=[]
             )
             manager_type_assign = ast.Assign(
                 targets=[manager_type_var], value=manager_type_value
             )
-            enter_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            enter_var = ast.Name(id=TempVariableName.generate())
             enter_value = ast.Attribute(
                 value=manager_type_var,
                 attr="__enter__",
                 ctx=ast.Load(),
             )
             enter_assign = ast.Assign(targets=[enter_var], value=enter_value)
-            exit_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            exit_var = ast.Name(id=TempVariableName.generate())
             exit_value = ast.Attribute(
                 value=manager_type_var,
                 attr="__exit__",
                 ctx=ast.Load(),
             )
             exit_assign = ast.Assign(targets=[exit_var], value=exit_value)
-            value_var = ast.Name(id=temp.RandomVariableName.gen_random_name())
+            value_var = ast.Name(id=TempVariableName.generate())
             value_value = ast.Call(func=enter_var, args=[manager_var], keywords=[])
             value_assign = ast.Assign(targets=[value_var], value=value_value)
             preceded = [
@@ -885,7 +957,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Expr(self, node: ast.Expr) -> None:
 
-        tmp_var = temp.Unused_Name
+        tmp_var = TempVariableName.generate()
         tmp_assign = ast.Assign(
             targets=[ast.Name(id=tmp_var, ctx=ast.Store())], value=node.value
         )
@@ -936,12 +1008,14 @@ class CFGVisitor(ast.NodeVisitor):
     # new_expr_sequence stores a list of temporal statements
     # decompose_expr(expr)-> List[expr], ast.Name
 
+    # self.visit(expr) returns destructed expr. and the last element is simplified expr itself.
+
     def decompose_expr(self, expr: ast.expr) -> Tuple:
         if expr is None:
             return [], None
         seq = self.visit(expr)
         if not isinstance(seq[-1], ast.Name):
-            tmp_var = temp.RandomVariableName.gen_random_name()
+            tmp_var = TempVariableName.generate()
             ast_assign = ast.Assign(
                 targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
                 value=seq[-1],
@@ -962,7 +1036,7 @@ class CFGVisitor(ast.NodeVisitor):
     #   if b:
     #     tmp=c
     def visit_BoolOp(self, node: ast.BoolOp) -> Any:
-        new_var: str = temp.RandomVariableName.gen_random_name()
+        new_var: str = TempVariableName.generate()
         assign_list = [
             ast.Assign(targets=[ast.Name(id=new_var, ctx=ast.Store())], value=value)
             for value in node.values
@@ -992,7 +1066,7 @@ class CFGVisitor(ast.NodeVisitor):
         return seq + [node]
 
     def visit_Lambda(self, node: ast.Lambda) -> Any:
-        tmp_var = temp.RandomVariableName.gen_random_name()
+        tmp_var = TempVariableName.generate()
 
         seq_args = self.visit_arguments(node.args)
         seq_ret, name = self.decompose_expr(node.body)
@@ -1009,7 +1083,7 @@ class CFGVisitor(ast.NodeVisitor):
         return seq_args + [tmp_function_def, tmp_function_name]
 
     def visit_IfExp(self, node: ast.IfExp) -> Any:
-        tmp_var: str = temp.RandomVariableName.gen_random_name()
+        tmp_var: str = TempVariableName.generate()
         tmp_name: ast.Name = ast.Name(id=tmp_var, ctx=ast.Store())
         new_if: ast.If = ast.If(
             test=node.test,
@@ -1021,25 +1095,44 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Dict(self, node: ast.Dict) -> Any:
         seq = []
-        for idx, key in enumerate(node.keys):
-            seq1, node.keys[idx] = self.decompose_expr(key)
-            seq.extend(seq1)
-            seq1, node.values[idx] = self.decompose_expr(node.values[idx])
-            seq.extend(seq1)
-
-        return seq + [node]
+        temp_dict_name = ast.Name(id=TempVariableName.generate())
+        temp_dict_assign = ast.Assign(
+            targets=[temp_dict_name],
+            value=ast.Call(func=ast.Name(id="dict"), args=[], keywords=[]),
+        )
+        seq.append(temp_dict_assign)
+        for key, value in zip(node.keys, node.values):
+            # x[y] = z
+            temp_list_append = ast.Assign(
+                targets=[ast.Subscript(value=temp_dict_name, slice=key)], value=value
+            )
+            seq.append(temp_list_append)
+        return seq + [temp_dict_name]
 
     def visit_Set(self, node: ast.Set) -> Any:
         seq = []
+        temp_list_name = ast.Name(id=TempVariableName.generate())
+        temp_list_assign = ast.Assign(
+            targets=[temp_list_name],
+            value=ast.Call(func=ast.Name(id="set"), args=[], keywords=[]),
+        )
+        seq.append(temp_list_assign)
         for idx, elt in enumerate(node.elts):
-            seq1, node.elts[idx] = self.decompose_expr(elt)
-            seq.extend(seq1)
-        return seq + [node]
+            temp_list_append = ast.Expr(
+                value=ast.Call(
+                    # list.append
+                    func=ast.Attribute(value=temp_list_name, attr="add"),
+                    args=[elt],
+                    keywords=[],
+                )
+            )
+            seq.append(temp_list_append)
+        return seq + [temp_list_name]
 
     def visit_ListComp(self, node: ast.ListComp) -> Any:
 
         new_expr_sequence = []
-        listcomp_var = temp.RandomVariableName.gen_random_name()
+        listcomp_var = TempVariableName.generate()
         new_expr_sequence.append(
             ast.Assign(
                 targets=[ast.Name(id=listcomp_var, ctx=ast.Store())],
@@ -1092,7 +1185,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_SetComp(self, node: ast.SetComp) -> Any:
         new_expr_sequence = []
-        setcomp_var = temp.RandomVariableName.gen_random_name()
+        setcomp_var = TempVariableName.generate()
         new_expr_sequence.append(
             ast.Assign(
                 targets=[ast.Name(id=setcomp_var, ctx=ast.Store())],
@@ -1142,7 +1235,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_DictComp(self, node: ast.DictComp) -> Any:
         new_expr_sequence = []
-        dictcomp_var = temp.RandomVariableName.gen_random_name()
+        dictcomp_var = TempVariableName.generate()
         new_expr_sequence.append(
             ast.Assign(
                 targets=[ast.Name(id=dictcomp_var, ctx=ast.Store())],
@@ -1197,7 +1290,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Any:
         new_expr_sequence = []
-        generator_var = temp.RandomGeneratorName.gen_generator_name()
+        generator_var = TempVariableName.generate()
         new_expr_sequence.append(
             ast.FunctionDef(
                 name=generator_var,
@@ -1247,7 +1340,11 @@ class CFGVisitor(ast.NodeVisitor):
             ]
 
     def visit_Yield(self, node: ast.Yield) -> Any:
+        # encounter yield, this function is a generator function
+        self.is_generator = True
+
         if node.value is None:
+            node.value = ast.NameConstant(value=None)
             return [node]
 
         seq, node.value = self.decompose_expr(node.value)
@@ -1255,6 +1352,9 @@ class CFGVisitor(ast.NodeVisitor):
         return seq + [node]
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Any:
+        # encounter yield from, this function is a generator function
+        self.is_generator = True
+
         seq, node.value = self.decompose_expr(node.value)
 
         return seq + [node]
@@ -1272,10 +1372,10 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Any:
         if isinstance(node.func, ast.Lambda):
-            assert False
-            seq1, name = self.decompose_expr(node.func)
-            tmp_call = ast.Call(args=node.args, func=name, keywords=node.keywords)
-            return seq1 + [tmp_call]
+            raise NotImplementedError
+            # seq1, name = self.decompose_expr(node.func)
+            # tmp_call = ast.Call(args=node.args, func=name, keywords=node.keywords)
+            # return seq1 + [tmp_call]
 
         seq = []
 
@@ -1336,27 +1436,78 @@ class CFGVisitor(ast.NodeVisitor):
     # x.y
     # -> tmp = x.y
     def visit_Attribute(self, node) -> Any:
+        print(astor.to_source(node))
         seq, node.value = self.decompose_expr(node.value)
         return seq + [node]
 
-    def visit_Subscript(self, node) -> Any:
-        expr_sequence = self.visit(node.value)
-        node.value = expr_sequence[-1]
-
-        return expr_sequence[:-1] + [node]
+    def visit_Subscript(self, node: ast.Subscript) -> Any:
+        seq = []
+        seq1, node.value = self.decompose_expr(node.value)
+        seq.extend(seq1)
+        seq2, node.slice = self.decompose_expr(node.slice)
+        seq.extend(seq2)
+        return seq + [node]
 
     def visit_Starred(self, node) -> Any:
-        return self.visit_Attribute(node)
+        seq, node.value = self.decompose_expr(node.value)
+        return seq + [node]
 
     def visit_Name(self, node: ast.Name) -> Any:
         return [node]
 
-    def visit_List(self, node) -> Any:
+    def visit_List(self, node: ast.List) -> Any:
         seq = []
+        temp_list_name = ast.Name(id=TempVariableName.generate())
+        temp_list_assign = ast.Assign(
+            targets=[temp_list_name],
+            value=ast.Call(func=ast.Name(id="list"), args=[], keywords=[]),
+        )
+        seq.append(temp_list_assign)
         for idx, elt in enumerate(node.elts):
-            seq1, node.elts[idx] = self.decompose_expr(elt)
-            seq.extend(seq1)
+            temp_list_append = ast.Expr(
+                value=ast.Call(
+                    # list.append
+                    func=ast.Attribute(value=temp_list_name, attr="append"),
+                    args=[elt],
+                    keywords=[],
+                )
+            )
+            seq.append(temp_list_append)
+        return seq + [temp_list_name]
+
+    def visit_Tuple(self, node: ast.Tuple) -> Any:
+        seq = []
+        temp_list_name = ast.Name(id=TempVariableName.generate())
+        temp_list_assign = ast.Assign(
+            targets=[temp_list_name],
+            value=ast.Call(func=ast.Name(id="tuple"), args=[], keywords=[]),
+        )
+        seq.append(temp_list_assign)
+        for idx, elt in enumerate(node.elts):
+            temp_list_append = ast.Expr(
+                value=ast.Call(
+                    # list.append
+                    func=ast.Attribute(value=temp_list_name, attr="fake_append"),
+                    args=[elt],
+                    keywords=[],
+                )
+            )
+            seq.append(temp_list_append)
+        return seq + [temp_list_name]
+
+    def visit_Slice(self, node: ast.Slice) -> Any:
+        seq = []
+        seq1, node.lower = self.decompose_expr(node.lower)
+        seq.extend(seq1)
+        seq2, node.upper = self.decompose_expr(node.upper)
+        seq.extend(seq2)
+        seq3, node.step = self.decompose_expr(node.step)
+        seq.extend(seq3)
         return seq + [node]
 
-    def visit_Tuple(self, node) -> Any:
-        return self.visit_List(node)
+    def visit_ExtSlice(self, node: ast.ExtSlice) -> Any:
+        raise NotImplementedError(node)
+
+    def visit_Index(self, node: ast.Index) -> Any:
+        seq, node.value = self.decompose_expr(node.value)
+        return seq + [node]

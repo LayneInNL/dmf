@@ -11,9 +11,9 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import sys
 from typing import Set, Tuple, Dict
 
-import dmf.share
 from dmf.flows import CFG
 from dmf.flows.flows import BasicBlock
 from dmf.log.logger import logger
@@ -23,19 +23,20 @@ ProgramPoint = Tuple[int, Tuple]
 
 class AnalysisBase:
     def __init__(self):
-        self.flows: Set[Tuple[int, int]] = dmf.share.flows
+        self.flows: Set[Tuple[int, int]] = sys.analysis_flows
+        self.blocks: Dict[int, BasicBlock] = sys.analysis_blocks
+        self.sub_cfgs: Dict[int, CFG] = sys.analysis_cfgs
 
-        self.dummy_labels = dmf.share.dummy_labels
-        self.call_labels = dmf.share.call_labels
-        self.return_labels = dmf.share.return_labels
-        self.call_return_inter_flows = dmf.share.call_return_inter_flows
-        self.classdef_inter_flows = dmf.share.classdef_inter_flows
-        self.setter_inter_flows = dmf.share.setter_inter_flows
-        self.getter_inter_flows = dmf.share.getter_inter_flows
-        self.special_init_flows = dmf.share.special_init_inter_flows
+        self.dummy_labels = sys.dummy_labels
+        self.call_labels = sys.call_labels
+        self.return_labels = sys.return_labels
+        self.call_return_inter_flows = sys.call_flow_tuples
+        self.classdef_inter_flows = sys.classdef_flow_tuples
+        self.magic_right_inter_flows = sys.magic_right_inter_tuples
+        self.magic_left_inter_flows = sys.magic_left_inter_tuples
+        self.magic_del_inter_flows = sys.magic_del_inter_tuples
+        self.special_init_flows = sys.special_init_inter_flows
 
-        self.blocks: Dict[int, BasicBlock] = dmf.share.blocks
-        self.sub_cfgs: Dict[int, CFG] = dmf.share.sub_cfgs
         self.inter_flows: Set[
             Tuple[ProgramPoint, ProgramPoint, ProgramPoint, ProgramPoint]
         ] = set()
@@ -84,29 +85,39 @@ class AnalysisBase:
                 return True
         return False
 
-    def is_special_init_call_point(self, program_point: ProgramPoint):
+    def is_class_init_call_point(self, program_point: ProgramPoint):
         label, _ = program_point
         return self.is_special_init_call_label(label)
 
-    def is_getter_call_label(self, label):
-        for call, *_ in self.getter_inter_flows:
+    def is_right_magic_call_label(self, label):
+        for call, *_ in self.magic_right_inter_flows:
             if label == call:
                 return True
         return False
 
-    def is_getter_call_point(self, program_point: ProgramPoint):
+    def is_right_magic_call_point(self, program_point: ProgramPoint):
         label, _ = program_point
-        return self.is_getter_call_label(label)
+        return self.is_right_magic_call_label(label)
 
-    def is_setter_call_label(self, label):
-        for call, *_ in self.setter_inter_flows:
+    def is_del_magic_call_label(self, label):
+        for call, *_ in self.magic_del_inter_flows:
             if label == call:
                 return True
         return False
 
-    def is_setter_call_point(self, program_point: ProgramPoint):
+    def is_del_magic_call_point(self, program_point: ProgramPoint):
         label, _ = program_point
-        return self.is_setter_call_label(label)
+        return self.is_del_magic_call_label(label)
+
+    def is_left_magic_call_label(self, label):
+        for call, *_ in self.magic_left_inter_flows:
+            if label == call:
+                return True
+        return False
+
+    def is_left_magic_call_point(self, program_point: ProgramPoint):
+        label, _ = program_point
+        return self.is_left_magic_call_label(label)
 
     def is_classdef_call_label(self, label: int):
         for (
@@ -145,37 +156,38 @@ class AnalysisBase:
                 return return_label
         raise KeyError
 
-    def get_getter_return_label(self, label):
-        for call_label, return_label, dummy_return_label in self.getter_inter_flows:
+    def get_right_magic_return_label(self, label):
+        for (
+            call_label,
+            return_label,
+            dummy_return_label,
+        ) in self.magic_right_inter_flows:
             if label == call_label:
                 return return_label, dummy_return_label
         raise KeyError
 
-    def get_setter_return_label(self, label):
-        for call_label, return_label, dummy_return_label in self.setter_inter_flows:
+    def get_del_magic_return_label(self, label):
+        for call_label, return_label, dummy_return_label in self.magic_del_inter_flows:
+            if label == call_label:
+                return return_label, dummy_return_label
+        raise KeyError
+
+    def get_left_magic_return_label(self, label):
+        for call_label, return_label, dummy_return_label in self.magic_left_inter_flows:
             if label == call_label:
                 return return_label, dummy_return_label
         raise KeyError
 
     def get_special_new_return_label(self, label):
-        for l1, l2, l3, l4, l5, l6, l7 in self.call_return_inter_flows:
+        for l1, l2, l3, l4, l5, l6, l7, l8, l9 in self.call_return_inter_flows:
             if label == l1:
                 return l2, l3
         raise KeyError
 
     def get_func_return_label(self, label):
-        for l1, l2, l3, l4, l5, l6, l7 in self.call_return_inter_flows:
+        for l1, l2, l3, l4, l5, l6, l7, l8, l9 in self.call_return_inter_flows:
             if label == l1:
-                return l6, l7
-        logger.info(f"{label} not in call_return_inter_flows")
-        for call_label, return_label, dummy_return_label in self.getter_inter_flows:
-            if label == call_label:
-                return return_label, dummy_return_label
-        logger.info(f"{label} not in getter_inter_flows")
-        for call_label, return_label, dummy_return_label in self.setter_inter_flows:
-            if label == call_label:
-                return return_label, dummy_return_label
-        logger.info(f"{label} not in setter_inter_flows")
+                return l8, l9
         raise KeyError
 
     def get_special_init_return_label(self, label):
@@ -186,10 +198,14 @@ class AnalysisBase:
 
     def add_sub_cfg(self, lab: int):
         cfg: CFG = self.sub_cfgs[lab]
-        dmf.share.update_global_info(cfg)
-        return cfg, cfg.start_block.bid, cfg.final_block.bid
+        sys.merge_cfg_info(cfg)
+        return cfg.start_block.bid, cfg.final_block.bid
 
-    def DELTA(self, program_point: ProgramPoint):
+    def checkout_cfg(self, lab: int):
+        cfg: CFG = sys.analysis_cfgs[lab]
+        return cfg
+
+    def generate_flow(self, program_point: ProgramPoint):
         added = []
         added += self.DELTA_basic_flow(program_point)
         added += self.DELTA_call_flow(program_point)

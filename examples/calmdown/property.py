@@ -13,27 +13,20 @@
 #  limitations under the License.
 
 
-# class Test:
-#     def __init__(self):
-#         pass
-#
-#     def test(self):
-#         return self
-#
-#
-# a = Test()
-# res = a.test()
-# a.x = 1
-# y = a.x
-# a.x = 1
-# b = a.x
-
-
 class Test:
-    pass
+    @property
+    def name(self):
+        return "hello"
+        # return self._name
+
+    # @name.setter
+    # def name(self, value):
+    #     self._name = value
+    #
+    # @name.deleter
+    # def name(self):
+    #     pass
 
 
 t = Test()
-t.x = 1
-t.x = "hello"
-result = t.x
+res = t.name

@@ -11,53 +11,52 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import sys
+
+import init
 
 import argparse
 import os.path
-import sys
-
-# Must put it here to initialize static_importlib
-import dmf.static_importlib
-
-import dmf.share
-from dmf.analysis.types import ModuleType
-from dmf.log.logger import logger
+from dmf.analysis.builtin_functions import _setup_builtin_types
+from dmf.analysis.analysis import Analysis
+from dmf.analysis.analysis_types import AnalysisModule
 
 parser = argparse.ArgumentParser()
 parser.add_argument("main", help="the main file path")
-
-
-def add_main_module(path):
-    analysis_main_module = ModuleType(name="__main__", package="", file=path)
-    dmf.share.analysis_modules["__main__"] = analysis_main_module
-
-
-def add_sys_path(path):
-    # our custom root path, simulating sys.path
-    # insert being analyzed dir into sys.path
-    # for example, dir_name = "C:\\Users\\Layne Liu\\PycharmProjects\\cfg\\dmf\\examples\\"
-    dir_name = os.path.dirname(path)
-    # insert to the beginning of sys.path
-    sys.path.insert(0, dir_name)
-    logger.debug("updated sys.path {}".format(sys.path))
+parser.add_argument("project", help="the project path")
 
 
 if __name__ == "__main__":
+    _setup_builtin_types()
+
     args = parser.parse_args()
-    main_file_path = args.main
-    if not main_file_path:
+    main_path = args.main
+    project_path = args.project
+    if not main_path:
         exit()
 
-    from dmf.analysis.analysis import Analysis
+    sys.analysis_path.append(project_path)
 
     # get main module absolute path
-    main_abs_path = os.path.abspath(main_file_path)
+    main_abs_file_path = os.path.abspath(main_path)
+    project_abs_path = os.path.abspath(project_path)
 
-    # module name
-    main_module_name = os.path.basename(main_abs_path).rpartition(".")[0]
-    add_main_module(main_abs_path)
-    add_sys_path(main_abs_path)
+    # builtin_path = "./resources/builtins.py"
+    # abs_builtin_path = os.path.abspath(builtin_path)
+    # cfg = sys.synthesis_cfg(abs_builtin_path)
+    # entry_label, exit_label = sys.merge_cfg_info(cfg)
+    # builtin_module = AnalysisModule(
+    #     tp_uuid="builtins", tp_package="", tp_code=(entry_label, exit_label)
+    # )
+    # sys.analysis_modules["builtins"] = builtin_module
+    # analysis = Analysis("builtins")
+    # analysis.compute_fixed_point()
 
-    # load cfg of main module
+    cfg = sys.synthesis_cfg(main_abs_file_path)
+    entry_label, exit_label = sys.merge_cfg_info(cfg)
+    main_module = AnalysisModule(
+        tp_name="__main__", tp_package="", tp_code=(entry_label, exit_label)
+    )
+    sys.analysis_modules["__main__"] = main_module
     analysis = Analysis("__main__")
     analysis.compute_fixed_point()

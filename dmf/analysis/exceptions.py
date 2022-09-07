@@ -13,27 +13,13 @@
 #  limitations under the License.
 
 
-# class Test:
-#     def __init__(self):
-#         pass
-#
-#     def test(self):
-#         return self
-#
-#
-# a = Test()
-# res = a.test()
-# a.x = 1
-# y = a.x
-# a.x = 1
-# b = a.x
-
-
-class Test:
+class MROAnyError(Exception):
     pass
 
 
-t = Test()
-t.x = 1
-t.x = "hello"
-result = t.x
+class AnalysisAttributeError(Exception):
+    pass
+
+
+class TypeshedModuleAttributeError(Exception):
+    pass

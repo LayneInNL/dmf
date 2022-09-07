@@ -13,27 +13,15 @@
 #  limitations under the License.
 
 
-# class Test:
-#     def __init__(self):
-#         pass
-#
-#     def test(self):
-#         return self
-#
-#
-# a = Test()
-# res = a.test()
-# a.x = 1
-# y = a.x
-# a.x = 1
-# b = a.x
+def test():
+    yield 1
+    yield "str"
+    yield 1.1
 
 
-class Test:
-    pass
-
-
-t = Test()
-t.x = 1
-t.x = "hello"
-result = t.x
+res = test()
+a = list()
+ii = iter(res)
+while ii:
+    n1 = next(res)
+    a.append(n1)

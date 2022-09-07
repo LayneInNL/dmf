@@ -12,4 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-z = x.y()
+# z = x.y()
+# a = dir()
+# a = locals()
+# a = vars()
+# a = slice(1)
+# b = a.indices(1)
+# b = a.__
+x = range(1)
+y = list()
+ix = iter(x)
+while ix:
+    elt = next(ix)
+    y.append(elt)

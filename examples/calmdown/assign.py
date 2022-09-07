@@ -11,7 +11,19 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+# if True:
+#     x = 1
+# # elif False:
+# #     x = False
+# else:
+#     x = 1.0
+# b = x
 
-x = 1
+# a.b = x.y
+# a = -1
 
-b = x
+# a[1 + 1], *b = 2, 3
+# a[1 + 1] = 2
+# [a[1 + 1], *b] = 2, 3
+
+res = 1 - 1

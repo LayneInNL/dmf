@@ -14,84 +14,128 @@
 
 from __future__ import annotations
 
-TOP = "VALUE_TOP"
+import sys
+from typing import Union
+
+from dmf.analysis.special_types import Any
 
 
 class Value:
-    def __init__(self, *, top=False):
-        if top:
-            self.type_dict = TOP
-        else:
-            self.type_dict = {}
+    threshold = 2
 
-    def __bool__(self):
-        if isinstance(self.type_dict, dict) and self.type_dict:
-            return True
-        return False
+    @classmethod
+    def make_any(cls) -> Value:
+        return cls(any=True)
+
+    def __init__(self, *, any=False):
+        self.types: Union[Any, dict]
+        if any:
+            self.types = Any
+        else:
+            self.types = {}
 
     def __len__(self):
-        if self.type_dict == TOP:
-            return -1
-        return len(self.type_dict)
+        if self.is_Any():
+            return self.threshold + 1
+        else:
+            return len(self.types)
 
-    def __le__(self, other: Value):
-        if other.type_dict == TOP:
+    def __le__(self, other: Value) -> bool:
+        if other.is_Any():
             return True
-        if self.type_dict == TOP:
+        if self.is_Any():
             return False
-
-        for k in self.type_dict:
-            if k not in other.type_dict:
+        for k in self.types:
+            if k not in other.types:
                 return False
-            elif not self.type_dict[k] <= other.type_dict[k]:
+            elif not self.types[k] <= other.types[k]:
                 return False
         return True
 
-    def __iadd__(self, other: Value):
-        if self.type_dict == TOP or other.type_dict == TOP:
-            self.type_dict = TOP
+    def __iadd__(self, other: Value) -> Value:
+        if self.is_Any() or other.is_Any():
+            self.transform_to_Any()
             return self
 
-        for k in other.type_dict:
-            if k not in self.type_dict:
-                self.type_dict[k] = other.type_dict[k]
+        for k in other.types:
+            if k not in self.types:
+                self.types[k] = other.types[k]
             else:
-                self.type_dict[k] += other.type_dict[k]
+                self.types[k] += other.types[k]
+
+        if len(self.types) > self.threshold:
+            self.transform_to_Any()
         return self
 
     def __repr__(self):
-        return self.type_dict.__repr__()
+        # return self.types.__repr__()
+        if self.types is Any:
+            return "Any"
+        else:
+            formatted = list(self.types.values())
+            return repr(formatted)
 
     def __iter__(self):
-        return iter(self.type_dict.values())
+        return iter(self.types.values())
 
-    def inject(self, types):
-        if isinstance(types, Value):
-            self.inject_value(types)
+    def inject(self, other):
+        if isinstance(other, Value):
+            self.inject_value(other)
         else:
-            self.inject_type(types)
+            self.inject_type(other)
 
-    def inject_type(self, typ):
-        self.type_dict[typ.__my_uuid__] = typ
+    def inject_type(self, type):
+        # insert Any
+        if type is Any:
+            self.transform_to_Any()
+        elif self.is_Any():
+            return
+        elif len(self.types) > self.threshold:
+            self.transform_to_Any()
+        else:
+            self.types[type.tp_uuid] = type
 
     def inject_value(self, value: Value):
-        for lab, typ in value.type_dict.items():
-            if lab not in self.type_dict:
-                self.type_dict[lab] = typ
+        if self.is_Any() or value.is_Any():
+            self.transform_to_Any()
+            return
+
+        for label, type in value.types.items():
+            if label not in self.types:
+                self.types[label] = type
             else:
-                self.type_dict[lab] += typ
+                self.types[label] += type
+
+        if len(self.types) > self.threshold:
+            self.transform_to_Any()
 
     def values(self):
-        return self.type_dict.values()
+        return self.types.values()
+
+    def value_2_list(self):
+        return list(self.types.values())
+
+    def is_Any(self) -> bool:
+        return self.types is Any
+
+    def transform_to_Any(self):
+        self.types = Any
+
+
+sys.Value = Value
+
+
+def type_2_value(type) -> Value:
+    if not isinstance(type, Value):
+        value = Value()
+        assert hasattr(type, "tp_uuid"), type
+        value.inject(type)
+        return value
+    else:
+        return type
 
 
 def create_value_with_type(typ) -> Value:
     value = Value()
-    value.inject(typ)
-    return value
-
-
-def create_value_with_value(val) -> Value:
-    value = Value()
-    value.inject_value(val)
+    value.inject_type(typ)
     return value

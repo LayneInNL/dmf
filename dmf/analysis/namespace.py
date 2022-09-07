@@ -11,46 +11,56 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
 from __future__ import annotations
 
-from collections import defaultdict
+import sys
 
 from dmf.analysis.value import Value
-from dmf.analysis.variables import HelperVar, Var, LocalVar, NonlocalVar, GlobalVar
 
 
-class Namespace(defaultdict):
+class Var:
+    def __init__(self, name: str):
+        self.name: str = name
+
+    def __hash__(self):
+        return hash(self.name)
+
+    def __eq__(self, other: Var):
+        return self.name == other.name
+
+
+class LocalVar(Var):
     def __repr__(self):
-        return dict.__repr__(self)
+        return f"({self.name}, local)"
 
+
+class NonlocalVar(Var):
+    def __repr__(self):
+        return f"({self.name}, nonlocal)"
+
+
+class GlobalVar(Var):
+    def __repr__(self):
+        return f"({self.name}, global)"
+
+
+class Namespace(dict):
     def __missing__(self, key):
-        self[key] = value = Value(top=True)
+        self[key] = value = Value.make_any()
         return value
 
-    # we use defaultdict, the default value of an unknown variable is TOP
-    # So we have to collect all variables
     def __le__(self, other):
-        variables = filter(
-            lambda elt: not isinstance(elt, HelperVar),
-            self.keys() | other.keys(),
-        )
-        for var in variables:
+        for var in self:
             if not self[var] <= other[var]:
                 return False
         return True
 
     def __iadd__(self, other):
-        variables = filter(
-            lambda elt: not isinstance(elt, HelperVar),
-            self.keys() | other.keys(),
-        )
-        for var in variables:
+        for var in other:
             self[var] += other[var]
         return self
 
     def __contains__(self, name: str):
-        # __xxx__ and Var
         for var in self:
             if name == var.name:
                 return True
@@ -67,6 +77,7 @@ class Namespace(defaultdict):
                 return val
 
     def write_local_value(self, name: str, value: Value):
+        assert isinstance(value, Value), value
         self[LocalVar(name)] = value
 
     def write_nonlocal_value(self, name: str, ns: Namespace):
@@ -75,8 +86,8 @@ class Namespace(defaultdict):
     def write_global_value(self, name: str, ns: Namespace):
         self[GlobalVar(name)] = ns
 
-    def write_helper_value(self, name: str, value):
-        self[HelperVar(name)] = value
-
     def del_local_var(self, name: str):
         del self[LocalVar(name)]
+
+
+sys.analysis_typeshed_modules = Namespace()

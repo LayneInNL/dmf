@@ -12,10 +12,36 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-
-def test():
-    pass
+x = 2
 
 
-test.x = 1
-y = test.x
+def test(x=1):
+    return x
+
+
+res = test()
+
+
+def test1():
+    yield 1
+
+
+gen = test1()
+
+
+# def test():
+#     yield 1
+
+
+# def test1(x):
+#     def test1():
+#         return x
+#
+#     return test1
+
+
+# res = test1(2)
+# real_res = res()
+# a = test1(1)
+# test1.x = 1
+# y = test1.x

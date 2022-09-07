@@ -26,8 +26,26 @@
 
 x = list()
 x.append(1)
-x.append(False)
-x.remove(2)
-x.extend(None)
+# x.append(1.1)
+x.append("s")
+# res = x.pop()
+test_x = list()
+ii = iter(x)
+# yy = next(ii)
+# zz = next(ii)
+# aa = next(ii)
+while ii:
+    y = next(ii)
+    test_x.append(y)
 
-y = tuple()
+# xxxxxxxxxxxxx = test_x
+# xxxxxxxxxxxxx.extend(x)
+# x.append(1)
+# x.append(1)
+# x.append(False)
+# x.append(False)
+# x.remove(2)
+# x.extend(None)
+
+# x = list.extend
+# y = tuple()

@@ -14,48 +14,35 @@
 
 from __future__ import annotations
 
-import ast
-from copy import deepcopy
-from typing import List, Tuple
+import sys
+from typing import List
 
-import dmf.share
-from dmf.analysis.types import (
-    Value,
+from dmf.analysis.implicit_names import NAME_FLAG
+from dmf.analysis.namespace import (
     Namespace,
     Var,
-    CustomClass,
-    my_getattr,
-    Instance,
     LocalVar,
-    FunctionObject,
-    builtin_namespace,
-    Heap,
 )
-from dmf.analysis.prim import (
-    BUILTIN_TYPES,
-    Int,
-    NoneType,
-    Bool,
-    Str,
-    Bytes,
-    Float,
-    Complex,
-)
-from dmf.analysis.variables import (
-    Namespace_Global,
-    Namespace_Nonlocal,
-    Namespace_Local,
-    Namespace_Helper,
-)
-from dmf.log.logger import logger
+from dmf.analysis.value import Value
+
+Namespace_Global = "global"
+Namespace_Nonlocal = "nonlocal"
+Namespace_Local = "local"
+
+builtin_modules = sys.analysis_typeshed_modules.read_value("builtins")
+assert len(builtin_modules) == 1
+builtin_module = builtin_modules.value_2_list()[0]
+f_builtins = builtin_module.tp_dict
 
 
 class Frame:
-    def __init__(self, *, f_locals, f_back=None, f_globals):
+    def __init__(self, *, f_locals, f_back, f_globals):
         self.f_locals: Namespace[Var, Value] = f_locals
         self.f_back: Frame | None = f_back
         self.f_globals: Namespace[Var, Value] = f_globals
-        self.f_builtins: Namespace[Var, Value] = builtin_namespace
+        # self.f_builtins: Namespace[Var, Value] = sys.analysis_modules[
+        #     "builtins"
+        # ].tp_dict
 
     # compare f_locals, f_globals and f_builtins
     # don't know how to compare f_back for now
@@ -137,13 +124,22 @@ class Frame:
         raise AttributeError(name)
 
     def _read_builtin_namespace(self, name: str) -> Value:
-        if name in self.f_builtins:
-            var = self.f_builtins.read_var_type(name)
+        if name in f_builtins:
+            var = f_builtins.read_var_type(name)
             if isinstance(var, LocalVar):
-                return self.f_builtins.read_value(name)
+                return f_builtins.read_value(name)
             else:
                 raise AttributeError(name)
         raise AttributeError(name)
+
+    # raise AttributeError(name)
+    # if name in self.f_builtins:
+    #     var = self.f_builtins.read_var_type(name)
+    #     if isinstance(var, LocalVar):
+    #         return self.f_builtins.read_value(name)
+    #     else:
+    #         raise AttributeError(name)
+    # raise AttributeError(name)
 
     def write_var(self, name: str, scope: str, value: Value):
         if name in self.f_locals:
@@ -167,8 +163,9 @@ class Frame:
             elif scope == Namespace_Global:
                 namespace = self._find_global_namespace(name)
                 self.f_locals.write_global_value(name, namespace)
-            elif scope == Namespace_Helper:
-                self.f_locals.write_helper_value(name, value)
+            elif scope == "special":
+                raise NotImplementedError
+                self.f_locals.write_special_value(name, value)
 
     def _find_nonlocal_namespace(self, name: str) -> Namespace:
         parent_frame: Frame = self.f_back
@@ -188,7 +185,7 @@ class Frame:
 
     def _find_global_namespace(self, name: str) -> Namespace:
         if name not in self.f_globals:
-            self.f_globals.write_local_value(name, Value(top=True))
+            self.f_globals.write_local_value(name, Value(any=True))
 
         return self.f_globals
 
@@ -207,6 +204,11 @@ class Frame:
 class Stack:
     def __init__(self):
         self.frames: List[Frame] = []
+
+    def init_first_frame(self, qualified_module_name: str):
+        module = sys.analysis_modules[qualified_module_name]
+        global_ns = module.tp_dict
+        self.frames.append(Frame(f_locals=global_ns, f_back=None, f_globals=global_ns))
 
     def __le__(self, other: Stack):
         frame_pairs = zip(reversed(self.frames), reversed(other.frames))
@@ -238,25 +240,16 @@ class Stack:
     def top_namespace_contains(self, name):
         return name in self.top_frame().f_locals
 
-    def read_module(self):
-        return self.top_frame().f_globals.read_value("__name__")
-
-    def read_package(self):
-        return self.top_frame().f_globals.read_value("__package__")
-
     def read_var(self, var: str):
         return self.top_frame().read_var(var)
 
     def write_var(self, var: str, scope: str, value):
         self.top_frame().write_var(var, scope, value)
 
-    def write_helper_var(self, var: str, value):
-        self.write_var(var, Namespace_Helper, value)
-
     def delete_var(self, var: str):
         self.top_frame().delete_var(var)
 
-    def next_ns(self):
+    def add_new_frame(self):
         curr_frame = self.top_frame()
 
         new_f_locals = Namespace()
@@ -271,112 +264,6 @@ class Stack:
         self.push_frame(new_frame)
 
     def check_module_diff(self, new_module_name=None):
-        curr_module_name = self.read_module()
+        curr_module_name: str = getattr(self.frames[-1].f_globals, NAME_FLAG)
         if curr_module_name != new_module_name:
-            self.top_frame().f_globals = dmf.share.analysis_modules[
-                new_module_name
-            ].namespace
-
-    def compute_value_of_expr(self, expr: ast.expr, address=None):
-        value = Value()
-        if isinstance(expr, ast.Num):
-            if isinstance(expr.n, int):
-                value.inject_type(Int())
-            elif isinstance(expr.n, float):
-                value.inject_type(Float())
-            elif isinstance(expr.n, complex):
-                value.inject_type(Complex())
-        elif isinstance(expr, ast.NameConstant):
-            if expr.value is None:
-                value.inject_type(NoneType())
-            else:
-                value.inject_type(Bool())
-        elif isinstance(expr, (ast.Str, ast.JoinedStr)):
-            value.inject_type(Str())
-        elif isinstance(expr, ast.Bytes):
-            value.inject_type(Bytes())
-        elif isinstance(expr, ast.Compare):
-            value.inject_type(Bool())
-        elif isinstance(expr, ast.Name):
-            return self.read_var(expr.id)
-        elif isinstance(expr, ast.Attribute):
-            receiver_value: Value = self.compute_value_of_expr(expr.value)
-            receiver_attr: str = expr.attr
-            value: Value = Value()
-            for typ in receiver_value:
-                if isinstance(typ, CustomClass):
-                    try:
-                        tmp = my_getattr(typ, receiver_attr)
-                    except AttributeError:
-                        pass
-                    else:
-                        value.inject_value(tmp)
-                elif isinstance(typ, Instance):
-                    try:
-                        tmp = my_getattr(typ, receiver_attr)
-                    except AttributeError:
-                        pass
-                    else:
-                        value.inject_value(tmp)
-                elif isinstance(typ, FunctionObject):
-                    try:
-                        tmp = my_getattr(typ, receiver_attr)
-                    except AttributeError:
-                        pass
-                    else:
-                        value.inject_value(tmp)
-            return value
-        elif isinstance(expr, ast.BinOp):
-            dunder_method = op2dunder(expr.op)
-            lhs_value: Value = self.compute_value_of_expr(expr.left)
-            rhs_value: Value = self.compute_value_of_expr(expr.right)
-            for lab1, typ1 in lhs_value:
-                if not isinstance(typ1, BUILTIN_TYPES):
-                    assert False
-                for lab2, typ2 in rhs_value:
-                    try:
-                        res_type = typ1.binop(dunder_method, typ2)
-                    except (AttributeError, TypeError):
-                        pass
-                    else:
-                        value.inject_type(res_type)
-            return value
-        else:
-            logger.warn(expr)
-            assert False, expr
-        return value
-
-
-def op2dunder(operator: ast.operator):
-    magic_method = None
-    if isinstance(operator, ast.Add):
-        magic_method = "__add__"
-    elif isinstance(operator, ast.Sub):
-        magic_method = "__sub__"
-    elif isinstance(operator, ast.Mult):
-        magic_method = "__mul__"
-    elif isinstance(operator, ast.MatMult):
-        assert False
-    elif isinstance(operator, ast.Div):
-        magic_method = "__div__"
-    elif isinstance(operator, ast.Mod):
-        magic_method = "__mod__"
-    elif isinstance(operator, ast.Pow):
-        magic_method = "__pow__"
-    elif isinstance(operator, ast.LShift):
-        magic_method = "__lshift__"
-    elif isinstance(operator, ast.RShift):
-        magic_method = "__rshift__"
-    elif isinstance(operator, ast.BitOr):
-        magic_method = "__or__"
-    elif isinstance(operator, ast.BitXor):
-        magic_method = "__xor__"
-    elif isinstance(operator, ast.BitAnd):
-        magic_method = "__and__"
-    elif isinstance(operator, ast.FloorDiv):
-        magic_method = "__floordiv__"
-
-    return magic_method
-
-
-analysis_stack = Stack()
+            self.top_frame().f_globals = sys.analysis_modules[new_module_name].namespace

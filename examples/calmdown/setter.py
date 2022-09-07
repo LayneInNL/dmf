@@ -12,4 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-x.y = Test()
+
+class Test:
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        self._name = value
+
+
+t = Test()
+t.name = 1
+result = t.name

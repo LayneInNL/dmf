@@ -11,29 +11,16 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
-
-# class Test:
-#     def __init__(self):
-#         pass
+# from import_dir.importfrom import z
+# import import_dir.imported
 #
-#     def test(self):
-#         return self
+# a = import_dir.imported.y
+# from import_dir import importfrom
 #
-#
-# a = Test()
-# res = a.test()
-# a.x = 1
-# y = a.x
-# a.x = 1
-# b = a.x
+# res = importfrom.z
 
+import io
 
-class Test:
-    pass
+res = io.open
 
-
-t = Test()
-t.x = 1
-t.x = "hello"
-result = t.x
+import import_dir
