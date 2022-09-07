@@ -26,14 +26,12 @@ from dmf.analysis.analysis_types import (
     None_Instance,
     Ellipsis_Instance,
     Object_Type,
-    Int_Instance,
+    Int_Type,
 )
-from dmf.analysis.gets_sets import getattrs
 from dmf.analysis.heap import Heap
 from dmf.analysis.implicit_names import POS_ARG_LEN
 from dmf.analysis.stack import Stack
 from dmf.analysis.value import Value, type_2_value
-from dmf.log.logger import logger
 
 
 class StateBottom:
@@ -106,7 +104,7 @@ class State:
             return value
         elif isinstance(expr, ast.Num):
             if isinstance(expr.n, int):
-                value = type_2_value(Int_Instance)
+                value = type_2_value(Int_Type())
                 return value
             elif isinstance(expr.n, float):
                 value = type_2_value(Float_Instance)

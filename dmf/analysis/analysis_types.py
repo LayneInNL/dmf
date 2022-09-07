@@ -26,9 +26,6 @@ from dmf.analysis.artificial_basic_types import (
     Type_Type,
     Object_Type,
     c3,
-    None_Type,
-    NotImplemented_Type,
-    Ellipsis_Type,
 )
 from dmf.analysis.context_sensitivity import record
 from dmf.analysis.implicit_names import PACKAGE_FLAG, NAME_FLAG
@@ -39,14 +36,14 @@ from dmf.analysis.typeshed_types import (
     TypeshedFunction,
     TypeshedClass,
     TypeshedAssign,
-    TypeshedAnnAssign,
     parse_typeshed_module,
     TypeshedInstance,
     extract_1value,
     Typeshed,
-    resolve_typeshed_value,
     TypeshedDescriptorGetter,
     resolve_typeshed_type,
+    TypeshedImportedModule,
+    TypeshedImportedName,
 )
 from dmf.analysis.value import Value, type_2_value
 from dmf.log.logger import logger
@@ -70,44 +67,44 @@ Function_Type: TypeshedClass = extract_1value(Function_Types)
 
 Int_Types: Value = builtin_module_dict.read_value("int")
 Int_Type = extract_1value(Int_Types)
-Int_Instance = TypeshedInstance("int", "builtins", "builtins.int", Int_Type)
+Int_Instance = Int_Type()
 
 Float_Types: Value = builtin_module_dict.read_value("float")
 Float_Type = extract_1value(Float_Types)
-Float_Instance = TypeshedInstance("float", "builtins", "builtins.float", Float_Type)
+Float_Instance = Float_Type()
 
 Str_Types: Value = builtin_module_dict.read_value("str")
 Str_Type = extract_1value(Str_Types)
-Str_Instance = TypeshedInstance("str", "builtins", "builtins.str", Str_Type)
+Str_Instance = Str_Type()
 
 Bytes_Types: Value = builtin_module_dict.read_value("bytes")
 Bytes_Type = extract_1value(Bytes_Types)
-Bytes_Instance = TypeshedInstance("bytes", "builtins", "builtins.bytes", Bytes_Type)
+Bytes_Instance = Bytes_Type()
 
 ByteArray_Types: Value = builtin_module_dict.read_value("bytearray")
 ByteArray_Type = extract_1value(ByteArray_Types)
-ByteArray_Instance = TypeshedInstance(
-    "bytearray", "builtins", "builtins.bytearray", ByteArray_Type
-)
+ByteArray_Instance = ByteArray_Type()
 
 Bool_Types: Value = builtin_module_dict.read_value("bool")
 Bool_Type = extract_1value(Bool_Types)
-Bool_Instance = TypeshedInstance("bool", "builtins", "builtins.bool", Bool_Type)
+Bool_Instance = Bool_Type()
 
-
-# special enough
-None_Instance = TypeshedInstance("None", "builtins", "builtins-None", None_Type)
-NotImplemented_Instance = TypeshedInstance(
-    "NotImplemented", "builtins", "builtins-NotImplemented", NotImplemented_Type
-)
-Ellipsis_Instance = TypeshedInstance(
-    "ellipsis", "builtins", "builtins-ellipsis", Ellipsis_Type
+NotImplemented_Types = builtin_module_dict.read_value("_NotImplementedType")
+NotImplemented_Type = extract_1value(NotImplemented_Types)
+NotImplemented_Instance = NotImplemented_Type()
+builtin_module_dict.write_local_value(
+    "NotImplemented", type_2_value(NotImplemented_Instance)
 )
 
-# NotImplemented_Types: Value = builtin_module_dict.read_value("NotImplemented")
-# NotImplemented_Type = extract_1value(NotImplemented_Types)
-# Ellipsis_Types: Value = builtin_module_dict.read_value("Ellipsis")
-# Ellipsis_Type = extract_1value(Ellipsis_Types)
+Ellipsis_Types = builtin_module_dict.read_value("ellipsis")
+Ellipsis_Type = extract_1value(Ellipsis_Types)
+Ellipsis_Instance = Ellipsis_Type()
+builtin_module_dict.write_local_value("Ellipsis", type_2_value(Ellipsis_Instance))
+
+None_Types = builtin_module_dict.read_value("NoneType")
+None_Type = extract_1value(None_Types)
+None_Instance = None_Type()
+builtin_module_dict.write_local_value("None", type_2_value(None_Instance))
 
 Typeshed_Type_Type: Value = builtin_module_dict.read_value("type")
 Type_Type.tp_fallback = Typeshed_Type_Type
@@ -117,7 +114,7 @@ Typeshed_Object_Type: Value = builtin_module_dict.read_value("object")
 Object_Type.tp_fallback = Typeshed_Object_Type
 builtin_module_dict.write_local_value("object", type_2_value(Object_Type))
 
-# minic object.__new__
+# mimic object.__new__
 class Constructor:
     def __init__(self):
         self.tp_uuid = "arti-builtins.object.__new__"
@@ -1117,10 +1114,61 @@ class DictAnalysisInstance(AnalysisInstance):
         tp_dict.write_local_value(self.tp_container[1], initial_value2)
 
 
+# translate original typeshed types to concrete typeshed types
+# given a typeshed, return types
 class TypeExprVisitor(ast.NodeVisitor):
-    def __init__(self, module: str):
+    def __init__(self, typeshed):
         # module to identify names
-        self.module: str = module
+        self.typeshed = typeshed
+
+    def refine(self) -> Value:
+        """
+        refine coarse typeshed types to refined types, such as importedname to functions or classes
+
+        :return:
+        """
+        value = Value()
+        if not isinstance(self.typeshed, Typeshed):
+            value.inject(self.typeshed)
+            return value
+
+        if isinstance(self.typeshed, TypeshedImportedModule):
+            module_value = parse_typeshed_module(self.typeshed.tp_imported_module)
+            value.inject(module_value)
+        elif isinstance(self.typeshed, TypeshedImportedName):
+            module_value = parse_typeshed_module(self.typeshed.tp_imported_module)
+            assert len(module_value) == 1
+            for module in module_value:
+                if self.typeshed.tp_imported_name in module:
+                    one_value = module.tp_dict.read_value(
+                        self.typeshed.tp_imported_name
+                    )
+                    for sub_value in one_value:
+                        sub_visitor = TypeExprVisitor(sub_value)
+                        refined_sub_value = sub_visitor.refine()
+                        value.inject(refined_sub_value)
+                    value.inject(one_value)
+                else:
+                    value.inject(Value.make_any())
+        elif isinstance(
+            self.typeshed,
+            (
+                TypeshedClass,
+                TypeshedFunction,
+                TypeshedModule,
+            ),
+        ):
+            value.inject(self.typeshed)
+        elif isinstance(self.typeshed, TypeshedDescriptorGetter):
+            for getter in self.typeshed.functions:
+                curr_value = self.visit(getter.returns)
+                value.inject(curr_value)
+        elif isinstance(self.typeshed, TypeshedAssign):
+            curr_value = self.visit(self.typeshed.tp_code)
+            value.inject(curr_value)
+        else:
+            raise NotImplementedError(self.typeshed)
+        return value
 
     def visit_BinOp(self, node: ast.BinOp):
         value = Value()
@@ -1168,9 +1216,8 @@ class TypeExprVisitor(ast.NodeVisitor):
     def visit_Attribute(self, node: ast.Attribute):
         value = Value()
 
-        receiver_visitor = TypeExprVisitor(self.module)
-        receiver_value = receiver_visitor.visit(node.value)
-        receiver_value = refine_value(receiver_value)
+        receiver_visitor = TypeExprVisitor(self)
+        receiver_value = receiver_visitor.refine()
         for one in receiver_value:
             if node.attr in one.tp_dict:
                 value.inject(one.tp_dict.read_value(node.attr))
@@ -1197,7 +1244,8 @@ class TypeExprVisitor(ast.NodeVisitor):
             value = type_2_value(Bool_Instance)
             return value
         elif id == "int":
-            value = type_2_value(Int_Instance)
+            int_object = Int_Type()
+            value = type_2_value(int_object)
             return value
         elif id == "float":
             value = type_2_value(Float_Instance)
@@ -1229,12 +1277,14 @@ class TypeExprVisitor(ast.NodeVisitor):
         else:
             # check if it's in module
             value = Value()
-            modules: Value = parse_typeshed_module(self.module)
+            modules: Value = parse_typeshed_module(self.typeshed.tp_module)
+            assert len(modules) == 1, modules
             for module in modules:
                 if id in module.tp_dict:
-                    name_info = module.tp_dict.read_value(id)
-                    res = refine_value(name_info)
-                    value.inject(res)
+                    typeshed_value = module.tp_dict.read_value(id)
+                    for each_value in typeshed_value:
+                        res = TypeExprVisitor(each_value).refine()
+                        value.inject(res)
             return value
 
 
@@ -1269,15 +1319,12 @@ def refine_type(typeshed_type) -> Value:
         value.inject(typeshed_type)
     elif isinstance(typeshed_type, TypeshedDescriptorGetter):
         # extract returns of functions
-        visitor: TypeExprVisitor = TypeExprVisitor(typeshed_type.tp_module)
+        visitor: TypeExprVisitor = TypeExprVisitor(typeshed_type)
         for getter in typeshed_type.functions:
             value.inject(visitor.visit(getter.returns))
-    elif isinstance(typeshed_type, TypeshedAnnAssign):
-        visitor = TypeExprVisitor(typeshed_type.tp_module)
-        value.inject(visitor.visit(typeshed_type.tp_code.annotation))
     elif isinstance(typeshed_type, TypeshedAssign):
-        visitor = TypeExprVisitor(typeshed_type.tp_module)
-        value.inject(visitor.visit(typeshed_type.tp_code.value))
+        visitor = TypeExprVisitor(typeshed_type)
+        value.inject(visitor.visit(typeshed_type.tp_code))
     else:
         raise NotImplementedError(typeshed_type)
     return value
@@ -1285,7 +1332,7 @@ def refine_type(typeshed_type) -> Value:
 
 # resolve type returns to types
 def _function_refine_self_to_value(self: TypeshedFunction, *args, **kwargs):
-    visitor = TypeExprVisitor(self.tp_module)
+    visitor = TypeExprVisitor(self)
     value = Value()
     for function in self.functions:
         _val = visitor.visit(function.returns)
@@ -1297,7 +1344,7 @@ TypeshedFunction.refine_self_to_value = _function_refine_self_to_value
 
 # refine property to its type
 def _property_refine_self_to_value(self: TypeshedDescriptorGetter, *args, **kwargs):
-    visitor = TypeExprVisitor(self.tp_module)
+    visitor = TypeExprVisitor(self)
     value = Value()
     for function in self.functions:
         _val = visitor.visit(function.returns)
@@ -1308,11 +1355,13 @@ def _property_refine_self_to_value(self: TypeshedDescriptorGetter, *args, **kwar
 TypeshedDescriptorGetter.refine_self_to_value = _property_refine_self_to_value
 
 
-def _annassign_refine_self_to_value(self: TypeshedAnnAssign, *args, **kwargs):
-    final_self = resolve_typeshed_type(self)
-    visitor = TypeExprVisitor(self.tp_module)
+def _assign_refine_self_to_value(self: TypeshedAssign, *args, **kwargs):
+    visitor = TypeExprVisitor(self)
     value = Value()
-    for function in self.tp_code:
-        _val = visitor.visit(function.returns)
-        value.inject(_val)
+    expr: ast.expr = self.tp_code
+    _val = visitor.visit(expr)
+    value.inject(_val)
     return value
+
+
+TypeshedAssign.refine_self_to_value = _assign_refine_self_to_value

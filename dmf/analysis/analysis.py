@@ -28,9 +28,7 @@ from dmf.analysis.analysis_types import (
     AnalysisInstance,
     Generator_Type,
     AnalysisDescriptor,
-    AnalysisDescriptor,
     TypeExprVisitor,
-    Int_Type,
 )
 from dmf.analysis.analysis_types import (
     Constructor,
@@ -763,7 +761,7 @@ class Analysis(AnalysisBase):
             elif isinstance(type, TypeshedFunction):
                 functions = type.functions
                 one_value = Value()
-                visitor = TypeExprVisitor(type.tp_module)
+                visitor = TypeExprVisitor(type)
                 for function in functions:
                     function_return_return = visitor.visit(function.returns)
                     one_value.inject(function_return_return)

@@ -30,6 +30,7 @@ from dmf.analysis.analysis_types import (
     ClassmethodAnalysisInstance,
     PropertyAnalysisInstance,
     StaticmethodAnalysisInstance,
+    TypeExprVisitor,
 )
 from dmf.analysis.artificial_basic_types import (
     ArtificialClass,
@@ -41,6 +42,7 @@ from dmf.analysis.typeshed_types import (
     TypeshedModule,
     TypeshedInstance,
     Typeshed,
+    TypeshedClass,
 )
 from dmf.analysis.value import Value, type_2_value
 from dmf.log.logger import logger
@@ -181,6 +183,8 @@ def _getattr(obj, name) -> Tuple[Value, Value]:
         else:
             raise NotImplementedError(name)
         return direct_result, descriptor_result
+    elif isinstance(obj, TypeshedClass):
+        return type_getattro(obj, name)
     else:
         raise NotImplementedError(obj)
     # else:
@@ -290,8 +294,9 @@ def type_getattro(type, name) -> Tuple[Value, Value]:
         if isinstance(class_variable, (AnalysisFunction, ArtificialFunction)):
             res_value.inject(class_variable)
         elif isinstance(class_variable, Typeshed):
-            typeshed_value = refine_type(class_variable)
-            res_value.inject(typeshed_value)
+            curr_visitor = TypeExprVisitor(class_variable)
+            curr_value = curr_visitor.refine()
+            res_value.inject(curr_value)
         elif isinstance(class_variable, Constructor):
             res_value.inject(class_variable)
         # property object itself

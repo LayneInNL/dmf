@@ -205,7 +205,7 @@ Object_Type.tp_mro = c3(Object_Type)
 
 # redefine __init__ to create other ArtificialClasses
 def __init__(self, tp_qualname: str):
-    self.tp_uuid: str = f"arti-clas-{tp_qualname}"
+    self.tp_uuid: str = f"arti-class-{tp_qualname}"
     self.tp_qualname: str = tp_qualname
     self.tp_dict: Namespace = Namespace()
     self.tp_class = Type_Type
@@ -214,7 +214,3 @@ def __init__(self, tp_qualname: str):
 
 
 ArtificialClass.__init__ = __init__
-
-None_Type = ArtificialClass("builtins.NoneType")
-Ellipsis_Type = ArtificialClass("builtins.EllipsisType")
-NotImplemented_Type = ArtificialClass("builtins.NotImplementedType")

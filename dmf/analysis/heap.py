@@ -15,13 +15,13 @@ from __future__ import annotations
 
 from typing import Dict
 
-from dmf.analysis.namespace import Namespace, Var
+from dmf.analysis.heap_namespace import HeapNamespace
 from dmf.analysis.value import Value
 
 
 class Heap:
     def __init__(self):
-        self.singletons: Dict[str, Namespace] = {}
+        self.singletons: Dict[str, HeapNamespace] = {}
 
     def __contains__(self, item):
         return item in self.singletons
@@ -31,14 +31,10 @@ class Heap:
             if heap_address not in other.singletons:
                 return False
             else:
-                self_dict: Namespace = self.singletons[heap_address]
-                other_dict: Namespace = other.singletons[heap_address]
-                for field in self_dict:
-                    field: Var
-                    if field.name not in other_dict:
-                        return False
-                    elif not self_dict[field] <= other_dict[field]:
-                        return False
+                self_namespace: HeapNamespace = self.singletons[heap_address]
+                other_namespace: HeapNamespace = other.singletons[heap_address]
+                if not self_namespace <= other_namespace:
+                    return False
         return True
 
     def __iadd__(self, other: Heap):
@@ -48,12 +44,7 @@ class Heap:
             else:
                 self_namespace = self.singletons[heap_address]
                 other_namespace = other.singletons[heap_address]
-                for field in other_namespace:
-                    field: Var
-                    if field.name not in self_namespace:
-                        self_namespace[field] = other_namespace[field]
-                    else:
-                        self_namespace[field] += other_namespace[field]
+                self_namespace += other_namespace
         return self
 
     def __repr__(self):
@@ -61,7 +52,7 @@ class Heap:
 
     def write_instance_to_heap(self, heap_uuid: str):
         if heap_uuid not in self.singletons:
-            self.singletons[heap_uuid] = Namespace()
+            self.singletons[heap_uuid] = HeapNamespace()
         return self.singletons[heap_uuid]
 
     def write_field_to_address(self, heap_address: str, field: str, value: Value):
@@ -76,9 +67,3 @@ class Heap:
 
     def read_instance_dict(self, heap_address: str):
         return self.singletons[heap_address]
-
-    def write_instance_dict(self, heap_address: str):
-        self.singletons[heap_address] = Namespace()
-
-    def delete_instance_from_heap(self, heap_address: str):
-        del self.singletons[heap_address]
