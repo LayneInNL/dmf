@@ -29,14 +29,14 @@ numeric_methods = {
     ast.Sub: "__sub__",
     ast.Mult: "__mul__",
     ast.Div: "__truediv__",
+    ast.FloorDiv: "__floordiv__",
     ast.Mod: "__mod__",
     ast.Pow: "__pow__",
     ast.LShift: "__lshift__",
     ast.RShift: "__rshift__",
-    ast.BitOr: "__or__",
-    ast.BitXor: "__xor__",
     ast.BitAnd: "__and__",
-    ast.FloorDiv: "__floordiv__",
+    ast.BitXor: "__xor__",
+    ast.BitOr: "__or__",
 }
 reversed_numeric_methods = {
     ast.Add: "__radd__",

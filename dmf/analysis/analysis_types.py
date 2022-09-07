@@ -1284,7 +1284,7 @@ def refine_type(typeshed_type) -> Value:
 
 
 # resolve type returns to types
-def _function_resolve_self_to_value(self: TypeshedFunction, *args, **kwargs):
+def _function_refine_self_to_value(self: TypeshedFunction, *args, **kwargs):
     visitor = TypeExprVisitor(self.tp_module)
     value = Value()
     for function in self.functions:
@@ -1293,7 +1293,7 @@ def _function_resolve_self_to_value(self: TypeshedFunction, *args, **kwargs):
     return value
 
 
-TypeshedFunction.resolve_self_to_value = _function_resolve_self_to_value
+TypeshedFunction.refine_self_to_value = _function_refine_self_to_value
 
 # refine property to its type
 def _property_refine_self_to_value(self: TypeshedDescriptorGetter, *args, **kwargs):

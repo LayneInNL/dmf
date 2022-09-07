@@ -17,9 +17,9 @@ from typing import List
 
 import astor
 
-from dmf.analysis.artificial_basic_types import Type_Type, c3, Object_Type
+from dmf.analysis.artificial_basic_types import Type_Type, c3
 from dmf.analysis.namespace import Namespace
-from dmf.analysis.special_types import MRO_Any, Bases_Any
+from dmf.analysis.special_types import Bases_Any
 from dmf.analysis.typeshed import get_stub_file
 from dmf.analysis.value import type_2_value, Value
 
@@ -42,11 +42,6 @@ class Typeshed:
         return self
 
     def refine_self_to_value(self, *args, **kwargs) -> Value:
-        value = Value()
-        value.inject(self)
-        return value
-
-    def resolve_self_to_value(self, *args, **kwargs) -> Value:
         value = Value()
         value.inject(self)
         return value

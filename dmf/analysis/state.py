@@ -205,11 +205,6 @@ def compute_function_defaults(state: State, node: ast.FunctionDef):
             kw_default_value = state.compute_value_of_expr(kw_default)
             kwdefaults.append(kw_default_value)
 
-    if arguments.vararg:
-        raise NotImplementedError
-    if arguments.kwarg:
-        raise NotImplementedError
-
     return defaults, kwdefaults
 
 
@@ -236,16 +231,20 @@ def parse_positional_args(start_pos: int, arguments: ast.arguments, state: State
 
     if real_pos_len > len(arguments.args):
         if arguments.vararg is None:
-            raise TypeError
+            raise TypeError(arguments.vararg)
 
         for idx, arg in enumerate(arguments.args):
             arg_value = f_locals.read_value(str(idx))
             stack.write_var(arg.arg, "local", arg_value)
             args_flag[idx] = True
             f_locals.del_local_var(str(idx))
-        # TODO: vararg
-        if arguments.vararg is not None:
-            raise NotImplementedError
+
+        # idx += 1
+        # # consider vararg
+        # while idx < real_pos_len:
+        #     f_locals.del_local_var(str(idx))
+        #     idx += 1
+
     else:
         for arg_idx, pos_idx in enumerate(range(start_pos, positional_len + 1)):
             arg = arguments.args[arg_idx]
@@ -253,6 +252,10 @@ def parse_positional_args(start_pos: int, arguments: ast.arguments, state: State
             stack.write_var(arg.arg, "local", arg_value)
             args_flag[arg_idx] = True
             f_locals.del_local_var(str(pos_idx))
+
+    if arguments.vararg:
+        f_locals.write_local_value(arguments.vararg.arg, Value.make_any())
+
     return args_flag
 
 
@@ -295,8 +298,8 @@ def parse_kwonly_args(arguments: ast.arguments, state: State, kwdefaults):
             else:
                 stack.write_var(kwonly_arg_name, "local", default_value)
     # TODO: kwargs
-    if arguments.kwarg is not None:
-        raise NotImplementedError
+    if arguments.kwarg:
+        stack.write_var(arguments.kwarg.arg, "local", Value.make_any())
 
 
 def compute_func_args(state: State, args: List[ast.expr], keywords: List[ast.keyword]):

@@ -347,6 +347,18 @@ class Analysis(AnalysisBase):
         new_state: State,
         dummy_value: Value,
     ):
+        """
+        The considered statements are
+        del x -- a name
+        del x[i] -- a subscript __delitem__
+        del x.y -- a descriptor __delete__
+
+        :param program_point:
+        :param old_state:
+        :param new_state:
+        :param dummy_value:
+        :return:
+        """
         stmt: ast.Delete = self.get_stmt_by_point(program_point)
         target: ast.expr = stmt.targets[0]
 
@@ -361,31 +373,28 @@ class Analysis(AnalysisBase):
             receiver_value = new_state.compute_value_of_expr(target.value)
             descriptor_result = setattrs(receiver_value, target.attr, None)
             for descriptor in descriptor_result:
-                if isinstance(descriptor, AnalysisDescriptor):
-                    self._add_analysisdescriptor_interflow(
-                        program_point, descriptor, ret_lab
-                    )
-                else:
-                    raise NotImplementedError(descriptor)
+                self._add_analysisdescriptor_interflow(
+                    program_point, descriptor, ret_lab
+                )
         elif isinstance(target, ast.Subscript):
             receiver_value = new_state.compute_value_of_expr(target.value)
             for one_receiver in receiver_value:
-                direct_result, _ = _getattr(one_receiver, "__delitem__")
+                one_receiver_type = one_receiver.tp_class
+                direct_result, _ = _getattr(one_receiver_type, "__delitem__")
                 for one_direct in direct_result:
+                    # turn into anlaysis method
                     if isinstance(one_direct, AnalysisFunction):
-                        self._add_analysisfunction_interflow(
-                            program_point, one_direct, ret_lab
+                        analysis_method = AnalysisMethod(
+                            tp_function=one_direct, tp_instance=one_receiver
                         )
-                    else:
-                        pass
+                        self._add_analysismethod_interflow(
+                            program_point, analysis_method, ret_lab
+                        )
         else:
-            raise NotImplementedError(program_point)
+            raise NotImplementedError(stmt)
 
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
-    # find out implicit function calls for lhs expression
-    # for instance, x.y = xxx, may be a descriptor
-    # x[y] = xxx, call __getitem__
     def _detect_flow_left_magic(
         self,
         program_point: ProgramPoint,
@@ -393,89 +402,50 @@ class Analysis(AnalysisBase):
         new_state: State,
         dummy_value: Value,
     ):
-        # detect flow of possibly magic methods
-        # for instance, a = x + y. There may be an implicit x.__add__
-        # expr is guaranteed to be ast.expr type
+        """
+        find out implicit function calls for lhs expression
+        for instance, x.y = xxx, may be a descriptor
+        x[y] = xxx, call __getitem__
+
+        :param program_point:
+        :param old_state:
+        :param new_state:
+        :param dummy_value:
+        :return:
+        """
         stmt: ast.Assign = self.get_stmt_by_point(program_point)
 
         call_lab, call_ctx = program_point
         ret_lab, dummy_ret_lab = self.get_left_magic_return_label(call_lab)
-
+        target = stmt.targets[0]
         # find out descriptors
-        if isinstance(stmt.targets[0], ast.Attribute):
-            receiver_value = new_state.compute_value_of_expr(stmt.targets[0].value)
+        if isinstance(target, ast.Attribute):
+            receiver_value = new_state.compute_value_of_expr(target.value)
             rhs_value = new_state.compute_value_of_expr(stmt.value)
-            descriptor_result = setattrs(
-                receiver_value, stmt.targets[0].attr, rhs_value
-            )
+            descriptor_result = setattrs(receiver_value, target.attr, rhs_value)
 
             for descriptor in descriptor_result:
                 if isinstance(descriptor, AnalysisDescriptor):
                     self._add_analysisdescriptor_interflow(
                         program_point, descriptor, ret_lab
                     )
-                else:
-                    raise NotImplementedError(descriptor)
-
-            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
-            return
-        elif isinstance(stmt.targets[0], ast.Subscript):
-            rhs_value = new_state.compute_value_of_expr(stmt.value)
-            receiver_value = new_state.compute_value_of_expr(stmt.targets[0].value)
-            # find __setitem__ special methods
-            direct_result, descriptor_result = getattrs(receiver_value, "__setitem__")
-            assert len(descriptor_result) == 0, descriptor_result
-            for one_direct_result in direct_result:
-                if isinstance(one_direct_result, AnalysisMethod):
-                    analysis_descriptor = AnalysisDescriptor(
-                        tp_function=one_direct_result.tp_function
-                    )
-                    self._add_analysisdescriptor_interflow(
-                        program_point, analysis_descriptor, ret_lab
-                    )
-                elif isinstance(one_direct_result, ArtificialMethod):
-                    one_value = one_direct_result(stmt.targets[0].attr, rhs_value)
-                else:
-                    raise NotImplementedError(one_direct_result)
-
-            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
-            return
+        elif isinstance(target, ast.Subscript):
+            receiver_value = new_state.compute_value_of_expr(target.value)
+            for one_receiver in receiver_value:
+                one_receiver_type = one_receiver.tp_class
+                direct_result, _ = _getattr(one_receiver_type, "__setitem__")
+                for one_direct in direct_result:
+                    if isinstance(one_direct, AnalysisFunction):
+                        analysis_method = AnalysisMethod(
+                            tp_function=one_direct, tp_instance=one_receiver
+                        )
+                        self._add_analysismethod_interflow(
+                            program_point, analysis_method, ret_lab
+                        )
         else:
-            raise NotImplementedError(program_point)
+            raise NotImplementedError(stmt)
 
-        dummy_ret_expr = self.get_stmt_by_label(dummy_ret_lab)
-        # dummy_ret_expr must be an ast.Name
-        new_state.stack.write_var(dummy_ret_expr.id, Namespace_Local, dummy_value)
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
-
-    def _magic_method_detector(self, program_point, descriptor_result, ret_lab):
-        for one_descr_res in descriptor_result:
-            # we're only like AnalysisMethod. a+b = a.__add__(b).
-            # a.__add__ is a method
-            # it must be user-defined
-            if isinstance(one_descr_res, AnalysisMethod):
-                self._add_analysismethod_interflow(
-                    program_point, one_descr_res, ret_lab
-                )
-            else:
-                raise NotImplementedError(one_descr_res)
-
-    def _nonmagic_method_detector(self, direct_result, *args):
-        value = Value()
-        for one_direct_res in direct_result:
-            # such as list.__le__
-            if isinstance(one_direct_res, ArtificialMethod):
-                arti_method_value = one_direct_res(*args)
-                value.inject(arti_method_value)
-            # such as int.__add__
-            elif isinstance(one_direct_res, TypeshedFunction):
-                typeshed_visitor = TypeExprVisitor(one_direct_res.tp_module)
-                for function in one_direct_res.functions:
-                    typeshed_value = typeshed_visitor.visit(function.returns)
-                    value.inject(typeshed_value)
-            else:
-                raise NotImplementedError(one_direct_res)
-        return value
 
     # detect flows of magic methods.
     # for example, a + b we retrieve a.__add__
@@ -494,9 +464,6 @@ class Analysis(AnalysisBase):
         call_lab, call_ctx = program_point
         ret_lab, dummy_ret_lab = self.get_right_magic_return_label(call_lab)
 
-        # used to push dummy value to dummy point
-        dummy_value = Value()
-
         if isinstance(expr, ast.BinOp):
             # retrieve magic methods
             operator_name = numeric_methods[type(expr.op)]
@@ -512,27 +479,55 @@ class Analysis(AnalysisBase):
             rhs = expr.right
             rhs_value = new_state.compute_value_of_expr(rhs)
 
-            direct_res, descr_res = getattrs(lhs_value, operator_name)
-            self._magic_method_detector(program_point, descr_res, ret_lab)
-            one_value = self._nonmagic_method_detector(direct_res, rhs_value)
-            dummy_value.inject(one_value)
+            # for instance
+            # x + y
+            # return node
+            # dummy return node
+            for one_receiver in lhs_value:
+                one_receiver_type = one_receiver.tp_class
+                direct_res, _ = _getattr(one_receiver_type, operator_name)
+                for one_direct_res in direct_res:
+                    # typeshed function
+                    if isinstance(one_direct_res, TypeshedFunction):
+                        one_value = one_direct_res.refine_self_to_value()
+                        dummy_value.inject(one_value)
+                    elif isinstance(one_direct_res, AnalysisFunction):
+                        analysis_method = AnalysisMethod(
+                            tp_function=one_direct_res, tp_instance=one_receiver
+                        )
+                        self._add_analysismethod_interflow(
+                            program_point, analysis_method, ret_lab
+                        )
+                    elif isinstance(one_direct_res, ArtificialFunction):
+                        one_value = one_direct_res(one_receiver, rhs_value)
+                        dummy_value.inject(one_value)
 
         elif isinstance(expr, ast.UnaryOp):
             if isinstance(expr.op, ast.Not):
                 one_value = new_state.compute_value_of_expr(
                     ast.NameConstant(value=True)
                 )
+                dummy_value.inject(one_value)
             else:
                 unary_method_name = unary_methods[type(expr.op)]
-                rhs_value = new_state.compute_value_of_expr(expr.operand)
-                direct_result, descriptor_result = getattrs(
-                    rhs_value, unary_method_name
-                )
-                self._magic_method_detector(program_point, descriptor_result, ret_lab)
-                one_value = self._nonmagic_method_detector(direct_result)
-
-            dummy_value.inject(one_value)
-
+                receiver_value = new_state.compute_value_of_expr(expr.operand)
+                for one_receiver in receiver_value:
+                    direct_res, _ = _getattr(one_receiver, unary_method_name)
+                    for one_direct_res in direct_res:
+                        # typeshed function
+                        if isinstance(one_direct_res, TypeshedFunction):
+                            one_value = one_direct_res.refine_self_to_value()
+                            dummy_value.inject(one_value)
+                        elif isinstance(one_direct_res, AnalysisFunction):
+                            analysis_method = AnalysisMethod(
+                                tp_function=one_direct_res, tp_instance=one_receiver
+                            )
+                            self._add_analysismethod_interflow(
+                                program_point, analysis_method, ret_lab
+                            )
+                        elif isinstance(one_direct_res, ArtificialFunction):
+                            one_value = one_direct_res(one_receiver)
+                            dummy_value.inject(one_value)
         elif isinstance(
             expr,
             (
@@ -628,7 +623,7 @@ class Analysis(AnalysisBase):
                         )
                         dummy_value.inject(_value)
                     elif isinstance(each_res, TypeshedFunction):
-                        _value = each_res.resolve_self_to_value()
+                        _value = each_res.refine_self_to_value()
                         dummy_value.inject(_value)
         else:
             raise NotImplementedError(expr)
@@ -952,10 +947,45 @@ class Analysis(AnalysisBase):
             rhs = call_expr.right
             rhs_value = new_state.compute_value_of_expr(rhs)
             new_state.stack.write_var(str(1), Namespace_Local, rhs_value)
-
             # set the length of pos args
             setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, 1)
             return new_state
+        elif isinstance(call_expr, ast.UnaryOp):
+            setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, 0)
+            return new_state
+        elif isinstance(
+            call_expr,
+            (
+                ast.BoolOp,
+                ast.Lambda,
+                ast.IfExp,
+                ast.Call,
+                ast.ListComp,
+                ast.SetComp,
+                ast.DictComp,
+                ast.GeneratorExp,
+                ast.Await,
+                ast.Constant,
+                ast.List,
+                ast.Tuple,
+                ast.Dict,
+                ast.Set,
+                ast.Starred,
+                ast.Yield,
+                ast.YieldFrom,
+                ast.Compare,
+                ast.Str,
+                ast.FormattedValue,
+                ast.JoinedStr,
+                ast.Bytes,
+                ast.NameConstant,
+                ast.Ellipsis,
+                ast.Num,
+                ast.Name,
+                ast.Index,
+            ),
+        ):
+            raise NotImplementedError(call_expr)
         elif isinstance(call_expr, ast.Attribute):
             receiver_value = new_state.compute_value_of_expr(call_expr.value)
             _, descriptor_result = getattrs(receiver_value, call_expr.attr)
@@ -1001,7 +1031,8 @@ class Analysis(AnalysisBase):
         args: List[ast.expr] = call_stmt.args
         for idx, arg in enumerate(args, 1):
             if isinstance(arg, ast.Starred):
-                raise NotImplementedError(arg)
+                assert isinstance(arg.value, ast.Name), arg
+                new_stack.write_var(arg.value.id, Namespace_Local, Value.make_any())
             arg_value = new_state.compute_value_of_expr(arg)
             new_stack.write_var(str(idx), Namespace_Local, arg_value)
 
@@ -1013,7 +1044,8 @@ class Analysis(AnalysisBase):
         for keyword in keywords:
             # (NULL identifier for **kwargs)
             if keyword.arg is None:
-                raise NotImplementedError(keyword)
+                assert isinstance(keyword.value, ast.Name), keyword
+                new_stack.write_var(keyword.value.id, Namespace_Local, Value.make_any())
             keyword_value = new_state.compute_value_of_expr(keyword.value)
             new_stack.write_var(keyword.arg, Namespace_Local, keyword_value)
 
