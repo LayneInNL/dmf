@@ -35,7 +35,7 @@ from dmf.analysis.artificial_basic_types import (
     ArtificialFunction,
     ArtificialMethod,
 )
-from dmf.analysis.special_types import MRO_Any
+from dmf.analysis.special_types import MRO_Any, Any
 from dmf.analysis.typeshed_types import (
     TypeshedModule,
     TypeshedInstance,
@@ -157,8 +157,9 @@ def _setattr(obj, name, value) -> Value:
 
 
 def _getattr(obj, name) -> Tuple[Value, Value]:
-
-    if isinstance(obj, (AnalysisModule, TypeshedModule)):
+    if obj is Any:
+        return Value.make_any(), Value.make_any()
+    elif isinstance(obj, (AnalysisModule, TypeshedModule)):
         direct_result = obj.custom_getattr(name)
         return direct_result, Value()
     elif isinstance(obj, AnalysisInstance):

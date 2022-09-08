@@ -31,27 +31,6 @@ class SingletonInstanceWithDeepcopy:
         return memo[id(self)]
 
 
-class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
-    def __init__(self):
-        self.tp_uuid = -1024
-        self.tp_class = self
-
-    def __repr__(self):
-        return "Any"
-
-    def __getattr__(self, item):
-        return self
-
-    def __call__(self, *args, **kwargs):
-        return self
-
-    def values(self):
-        return [self]
-
-
-Any = _TypeAny()
-
-
 class _MROAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
     def __init__(self):
         self.tp_uuid = id(self)
@@ -72,3 +51,28 @@ class _BasesAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
 
 
 Bases_Any = _BasesAny()
+
+
+class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
+    def __init__(self):
+        self.tp_uuid = -1024
+        self.tp_class = self
+        self.tp_bases = [[Bases_Any]]
+
+    def __repr__(self):
+        return "Any"
+
+    def __getattr__(self, item):
+        return self
+
+    def __call__(self, *args, **kwargs):
+        return self
+
+    def values(self):
+        return [self]
+
+    def __iter__(self):
+        return iter([self])
+
+
+Any = _TypeAny()

@@ -836,6 +836,9 @@ class IteratorArtificialClass(ArtificialClass):
         value, *_ = args
         # create instance dict
         tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        if sys.heap.has_heap_address(tp_address):
+            tp_dict = sys.heap.read_instance_dict(tp_address)
+            return IteratorAnalysisInstance(tp_address, tp_class, tp_dict, None)
         # create an iterator
         return IteratorAnalysisInstance(tp_address, tp_class, tp_dict, value)
 
@@ -1089,6 +1092,8 @@ class IteratorAnalysisInstance(AnalysisInstance):
     def __init__(self, tp_address, tp_class, tp_dict, init_value):
         super().__init__(tp_address, tp_class, tp_dict)
         self.tp_container = "iterators"
+        if init_value is None:
+            return
         iterator = Iterator(tp_address, init_value)
         tp_dict.write_local_value(self.tp_container, type_2_value(iterator))
 
@@ -1345,6 +1350,13 @@ class TypeExprVisitor(ast.NodeVisitor):
             dict_object = Dict_Type(heap_address, Dict_Type, typeshed_init=True)
             value = type_2_value(dict_object)
             return value
+        elif id in builtin_module_dict:
+            value = Value()
+            blt_value = builtin_module_dict.read_value(id)
+            for one_value in blt_value:
+                res = TypeExprVisitor(one_value).refine()
+                value.inject(res)
+            return value
         else:
             # check if it's in module
             value = Value()
@@ -1356,6 +1368,7 @@ class TypeExprVisitor(ast.NodeVisitor):
                     for each_value in typeshed_value:
                         res = TypeExprVisitor(each_value).refine()
                         value.inject(res)
+                raise AttributeError(self.typeshed.tp_module, id)
             return value
 
 

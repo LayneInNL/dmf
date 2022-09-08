@@ -37,11 +37,6 @@ class HeapNamespace(dict):
                 return True
         return False
 
-    def read_var_type(self, name: str) -> Var:
-        for var, _ in self.items():
-            if name == var.name:
-                return var
-
     def read_value(self, name: str) -> Value:
         for var, val in self.items():
             if name == var.name:

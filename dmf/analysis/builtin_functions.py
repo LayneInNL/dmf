@@ -208,7 +208,7 @@ def _setup():
             direct_res, _ = _getattr(obj, "__next__")
             for one_direct_res in direct_res:
                 if isinstance(one_direct_res, ArtificialFunction):
-                    one_res = one_direct_res(objs)
+                    one_res = one_direct_res(type_2_value(obj))
                     value.inject(one_res)
                 elif isinstance(one_direct_res, AnalysisFunction):
                     descriptor = AnalysisDescriptor(
@@ -318,9 +318,14 @@ def import_a_module(name, package=None, level=0) -> Value:
     if level > 0:
         name = _resolve_name(name, package, level)
     category = isort.place_module(name)
-
-    if category == "STDLIB":
-        module = import_a_module_from_typeshed(name)
+    # DEFAULT: Tuple[str, ...] = (FUTURE, STDLIB, THIRDPARTY, FIRSTPARTY, LOCALFOLDER)
+    if category == "FUTURE":
+        module = Value.make_any()
+    elif category == "STDLIB":
+        if name == "typing" or name == "typing_extensions":
+            module = Value.make_any()
+        else:
+            module = import_a_module_from_typeshed(name)
     else:
         module = import_module(name)
 

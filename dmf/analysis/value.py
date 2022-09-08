@@ -21,7 +21,7 @@ from dmf.analysis.special_types import Any
 
 
 class Value:
-    threshold = 2
+    threshold = 5
 
     @classmethod
     def make_any(cls) -> Value:

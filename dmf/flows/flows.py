@@ -207,7 +207,7 @@ class CFG:
     def show(
         self,
         filepath: str = "output",
-        fmt: str = "png",
+        fmt: str = "svg",
         show: bool = True,
         name: str = None,
     ) -> None:
@@ -688,10 +688,8 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if node.value:
-            decomposed, node.value = self.decompose_expr(node.value)
-            self.populate_body(decomposed)
-            add_stmt(self.curr_block, node)
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+            assign = ast.Assign(targets=[node.target], value=node.value)
+            self.visit(assign)
 
     def visit_For(self, node: ast.For) -> None:
         iter_call: ast.Call = ast.Call(

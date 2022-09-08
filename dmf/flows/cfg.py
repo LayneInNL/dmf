@@ -29,9 +29,6 @@ def construct_CFG(file_path) -> flows.CFG:
         cfg = visitor.build(base_name, ast.parse(source))
         logger.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
         logger.debug("Refactored flows: {}".format(visitor.cfg.flows))
-        logger.debug("All call labels: {}".format(visitor.cfg.call_labels))
-        logger.debug("All return labels: {}".format(visitor.cfg.return_labels))
-        logger.debug("Dummy labels: {}".format(visitor.cfg.dummy_labels))
         cfg.show()
 
         return cfg

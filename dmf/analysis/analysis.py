@@ -19,6 +19,8 @@ import sys
 from collections import defaultdict, deque, namedtuple
 from typing import Dict, Tuple, Deque, List
 
+import astor
+
 from dmf.analysis.analysis_types import (
     ArtificialFunction,
     AnalysisFunction,
@@ -135,6 +137,8 @@ class Analysis(AnalysisBase):
     def _push_state_to(self, state: State, program_point: ProgramPoint):
         old: State | BOTTOM = self.analysis_list[program_point]
         if not compare_states(state, old):
+            print(state)
+            print(old)
             state: State = merge_states(state, old)
             self.analysis_list[program_point]: State = state
             self.detect_flow(program_point)
@@ -146,13 +150,16 @@ class Analysis(AnalysisBase):
         while self.work_list:
             # get the leftmost one
             program_point1, program_point2 = self.work_list.popleft()
-            logger.debug(f"Current program point1 {program_point1}")
+            stmt = self.get_stmt_by_point(program_point1)
+            logger.info(
+                f"Current program point1 {program_point1} {astor.to_source(stmt)}"
+            )
 
             transferred: State | BOTTOM = self.transfer(program_point1)
             self._push_state_to(transferred, program_point2)
 
     def present(self):
-        for program_point in self.analysis_list:
+        for program_point in list(self.analysis_list) + [self.final_point]:
             logger.info(
                 "Context at program point {}: {}".format(
                     program_point, self.analysis_list[program_point]
@@ -167,12 +174,14 @@ class Analysis(AnalysisBase):
                 )
             except:
                 pass
-        self.transfer(self.final_point)
 
     # based on current program point, update self.IF
     def detect_flow(self, program_point: ProgramPoint) -> None:
         if self.is_call_point(program_point):
-            logger.debug(f"Current lambda point: {program_point}")
+            stmt = self.get_stmt_by_point(program_point)
+            logger.debug(
+                f"Current lambda point: {program_point} {astor.to_source(stmt)}"
+            )
             # curr_state is the previous program point
             next_state: State = self.analysis_list[program_point]
             dummy_value: Value = Value()
@@ -615,6 +624,14 @@ class Analysis(AnalysisBase):
                     elif isinstance(each_res, TypeshedFunction):
                         _value = each_res.refine_self_to_value()
                         dummy_value.inject(_value)
+        elif isinstance(expr, ast.Slice):
+            slice_value = new_state.compute_value_of_expr(ast.Name(id="slice"))
+            for one_slice in slice_value:
+                if isinstance(one_slice, TypeshedClass):
+                    one_value = one_slice()
+                    dummy_value.inject(one_value)
+                else:
+                    raise NotImplementedError(one_slice)
         else:
             raise NotImplementedError(expr)
 
@@ -1211,8 +1228,7 @@ class Analysis(AnalysisBase):
             name = alias.name
             asname = alias.asname
             for module in modules:
-                direct_res, descr_gets = _getattr(module, name)
-                assert len(descr_gets) == 0
+                direct_res, _ = _getattr(module, name)
                 if len(direct_res) == 0:
                     sub_module_name = f"{stmt.module}.{name}"
                     sub_module = import_a_module(sub_module_name, package, stmt.level)

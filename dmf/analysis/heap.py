@@ -50,6 +50,11 @@ class Heap:
     def __repr__(self):
         return "heaps: {}".format(self.singletons)
 
+    def has_heap_address(self, heap_address):
+        if heap_address in self.singletons:
+            return True
+        return False
+
     def write_instance_to_heap(self, heap_uuid: str):
         if heap_uuid not in self.singletons:
             self.singletons[heap_uuid] = HeapNamespace()

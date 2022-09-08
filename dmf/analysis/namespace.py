@@ -45,6 +45,12 @@ class GlobalVar(Var):
 
 
 class Namespace(dict):
+    def __repr__(self):
+        filtered_dict = {
+            key: value for key, value in self.items() if not key.name.startswith("_var")
+        }
+        return repr(filtered_dict)
+
     def __missing__(self, key):
         self[key] = value = Value.make_any()
         return value
