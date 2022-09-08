@@ -13,20 +13,28 @@
 #  limitations under the License.
 
 
-class Test:
-    @property
-    def name(self):
-        return "hello"
-        # return self._name
+# class Test:
+#     @property
+#     def name(self):
+#         return "hello"
+#         # return self._name
+#
+#     # @name.setter
+#     # def name(self, value):
+#     #     self._name = value
+#     #
+#     # @name.deleter
+#     # def name(self):
+#     #     pass
+#
+#
+# t = Test()
+# res = t.name
 
-    # @name.setter
-    # def name(self, value):
-    #     self._name = value
-    #
-    # @name.deleter
-    # def name(self):
-    #     pass
+# a = 1
+# x = a.real
 
+# a = _OpenFile
+import types
 
-t = Test()
-res = t.name
+a = types.LambdaType

@@ -28,7 +28,7 @@ from dmf.analysis.artificial_basic_types import (
     c3,
 )
 from dmf.analysis.context_sensitivity import record
-from dmf.analysis.implicit_names import PACKAGE_FLAG, NAME_FLAG
+from dmf.analysis.implicit_names import PACKAGE_FLAG, NAME_FLAG, typeshed_init
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.special_types import MRO_Any
 from dmf.analysis.typeshed_types import (
@@ -156,35 +156,36 @@ _setup_Object_Type()
 
 # mimic builtins.super
 class SuperArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, *args):
+    def __call__(self, tp_address, tp_class, type1_value, type2_value):
         # super(type1, type2)
-        assert len(args) == 2, args
-        type1_value, type2_value = args
         assert len(type1_value) == 1, type1_value
         assert len(type2_value) == 1, type2_value
         type1 = extract_1value(type1_value)
         type2 = extract_1value(type2_value)
-        assert isinstance(type2, AnalysisInstance)
 
-        type_type2 = type2.tp_class
-        type_type2_mros = type_type2.tp_mro
+        if isinstance(type2, AnalysisInstance):
+            type2_class = type2.tp_class
+        elif isinstance(type2, AnalysisClass):
+            type2_class = type2
+        else:
+            raise NotImplementedError(type2)
+
+        type2_class_mros = type2_class.tp_mro
         super_mros = []
-        for type_type2_mro in type_type2_mros:
-            found_in_curr_mro = False
+        for type2_class_mro in type2_class_mros:
             # each is a list [xxx, yyy, zzz]
-            for idx, curr_type in enumerate(type_type2_mro):
-                if type_type2.tp_uuid == type1.tp_uuid:
-                    one_mro = type_type2_mro[idx + 1 :]
+            for idx, curr_type in enumerate(type2_class_mro):
+                if type2_class.tp_uuid == type1.tp_uuid:
+                    one_mro = type2_class_mro[idx + 1 :]
                     super_mros.append(one_mro)
-                    found_in_curr_mro = True
                     break
-            if not found_in_curr_mro:
+            else:
                 super_mros.append([MRO_Any])
 
         tp_dict = sys.heap.write_instance_to_heap(tp_address)
         setattr(tp_dict, "super_self", type2)
         setattr(tp_dict, "super_mros", super_mros)
-        return AnalysisInstance(tp_address, tp_class, tp_dict)
+        return SuperAnalysisInstance(tp_address, tp_class, tp_dict, type2, super_mros)
 
 
 Super_Type = SuperArtificialClass("builtins.super")
@@ -435,12 +436,14 @@ _setup_List_Type()
 
 
 class TupleArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, *arguments):
-        if len(arguments) == 0:
+    def __call__(self, tp_address, tp_class, *args, **kwargs):
+        if typeshed_init in kwargs:
+            init_container_value = Value().make_any()
+        elif len(args) == 0:
             init_container_value = Value()
         else:
             init_container_value = Value().make_any()
-        logger.critical(arguments)
+        logger.critical(args)
         tp_dict = sys.heap.write_instance_to_heap(tp_address)
         return TupleAnalysisInstance(
             tp_address, tp_class, tp_dict, init_container_value
@@ -498,12 +501,14 @@ _setup_Tuple_Type()
 
 
 class SetArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, *arguments):
-        if len(arguments) == 0:
+    def __call__(self, tp_address, tp_class, *args, **kwargs):
+        if typeshed_init in kwargs:
+            init_container_value = Value.make_any()
+        elif len(args) == 0:
             init_container_value = Value()
         else:
             init_container_value = Value().make_any()
-        logger.critical(arguments)
+        logger.critical(args)
         tp_dict = sys.heap.write_instance_to_heap(tp_address)
         return SetAnalysisInstance(tp_address, tp_class, tp_dict, init_container_value)
 
@@ -515,12 +520,14 @@ builtin_module_dict.write_local_value("set", type_2_value(Set_Type))
 
 
 class FrozensetArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, *arguments):
-        if len(arguments) == 0:
+    def __call__(self, tp_address, tp_class, *args, **kwargs):
+        if typeshed_init in kwargs:
+            init_container_value = Value.make_any()
+        elif len(args) == 0:
             init_container_value = Value()
         else:
             init_container_value = Value().make_any()
-        logger.critical(arguments)
+        logger.critical(args)
         tp_dict = sys.heap.write_instance_to_heap(tp_address)
         return FrozenSetAnalysisInstance(
             tp_address, tp_class, tp_dict, init_container_value
@@ -675,17 +682,20 @@ _setup_FrozenSet_Type()
 
 
 class DictArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, *arguments):
+    def __call__(self, tp_address, tp_class, *args, **kwargs):
+        if typeshed_init in kwargs:
+            init_key_value = Value.make_any()
+            init_value_value = Value.make_any()
         # class dict(**kwargs)¶
         # class dict(mapping, **kwargs)
         # class dict(iterable, **kwargs)
-        if len(arguments) == 0:
+        elif len(args) == 0:
             init_key_value = Value()
             init_value_value = Value()
         else:
             init_key_value = Value.make_any()
             init_value_value = Value.make_any()
-        logger.critical(arguments)
+        logger.critical(args)
         tp_dict = sys.heap.write_instance_to_heap(tp_address)
         return DictAnalysisInstance(
             tp_address, tp_class, tp_dict, init_key_value, init_value_value
@@ -822,7 +832,7 @@ _setup_Dict_Type()
 
 
 class IteratorArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, *args):
+    def __call__(self, tp_address, tp_class, *args, **kwargs):
         value, *_ = args
         # create instance dict
         tp_dict = sys.heap.write_instance_to_heap(tp_address)
@@ -890,7 +900,15 @@ class Iterator:
         return self
 
 
-class AnalysisClass:
+class Analysis:
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+
+class AnalysisClass(Analysis):
     def __init__(self, tp_uuid, tp_bases, tp_module, tp_dict, tp_code):
         # tp_uuid is flow label
         self.tp_uuid: str = str(tp_uuid)
@@ -914,7 +932,21 @@ class AnalysisClass:
         return f"analysis-class {self.tp_uuid}"
 
 
-class AnalysisModule:
+def _typeshedmodule_custom_getattr(self, name):
+    if name not in self.tp_dict:
+        return Value.make_any()
+    else:
+        value = Value()
+        one_value = self.tp_dict.read_value(name)
+        value.inject(one_value)
+        value = refine_value(value)
+        return value
+
+
+TypeshedModule.custom_getattr = _typeshedmodule_custom_getattr
+
+
+class AnalysisModule(Analysis):
     def __init__(self, tp_name: str, tp_package: str, tp_code):
         # tp_uuid is module name
         self.tp_uuid: str = tp_name
@@ -935,6 +967,15 @@ class AnalysisModule:
         self.tp_dict += other.tp_dict
         return self
 
+    def custom_getattr(self, name):
+        if name not in self.tp_dict:
+            raise AttributeError(name)
+        value = Value()
+        one_value = self.tp_dict.read_value(name)
+        value.inject(one_value)
+        value = refine_value(value)
+        return value
+
     def __repr__(self):
         return f"analysis-module {self.tp_uuid}"
 
@@ -942,7 +983,7 @@ class AnalysisModule:
 sys.AnalysisModule = AnalysisModule
 
 
-class AnalysisFunction:
+class AnalysisFunction(Analysis):
     def __init__(
         self,
         tp_uuid: int,
@@ -973,7 +1014,7 @@ class AnalysisFunction:
         return f"analysis-function {self.tp_uuid}"
 
 
-class AnalysisMethod:
+class AnalysisMethod(Analysis):
     def __init__(self, tp_function, tp_instance):
         self.tp_uuid = f"{tp_function.tp_uuid}-{tp_instance.tp_uuid}"
         # a function
@@ -993,35 +1034,23 @@ class AnalysisMethod:
         return f"analysis-method {self.tp_uuid}"
 
 
-class AnalysisDescriptor:
+class AnalysisDescriptor(Analysis):
     def __init__(self, tp_function, *args):
         self.tp_uuid = f"{tp_function.tp_uuid}-descriptor"
         # tp_function is the descriptor function
         self.tp_function = tp_function
         self.tp_args = args
 
-    def __le__(self, other):
-        return True
-
-    def __iadd__(self, other):
-        return self
-
     def __repr__(self):
         return self.tp_uuid
 
 
-class AnalysisInstance:
+class AnalysisInstance(Analysis):
     def __init__(self, tp_address, tp_class, tp_dict):
         self.tp_uuid = tp_address
         self.tp_address = tp_address
         self.tp_class = tp_class
         self.tp_dict = tp_dict
-
-    def __le__(self, other):
-        return True
-
-    def __iadd__(self, other):
-        return self
 
     def __repr__(self):
         return f"{self.tp_class.tp_uuid} object"
@@ -1112,6 +1141,13 @@ class DictAnalysisInstance(AnalysisInstance):
         self.tp_container = ("internal1", "internal2")
         tp_dict.write_local_value(self.tp_container[0], initial_value1)
         tp_dict.write_local_value(self.tp_container[1], initial_value2)
+
+
+class SuperAnalysisInstance(AnalysisInstance):
+    def __init__(self, tp_address, tp_class, tp_dict, tp_self, tp_mro, *args, **kwargs):
+        super().__init__(tp_address, tp_class, tp_dict)
+        self.tp_self = tp_self
+        self.tp_mro = tp_mro
 
 
 # translate original typeshed types to concrete typeshed types
@@ -1241,39 +1277,74 @@ class TypeExprVisitor(ast.NodeVisitor):
     def visit_Name(self, node: ast.Name):
         id = node.id
         if id == "bool":
-            value = type_2_value(Bool_Instance)
+            bool_object = Bool_Type()
+            value = type_2_value(bool_object)
             return value
         elif id == "int":
             int_object = Int_Type()
             value = type_2_value(int_object)
             return value
         elif id == "float":
-            value = type_2_value(Float_Instance)
+            float_object = Float_Type()
+            value = type_2_value(float_object)
             return value
         elif id == "complex":
             raise NotImplementedError(node)
         elif id == "list":
-            raise NotImplementedError
+            program_point = sys.program_point
+            label, context = program_point
+            heap_address = record(label, context)
+            list_object = List_Type(heap_address, List_Type, typeshed_init=True)
+            value = type_2_value(list_object)
+            return value
+        elif id == "tuple":
+            program_point = sys.program_point
+            label, context = program_point
+            heap_address = record(label, context)
+            tuple_object = Tuple_Type(heap_address, Tuple_Type, typeshed_init=True)
+            value = type_2_value(tuple_object)
+            return value
         elif id == "range":
             raise NotImplementedError
         elif id == "Any":
             return Value.make_any()
         elif id == "str":
-            value = type_2_value(Str_Instance)
+            str_object = Str_Type()
+            value = type_2_value(str_object)
             return value
         elif id == "bytes":
-            value = type_2_value(Bytes_Instance)
+            bytes_object = Bytes_Type()
+            value = type_2_value(bytes_object)
             return value
         elif id == "bytearray":
-            raise NotImplementedError(node)
+            bytearray_object = ByteArray_Type()
+            value = type_2_value(bytearray_object)
+            return value
         elif id == "memoryview":
             raise NotImplementedError
         elif id == "set":
-            raise NotImplementedError
+            program_point = sys.program_point
+            label, context = program_point
+            heap_address = record(label, context)
+            set_object = Set_Type(heap_address, Set_Type, typeshed_init=True)
+            value = type_2_value(set_object)
+            return value
         elif id == "frozenset":
-            raise NotImplementedError
+            program_point = sys.program_point
+            label, context = program_point
+            heap_address = record(label, context)
+            frozenset_type = Frozenset_Type(
+                heap_address, Frozenset_Type, typeshed_init=True
+            )
+            value = type_2_value(frozenset_type)
+            return value
         elif id == "dict":
-            raise NotImplementedError
+            program_point = sys.program_point
+            label, context = program_point
+            heap_address = record(label, context)
+            dict_object = Dict_Type(heap_address, Dict_Type, typeshed_init=True)
+            value = type_2_value(dict_object)
+            return value
         else:
             # check if it's in module
             value = Value()
@@ -1296,38 +1367,12 @@ def refine_value(value_to_to_refined: Value):
     result_value = Value()
     for one_type in value_to_to_refined:
         if isinstance(one_type, Typeshed):
-            normalized_typeshed_value = resolve_typeshed_type(one_type)
-            for normalized_typeshed_type in normalized_typeshed_value:
-                if isinstance(normalized_typeshed_type, Typeshed):
-                    normalized_typeshed_type_value = refine_type(
-                        normalized_typeshed_type
-                    )
-                    result_value.inject(normalized_typeshed_type_value)
-                else:
-                    result_value.inject(normalized_typeshed_type)
+            visitor = TypeExprVisitor(one_type)
+            one_value = visitor.refine()
+            result_value.inject(one_value)
         else:
             result_value.inject(one_type)
     return result_value
-
-
-def refine_type(typeshed_type) -> Value:
-    value = Value()
-    if isinstance(
-        typeshed_type,
-        (TypeshedModule, TypeshedClass, TypeshedFunction, TypeshedInstance),
-    ):
-        value.inject(typeshed_type)
-    elif isinstance(typeshed_type, TypeshedDescriptorGetter):
-        # extract returns of functions
-        visitor: TypeExprVisitor = TypeExprVisitor(typeshed_type)
-        for getter in typeshed_type.functions:
-            value.inject(visitor.visit(getter.returns))
-    elif isinstance(typeshed_type, TypeshedAssign):
-        visitor = TypeExprVisitor(typeshed_type)
-        value.inject(visitor.visit(typeshed_type.tp_code))
-    else:
-        raise NotImplementedError(typeshed_type)
-    return value
 
 
 # resolve type returns to types
@@ -1365,3 +1410,11 @@ def _assign_refine_self_to_value(self: TypeshedAssign, *args, **kwargs):
 
 
 TypeshedAssign.refine_self_to_value = _assign_refine_self_to_value
+
+
+def _object_call(self, tp_address, tp_class, *args, **kwargs):
+    tp_dict = sys.heap.write_instance_to_heap(tp_address)
+    return AnalysisInstance(tp_address=tp_address, tp_class=tp_class, tp_dict=tp_dict)
+
+
+Object_Type.__call__ = _object_call

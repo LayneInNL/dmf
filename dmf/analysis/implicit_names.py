@@ -24,6 +24,8 @@ DEFAULTS = "tp_defaults"
 KWDEFAULTS = "tp_kwdefaults"
 GENERATOR = "tp_generator"
 GENERATOR_ADDRESS = "tp_generator_address"
+# used when creating instances. if present, means container types have content as zero.
+typeshed_init = "typeshed_init"
 numeric_methods = {
     ast.Add: "__add__",
     ast.Sub: "__sub__",

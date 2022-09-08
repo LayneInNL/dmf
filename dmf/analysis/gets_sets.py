@@ -19,13 +19,11 @@ from dmf.analysis.analysis_types import (
     AnalysisFunction,
     AnalysisModule,
     AnalysisMethod,
-    refine_type,
     None_Instance,
     AnalysisClass,
     refine_value,
     Constructor,
     SuperArtificialClass,
-    AnalysisDescriptor,
     AnalysisDescriptor,
     ClassmethodAnalysisInstance,
     PropertyAnalysisInstance,
@@ -37,7 +35,7 @@ from dmf.analysis.artificial_basic_types import (
     ArtificialFunction,
     ArtificialMethod,
 )
-from dmf.analysis.special_types import MRO_Any, Any
+from dmf.analysis.special_types import MRO_Any
 from dmf.analysis.typeshed_types import (
     TypeshedModule,
     TypeshedInstance,
@@ -160,10 +158,10 @@ def _setattr(obj, name, value) -> Value:
 
 def _getattr(obj, name) -> Tuple[Value, Value]:
 
-    # get the __getattribute__ of this obj
-    # tp_getattributes = _pytype_lookup(obj_type, "__getattribute__")
-    # if len(tp_getattributes) == 0:
-    if isinstance(obj, AnalysisInstance):
+    if isinstance(obj, (AnalysisModule, TypeshedModule)):
+        direct_result = obj.custom_getattr(name)
+        return direct_result, Value()
+    elif isinstance(obj, AnalysisInstance):
         return GenericGetAttr(obj, name)
     elif isinstance(obj, TypeshedInstance):
         return GenericGetAttr(obj, name)

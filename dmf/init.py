@@ -84,13 +84,6 @@ def synthesis_cfg(file_path):
 
 sys.synthesis_cfg = synthesis_cfg
 
-# sys.analysis_path.append(
-#     "C:\\Users\\Layne Liu\\PycharmProjects\\thesis\\dmf\\examples\\calmdown"
-# )
 
-# import main
-#
-# import dmf.importer
-# builtin_path = "./resources/builtins.py"
-# abs_builtin_path = os.path.abspath(builtin_path)
-# dmf.importer.import_module("assign")
+def print_status():
+    print("Start to analyze")

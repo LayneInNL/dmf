@@ -73,6 +73,16 @@ class TypeshedModule(Typeshed):
         super().__init__(tp_name, tp_module, tp_qualname)
         self.tp_dict: Namespace = tp_dict
 
+    def custom_getattr(self, name):
+        raise NotImplementedError
+        # if name not in self.tp_dict:
+        #     return Value.make_any()
+        # else:
+        #     value = Value()
+        #     one_value = self.tp_dict.read_value(name)
+        #     value.inject(one_value)
+        #     return value
+
     def __repr__(self):
         return f"typeshed module object {self.tp_name}"
 
@@ -90,6 +100,9 @@ class TypeshedClass(Typeshed):
         self.tp_class = Type_Type
         self.tp_bases = [[Bases_Any]]
         self.tp_mro = c3(self)
+
+    def __repr__(self):
+        return self.tp_qualname
 
     def __call__(self, *args, **kwargs):
         value = Value()
@@ -218,7 +231,6 @@ class ModuleVisitor(ast.NodeVisitor):
         # 2. Descriptor functions(@property, @xxx.setter and @xxx.deleter)
         # 3. other functions( such as @abstractmethod, @classmethod)
         for typeshed_function in functions:
-            print(typeshed_function, node.name)
             typeshed_function.add_one_function(node)
 
     def visit_ClassDef(self, node: ast.ClassDef):
@@ -245,7 +257,7 @@ class ModuleVisitor(ast.NodeVisitor):
                 tp_name=target.id,
                 tp_module=self.module_name,
                 tp_qualname=f"{self.qualname}.{target.id}",
-                tp_code=node,
+                tp_code=node.value,
             )
             value = type_2_value(typeshed_assign)
             self.module_dict.write_local_value(target.id, value)

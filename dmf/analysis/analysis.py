@@ -171,14 +171,6 @@ class Analysis(AnalysisBase):
 
     # based on current program point, update self.IF
     def detect_flow(self, program_point: ProgramPoint) -> None:
-
-        # function calls and descriptors will produce dummy value and inter-procedural flows
-        # call labels includes:
-        # 1. ast.ClassDef
-        # 2. ast.Call
-        # 3. __get__
-        # 4. __set__
-        # 5. special init method for our analysis
         if self.is_call_point(program_point):
             logger.debug(f"Current lambda point: {program_point}")
             # curr_state is the previous program point

@@ -72,15 +72,16 @@ class State:
         return self
 
     def compute_value_of_expr(self, expr: ast.expr):
-        if isinstance(expr, ast.BoolOp):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.BinOp):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.UnaryOp):
-            raise NotImplementedError(expr)
-        elif isinstance(
+        if isinstance(
             expr,
             (
+                ast.BoolOp,
+                ast.BinOp,
+                ast.UnaryOp,
+                ast.Constant,
+                ast.Attribute,
+                ast.Subscript,
+                ast.Starred,
                 ast.Lambda,
                 ast.IfExp,
                 ast.Dict,
@@ -127,12 +128,6 @@ class State:
         elif isinstance(expr, ast.Ellipsis):
             value = type_2_value(Ellipsis_Instance)
             return value
-        elif isinstance(expr, ast.Constant):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, (ast.Attribute, ast.Subscript)):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.Starred):
-            raise NotImplementedError(expr)
         elif isinstance(expr, ast.Name):
             value = self.stack.read_var(expr.id)
             return value
