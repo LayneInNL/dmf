@@ -115,6 +115,10 @@ class Value:
     def value_2_list(self):
         return list(self.types.values())
 
+    def extract_1_elt(self):
+        assert len(self) == 1
+        return self.value_2_list()[0]
+
     def is_Any(self) -> bool:
         return self.types is Any
 
@@ -133,9 +137,3 @@ def type_2_value(type) -> Value:
         return value
     else:
         return type
-
-
-def create_value_with_type(typ) -> Value:
-    value = Value()
-    value.inject_type(typ)
-    return value

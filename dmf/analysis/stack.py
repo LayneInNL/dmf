@@ -17,7 +17,7 @@ from __future__ import annotations
 import sys
 from typing import List
 
-from dmf.analysis.implicit_names import NAME_FLAG
+from dmf.analysis.implicit_names import MODULE_NAME_FLAG
 from dmf.analysis.namespace import (
     Namespace,
     Var,
@@ -40,9 +40,6 @@ class Frame:
         self.f_locals: Namespace[Var, Value] = f_locals
         self.f_back: Frame | None = f_back
         self.f_globals: Namespace[Var, Value] = f_globals
-        # self.f_builtins: Namespace[Var, Value] = sys.analysis_modules[
-        #     "builtins"
-        # ].tp_dict
 
     # compare f_locals, f_globals and f_builtins
     # don't know how to compare f_back for now
@@ -205,11 +202,6 @@ class Stack:
     def __init__(self):
         self.frames: List[Frame] = []
 
-    def init_first_frame(self, qualified_module_name: str):
-        module = sys.analysis_modules[qualified_module_name]
-        global_ns = module.tp_dict
-        self.frames.append(Frame(f_locals=global_ns, f_back=None, f_globals=global_ns))
-
     def __le__(self, other: Stack):
         frame_pairs = zip(reversed(self.frames), reversed(other.frames))
         for frame_pair in frame_pairs:
@@ -262,8 +254,3 @@ class Stack:
             f_globals=new_f_globals,
         )
         self.push_frame(new_frame)
-
-    def check_module_diff(self, new_module_name=None):
-        curr_module_name: str = getattr(self.frames[-1].f_globals, NAME_FLAG)
-        if curr_module_name != new_module_name:
-            self.top_frame().f_globals = sys.analysis_modules[new_module_name].namespace

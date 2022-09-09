@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 import sys
 from collections import defaultdict, deque, namedtuple
 from typing import Dict, Tuple, Deque, List
@@ -45,8 +46,8 @@ from dmf.analysis.implicit_names import (
     POS_ARG_LEN,
     INIT_FLAG,
     RETURN_FLAG,
-    PACKAGE_FLAG,
-    NAME_FLAG,
+    MODULE_PACKAGE_FLAG,
+    MODULE_NAME_FLAG,
     GENERATOR,
     GENERATOR_ADDRESS,
     numeric_methods,
@@ -104,13 +105,17 @@ class Analysis(AnalysisBase):
         # work list
         self.work_list: Deque[Tuple[ProgramPoint, ProgramPoint]] = deque()
         # extremal value
+        curr_analysis_modules = copy.deepcopy(sys.analysis_modules)
+        curr_fake_analysis_modules = copy.deepcopy(sys.fake_analysis_modules)
         self.extremal_value: State = State(
-            Stack(), Heap(), sys.analysis_modules, sys.fake_analysis_modules
+            Stack(),
+            Heap(),
+            curr_analysis_modules,
+            curr_fake_analysis_modules,
+            qualified_module_name,
         )
-        # init first frame of stack of extremal value
-        self.extremal_value.stack.init_first_frame(qualified_module_name)
-
-        curr_module = sys.analysis_modules[qualified_module_name]
+        curr_module: Value = curr_analysis_modules[qualified_module_name]
+        curr_module = curr_module.extract_1_elt()
         start_lab, final_lab = curr_module.tp_code
         # start point
         self.extremal_point: ProgramPoint = (start_lab, ())
@@ -1087,7 +1092,7 @@ class Analysis(AnalysisBase):
                 RETURN_FLAG, Namespace_Local, type_2_value(instance_info)
             )
         if module_info:
-            new_stack.check_module_diff(module_info)
+            new_state.switch_global_namespace(module_info)
 
         if generator_info:
             setattr(new_stack.frames[-1].f_locals, GENERATOR, generator_info[0])
@@ -1203,7 +1208,8 @@ class Analysis(AnalysisBase):
         else:
             name = asname
             module = import_a_module(name)
-
+        memo = {}
+        # new_state.analysis_modules = copy.deepcopy(sys.analysis_modules, memo)
         new_state.stack.write_var(name, Namespace_Local, module)
         logger.debug("Import module {}".format(module))
         return new_state
@@ -1218,7 +1224,9 @@ class Analysis(AnalysisBase):
     ):
         package = None
         if stmt.level > 0:
-            package: str = getattr(new_state.stack.frames[-1].f_globals, PACKAGE_FLAG)
+            package: str = getattr(
+                new_state.stack.frames[-1].f_globals, MODULE_PACKAGE_FLAG
+            )
 
         new_stack = new_state.stack
         logger.debug("ImportFrom module {}".format(stmt.module))
@@ -1254,7 +1262,7 @@ class Analysis(AnalysisBase):
 
         # class name
         cls_name: str = stmt.name
-        module: str = getattr(new_stack.frames[-1].f_globals, NAME_FLAG)
+        module: str = getattr(new_stack.frames[-1].f_globals, MODULE_NAME_FLAG)
 
         value: Value = Value()
         bases = compute_bases(new_state, stmt)
@@ -1285,7 +1293,9 @@ class Analysis(AnalysisBase):
 
         defaults, kwdefaults = compute_function_defaults(new_state, node)
 
-        func_module: str = getattr(new_state.stack.frames[-1].f_globals, PACKAGE_FLAG)
+        func_module: str = getattr(
+            new_state.stack.frames[-1].f_globals, MODULE_NAME_FLAG
+        )
 
         value = Value()
         value.inject_type(

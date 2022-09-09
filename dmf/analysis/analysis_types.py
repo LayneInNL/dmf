@@ -28,7 +28,11 @@ from dmf.analysis.artificial_basic_types import (
     c3,
 )
 from dmf.analysis.context_sensitivity import record
-from dmf.analysis.implicit_names import PACKAGE_FLAG, NAME_FLAG, typeshed_init
+from dmf.analysis.implicit_names import (
+    MODULE_PACKAGE_FLAG,
+    MODULE_NAME_FLAG,
+    typeshed_init,
+)
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.special_types import MRO_Any
 from dmf.analysis.typeshed_types import (
@@ -958,8 +962,8 @@ class AnalysisModule(Analysis):
         self.tp_class = Module_Type
         self.tp_package: str = tp_package
         self.tp_dict: Namespace = Namespace()
-        setattr(self.tp_dict, PACKAGE_FLAG, self.tp_package)
-        setattr(self.tp_dict, NAME_FLAG, self.tp_uuid)
+        setattr(self.tp_dict, MODULE_PACKAGE_FLAG, self.tp_package)
+        setattr(self.tp_dict, MODULE_NAME_FLAG, self.tp_name)
         # entry and exit label of a module
         self.tp_code = tp_code
 

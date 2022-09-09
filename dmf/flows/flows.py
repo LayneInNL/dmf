@@ -1434,7 +1434,6 @@ class CFGVisitor(ast.NodeVisitor):
     # x.y
     # -> tmp = x.y
     def visit_Attribute(self, node) -> Any:
-        print(astor.to_source(node))
         seq, node.value = self.decompose_expr(node.value)
         return seq + [node]
 

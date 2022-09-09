@@ -17,9 +17,9 @@ import ast
 POS_ARG_LEN = "pos_arg_len"
 RETURN_FLAG = "return_flag"
 INIT_FLAG = "init_flag"
-PACKAGE_FLAG = "package_flag"
+MODULE_PACKAGE_FLAG = "package_flag"
 # module name
-NAME_FLAG = "name_flag"
+MODULE_NAME_FLAG = "name_flag"
 DEFAULTS = "tp_defaults"
 KWDEFAULTS = "tp_kwdefaults"
 GENERATOR = "tp_generator"

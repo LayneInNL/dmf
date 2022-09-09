@@ -23,6 +23,9 @@ work. One should use importlib as the public-facing version of this module.
 # Bootstrap-related code ######################################################
 import _thread, _warnings, _weakref
 
+from dmf.analysis.value import type_2_value
+
+
 # https://stackoverflow.com/questions/2790828/python-cant-pickle-module-objects-error
 # use duck typing to avoid this
 class FakeModule:
@@ -724,7 +727,7 @@ def _load_unlocked(spec):
                 tp_package=module.__package__,
                 tp_code=(entry_lab, exit_lab),
             )
-            sys.analysis_modules[module.__name__] = real_analysis_module
+            sys.analysis_modules[module.__name__] = type_2_value(real_analysis_module)
             analysis = sys.Analysis(real_analysis_module.tp_name)
             analysis.compute_fixed_point()
             # spec.loader.exec_module(module)

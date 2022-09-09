@@ -30,7 +30,7 @@ from dmf.analysis.analysis_types import (
 )
 from dmf.analysis.heap import Heap
 from dmf.analysis.implicit_names import POS_ARG_LEN
-from dmf.analysis.stack import Stack
+from dmf.analysis.stack import Stack, Frame
 from dmf.analysis.value import Value, type_2_value
 
 
@@ -54,11 +54,13 @@ class State:
         heap: Heap,
         analysis_modules: Dict,
         fake_analysis_modules: Dict,
+        init_module_name: str,
     ):
         self.stack: Stack = stack
         self.heap: Heap = heap
         self.analysis_modules: Dict = analysis_modules
         self.fake_analysis_modules: Dict = fake_analysis_modules
+        self.init_first_stack_frame(init_module_name)
 
     def __repr__(self):
         return f"{self.stack}\n{self.heap}"
@@ -70,6 +72,28 @@ class State:
         self.stack += other.stack
         self.heap += other.heap
         return self
+
+    def init_first_stack_frame(self, module_name: str):
+        modules: Value = self.analysis_modules[module_name]
+        module = modules.extract_1_elt()
+        global_ns = module.tp_dict
+        self.stack.frames.append(
+            Frame(f_locals=global_ns, f_back=None, f_globals=global_ns)
+        )
+
+    def switch_global_namespace(self, new_module_name):
+        """
+        if a function is called, its global namespace has to be switched.
+        be careful in our setting moudle name -> Value
+        :param new_module_name:
+        :return:
+        """
+        module_value: Value = self.analysis_modules[new_module_name]
+        # one real module
+        assert len(module_value) == 1, module_value
+        real_module = module_value.value_2_list()[0]
+        print("Switching", real_module.tp_dict)
+        self.stack.frames[-1].f_globals = real_module.tp_dict
 
     def compute_value_of_expr(self, expr: ast.expr):
         if isinstance(
@@ -140,10 +164,16 @@ class State:
 
 def deepcopy_state(state: State, program_point) -> State:
     memo = {}
+    sys_main_module = sys.analysis_modules["__main__"]
+    sys_real_main = sys_main_module.value_2_list()[0]
+    main_module = state.analysis_modules["__main__"]
+    real_main = main_module.value_2_list()[0]
+    print("analysis __main__", sys_real_main is real_main, program_point)
     new_state = deepcopy(state, memo)
     sys.stack = new_state.stack
     sys.heap = new_state.heap
     sys.analysis_modules = new_state.analysis_modules
+    print("Current analysis module program_point", program_point)
     sys.fake_analysis_modules = new_state.fake_analysis_modules
     sys.program_point = program_point
     return new_state
