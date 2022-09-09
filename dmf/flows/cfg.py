@@ -29,6 +29,8 @@ def construct_CFG(file_path) -> flows.CFG:
         cfg = visitor.build(base_name, ast.parse(source))
         logger.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
         logger.debug("Refactored flows: {}".format(visitor.cfg.flows))
-        cfg.show()
+        print(base_name)
+        left_base_name = base_name.partition(".")[0]
+        cfg.show(name=left_base_name)
 
         return cfg

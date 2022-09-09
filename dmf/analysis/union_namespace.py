@@ -11,11 +11,11 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-from dmf.analysis.namespace import LocalVar
+from dmf.analysis.namespace import LocalVar, Var
 from dmf.analysis.value import Value
 
 
-class HeapNamespace(dict):
+class UnionNamespace(dict):
     def __missing__(self, key):
         self[key] = value = Value()
         return value
@@ -37,14 +37,23 @@ class HeapNamespace(dict):
                 return True
         return False
 
+    def read_var_type(self, name: str) -> Var:
+        for var, _ in self.items():
+            if name == var.name:
+                return var
+
     def read_value(self, name: str) -> Value:
         for var, val in self.items():
             if name == var.name:
                 return val
 
     def write_local_value(self, name: str, value: Value):
-        assert isinstance(value, Value), value
-        self[LocalVar(name)] = value
+        union_value = Value()
+        if name in self:
+            prev_value = self.read_value(name)
+            union_value.inject(prev_value)
+        union_value.inject(value)
+        self[LocalVar(name)] = union_value
 
     def del_local_var(self, name: str):
         del self[LocalVar(name)]

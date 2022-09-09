@@ -49,6 +49,7 @@ from dmf.analysis.typeshed_types import (
     TypeshedImportedModule,
     TypeshedImportedName,
 )
+from dmf.analysis.union_namespace import UnionNamespace
 from dmf.analysis.value import Value, type_2_value
 from dmf.log.logger import logger
 
@@ -961,7 +962,7 @@ class AnalysisModule(Analysis):
         self.tp_name: str = tp_name
         self.tp_class = Module_Type
         self.tp_package: str = tp_package
-        self.tp_dict: Namespace = Namespace()
+        self.tp_dict: UnionNamespace = UnionNamespace()
         setattr(self.tp_dict, MODULE_PACKAGE_FLAG, self.tp_package)
         setattr(self.tp_dict, MODULE_NAME_FLAG, self.tp_name)
         # entry and exit label of a module

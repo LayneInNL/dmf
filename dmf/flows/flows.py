@@ -206,14 +206,12 @@ class CFG:
 
     def show(
         self,
-        filepath: str = "output",
         fmt: str = "svg",
         show: bool = True,
         name: str = None,
     ) -> None:
         self.generate(fmt, name)
-        path = os.path.normpath(filepath)
-        self.graph.render(path, view=show, cleanup=True)
+        self.graph.render(filename=name, view=show, cleanup=True)
 
 
 class CFGVisitor(ast.NodeVisitor):
@@ -1064,21 +1062,29 @@ class CFGVisitor(ast.NodeVisitor):
         return seq + [node]
 
     def visit_Lambda(self, node: ast.Lambda) -> Any:
-        tmp_var = TempVariableName.generate()
-
-        seq_args = self.visit_arguments(node.args)
-        seq_ret, name = self.decompose_expr(node.body)
-
+        tmp_var = ast.Name(id=TempVariableName.generate())
         tmp_function_def = ast.FunctionDef(
             name=tmp_var,
             args=node.args,
-            body=seq_ret + [ast.Return(name)],
+            body=[ast.Return(node.body)],
             decorator_list=[],
             returns=None,
         )
-        tmp_function_name = ast.Name(id=tmp_var, ctx=ast.Load())
+        return [tmp_function_def, tmp_var]
 
-        return seq_args + [tmp_function_def, tmp_function_name]
+        # seq_args = self.visit_arguments(node.args)
+        # seq_ret, name = self.decompose_expr(node.body)
+        #
+        # tmp_function_def = ast.FunctionDef(
+        #     name=tmp_var,
+        #     args=node.args,
+        #     body=seq_ret + [ast.Return(name)],
+        #     decorator_list=[],
+        #     returns=None,
+        # )
+        # tmp_function_name = ast.Name(id=tmp_var, ctx=ast.Load())
+        #
+        # return seq_args + [tmp_function_def, tmp_function_name]
 
     def visit_IfExp(self, node: ast.IfExp) -> Any:
         tmp_var: str = TempVariableName.generate()

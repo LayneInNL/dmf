@@ -727,9 +727,12 @@ def _load_unlocked(spec):
                 tp_package=module.__package__,
                 tp_code=(entry_lab, exit_lab),
             )
+            if module.__name__ in sys.analysis_modules:
+                raise NotImplementedError(module)
             sys.analysis_modules[module.__name__] = type_2_value(real_analysis_module)
             analysis = sys.Analysis(real_analysis_module.tp_name)
             analysis.compute_fixed_point()
+            print(sys.analysis_modules)
             # spec.loader.exec_module(module)
 
     # We don't ensure that the import-related module attributes get

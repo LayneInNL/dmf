@@ -143,10 +143,6 @@ class Frame:
             var = self.f_locals.read_var_type(name)
             if isinstance(var, LocalVar):
                 self.f_locals.write_local_value(name, value)
-                # if self.f_locals is self.f_globals:
-                #     self.f_locals[var].inject_value(value)
-                # else:
-                #     self.f_locals[var] = value
             else:
                 val = self.f_locals.read_value(name)
                 assert isinstance(val, Namespace)

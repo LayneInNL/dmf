@@ -105,16 +105,12 @@ class Analysis(AnalysisBase):
         # work list
         self.work_list: Deque[Tuple[ProgramPoint, ProgramPoint]] = deque()
         # extremal value
-        curr_analysis_modules = copy.deepcopy(sys.analysis_modules)
-        curr_fake_analysis_modules = copy.deepcopy(sys.fake_analysis_modules)
         self.extremal_value: State = State(
             Stack(),
             Heap(),
-            curr_analysis_modules,
-            curr_fake_analysis_modules,
             qualified_module_name,
         )
-        curr_module: Value = curr_analysis_modules[qualified_module_name]
+        curr_module: Value = sys.analysis_modules[qualified_module_name]
         curr_module = curr_module.extract_1_elt()
         start_lab, final_lab = curr_module.tp_code
         # start point
@@ -142,9 +138,6 @@ class Analysis(AnalysisBase):
     def _push_state_to(self, state: State, program_point: ProgramPoint):
         old: State | BOTTOM = self.analysis_list[program_point]
         if not compare_states(state, old):
-            print(state)
-            print(old)
-            state: State = merge_states(state, old)
             self.analysis_list[program_point]: State = state
             self.detect_flow(program_point)
             added_program_points = self.generate_flow(program_point)
@@ -1208,8 +1201,6 @@ class Analysis(AnalysisBase):
         else:
             name = asname
             module = import_a_module(name)
-        memo = {}
-        # new_state.analysis_modules = copy.deepcopy(sys.analysis_modules, memo)
         new_state.stack.write_var(name, Namespace_Local, module)
         logger.debug("Import module {}".format(module))
         return new_state

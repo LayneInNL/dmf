@@ -13,6 +13,9 @@
 #  limitations under the License.
 import sys
 
+# https://docs.python.org/3.7/library/sys.html#sys.setrecursionlimit
+sys.setrecursionlimit(10000)
+
 from dmf.flows import construct_CFG
 
 # stack of state
@@ -43,8 +46,6 @@ sys.analysis_cfgs = {}
 # mimic special flows
 sys.call_flow_tuples = set()
 sys.classdef_flow_tuples = set()
-sys.getter_flow_tuples = set()
-sys.setter_flow_tuples = set()
 sys.magic_right_inter_tuples = set()
 sys.magic_left_inter_tuples = set()
 sys.magic_del_inter_tuples = set()
