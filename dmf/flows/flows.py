@@ -512,168 +512,160 @@ class CFGVisitor(ast.NodeVisitor):
 
             self.curr_block = self.add_edge(dummy_return_node.bid, self.new_block().bid)
 
-    def visit_Assign(self, node: ast.Assign) -> None:
+    def _visit_Call(self, node: ast.Assign):
+        assert isinstance(node.value, ast.Call)
+        # call node(implicit __new__)
+        call_node = self.curr_block
+        add_stmt(call_node, node.value)
 
-        new_expr_sequence = self.visit(node.value)
+        # __new__ return node
+        new_node = self.add_edge(call_node.bid, self.new_block().bid)
+        new_var = ast.Name(id=TempVariableName.generate())
+        add_stmt(new_node, new_var)
 
-        if len(new_expr_sequence) == 1:
-            if isinstance(node.value, ast.Call):
-                # call node(implicit __new__)
-                call_node = self.curr_block
-                add_stmt(call_node, node.value)
+        # __new__ dummy return node
+        dummy_new_node = self.add_edge(new_node.bid, self.new_block().bid)
+        add_stmt(dummy_new_node, new_var)
+        self.cfg.dummy_labels.add(dummy_new_node.bid)
 
-                # __new__ return node
-                new_node = self.add_edge(call_node.bid, self.new_block().bid)
-                new_var = ast.Name(id=TempVariableName.generate())
-                add_stmt(new_node, new_var)
+        # __init__ attr lookup node
+        init_attribute_node = self.add_edge(dummy_new_node.bid, self.new_block().bid)
+        add_stmt(init_attribute_node, ast.Attribute(value=new_var, attr="__init__"))
 
-                # __new__ dummy return node
-                dummy_new_node = self.add_edge(new_node.bid, self.new_block().bid)
-                add_stmt(dummy_new_node, new_var)
-                self.cfg.dummy_labels.add(dummy_new_node.bid)
+        # __init__ attr assigned
+        init_attribute_assign_node = self.add_edge(
+            init_attribute_node.bid, self.new_block().bid
+        )
+        init_attribute_name = ast.Name(id=TempVariableName.generate())
+        add_stmt(init_attribute_assign_node, init_attribute_name)
 
-                # __init__ attr lookup node
-                init_attribute_node = self.add_edge(
-                    dummy_new_node.bid, self.new_block().bid
-                )
-                add_stmt(
-                    init_attribute_node, ast.Attribute(value=new_var, attr="__init__")
-                )
+        # __init__ attr dummy assigned
+        init_attribute_assign_node_dummy = self.add_edge(
+            init_attribute_assign_node.bid, self.new_block().bid
+        )
+        self.cfg.dummy_labels.add(init_attribute_assign_node_dummy.bid)
+        add_stmt(init_attribute_assign_node_dummy, init_attribute_name)
 
-                # __init__ attr assigned
-                init_attribute_assign_node = self.add_edge(
-                    init_attribute_node.bid, self.new_block().bid
-                )
-                init_attribute_name = ast.Name(id=TempVariableName.generate())
-                add_stmt(init_attribute_assign_node, init_attribute_name)
+        # __init__ call node
+        init_call_node = self.add_edge(
+            init_attribute_assign_node_dummy.bid, self.new_block().bid
+        )
+        init_call = ast.Call(
+            func=init_attribute_name,
+            args=node.value.args,
+            keywords=node.value.keywords,
+        )
+        add_stmt(init_call_node, init_call)
 
-                # __init__ attr dummy assigned
-                init_attribute_assign_node_dummy = self.add_edge(
-                    init_attribute_assign_node.bid, self.new_block().bid
-                )
-                self.cfg.dummy_labels.add(init_attribute_assign_node_dummy.bid)
-                add_stmt(init_attribute_assign_node_dummy, init_attribute_name)
+        # __init__ return node
+        init_return_node = self.add_edge(init_call_node.bid, self.new_block().bid)
+        init_var = ast.Name(id=TempVariableName.generate())
+        add_stmt(init_return_node, init_var)
 
-                # __init__ call node
-                init_call_node = self.add_edge(
-                    init_attribute_assign_node_dummy.bid, self.new_block().bid
-                )
-                init_call = ast.Call(
-                    func=init_attribute_name,
-                    args=node.value.args,
-                    keywords=node.value.keywords,
-                )
-                add_stmt(init_call_node, init_call)
+        # __init__ dummy return node(return node)
+        dummy_return_node = self.add_edge(init_return_node.bid, self.new_block().bid)
+        add_stmt(dummy_return_node, init_var)
+        self.cfg.dummy_labels.add(dummy_return_node.bid)
 
-                # __init__ return node
-                init_return_node = self.add_edge(
-                    init_call_node.bid, self.new_block().bid
-                )
-                init_var = ast.Name(id=TempVariableName.generate())
-                add_stmt(init_return_node, init_var)
-
-                # __init__ dummy return node(return node)
-                dummy_return_node = self.add_edge(
-                    init_return_node.bid, self.new_block().bid
-                )
-                add_stmt(dummy_return_node, init_var)
-                self.cfg.dummy_labels.add(dummy_return_node.bid)
-
-                # update call return flow
-                self.cfg.call_return_inter_flows.add(
-                    (
-                        call_node.bid,
-                        new_node.bid,
-                        dummy_new_node.bid,
-                        init_attribute_node.bid,
-                        init_attribute_assign_node.bid,
-                        init_attribute_assign_node_dummy.bid,
-                        init_call_node.bid,
-                        init_return_node.bid,
-                        dummy_return_node.bid,
-                    )
-                )
-                # update __new__ flow
-                self.cfg.special_init_inter_flows.add(
-                    (init_call_node.bid, init_return_node.bid, dummy_return_node.bid)
-                )
-                self.cfg.magic_right_inter_flows.add(
-                    (
-                        init_attribute_node.bid,
-                        init_attribute_assign_node.bid,
-                        init_attribute_assign_node_dummy.bid,
-                    )
-                )
-                node.value = init_var
-                self.curr_block = dummy_return_node
-            else:
-                temp_return_name = ast.Name(id=TempVariableName.generate())
-
-                call_node = self.curr_block
-                add_stmt(call_node, node.value)
-
-                # return xxx
-                return_node = self.add_edge(call_node.bid, self.new_block().bid)
-                add_stmt(return_node, temp_return_name)
-                # dummy xxx
-                dummy_return_node = self.add_edge(return_node.bid, self.new_block().bid)
-                add_stmt(dummy_return_node, temp_return_name)
-
-                self.cfg.dummy_labels.add(dummy_return_node.bid)
-
-                # update atribute info
-                self.cfg.magic_right_inter_flows.add(
-                    (call_node.bid, return_node.bid, dummy_return_node.bid)
-                )
-                node.value = temp_return_name
-                self.curr_block = dummy_return_node
-            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
-
-            for target in node.targets:
-                if isinstance(target, (ast.Name, ast.List, ast.Tuple)):
-                    tmp_assign = ast.Assign(targets=[target], value=node.value)
-                    add_stmt(self.curr_block, tmp_assign)
-                    self.curr_block = self.add_edge(
-                        self.curr_block.bid, self.new_block().bid
-                    )
-                elif isinstance(target, (ast.Subscript, ast.Attribute)):
-                    # if target is subscript, decompose slice first
-                    if isinstance(target, ast.Subscript):
-                        decomposed_slice_expr, target.slice = self.decompose_expr(
-                            target.slice
-                        )
-                        self.populate_body(decomposed_slice_expr)
-                    tmp_assign = ast.Assign(targets=[target], value=node.value)
-                    call_node = self.curr_block
-                    add_stmt(call_node, tmp_assign)
-
-                    return_node = self.add_edge(call_node.bid, self.new_block().bid)
-                    add_stmt(return_node, tmp_assign)
-
-                    dummy_return_node = self.add_edge(
-                        return_node.bid, self.new_block().bid
-                    )
-                    add_stmt(dummy_return_node, tmp_assign)
-
-                    self.cfg.dummy_labels.add(dummy_return_node.bid)
-                    self.cfg.magic_left_inter_flows.add(
-                        (call_node.bid, return_node.bid, dummy_return_node.bid)
-                    )
-                    self.curr_block = dummy_return_node
-                    self.curr_block = self.add_edge(
-                        self.curr_block.bid, self.new_block().bid
-                    )
-            return
-
-        new_assign = ast.Assign(targets=node.targets, value=new_expr_sequence[-1])
-        new_sequence: List = new_expr_sequence[:-1] + [new_assign]
-        if isinstance(node.value, (ast.ListComp, ast.SetComp, ast.DictComp)):
-            new_sequence.append(
-                ast.Delete(
-                    targets=[ast.Name(id=new_expr_sequence[-1].id, ctx=ast.Del())]
-                )
+        # update call return flow
+        self.cfg.call_return_inter_flows.add(
+            (
+                call_node.bid,
+                new_node.bid,
+                dummy_new_node.bid,
+                init_attribute_node.bid,
+                init_attribute_assign_node.bid,
+                init_attribute_assign_node_dummy.bid,
+                init_call_node.bid,
+                init_return_node.bid,
+                dummy_return_node.bid,
             )
-        self.populate_body(new_sequence)
+        )
+        # update __new__ flow
+        self.cfg.special_init_inter_flows.add(
+            (init_call_node.bid, init_return_node.bid, dummy_return_node.bid)
+        )
+        self.cfg.magic_right_inter_flows.add(
+            (
+                init_attribute_node.bid,
+                init_attribute_assign_node.bid,
+                init_attribute_assign_node_dummy.bid,
+            )
+        )
+        node.value = init_var
+        self.curr_block = dummy_return_node
+
+    def _visit_NonCall(self, node: ast.Assign):
+        temp_return_name = ast.Name(id=TempVariableName.generate())
+
+        call_node = self.curr_block
+        add_stmt(call_node, node.value)
+
+        # return xxx
+        return_node = self.add_edge(call_node.bid, self.new_block().bid)
+        add_stmt(return_node, temp_return_name)
+        # dummy xxx
+        dummy_return_node = self.add_edge(return_node.bid, self.new_block().bid)
+        add_stmt(dummy_return_node, temp_return_name)
+
+        self.cfg.dummy_labels.add(dummy_return_node.bid)
+
+        # update atribute info
+        self.cfg.magic_right_inter_flows.add(
+            (call_node.bid, return_node.bid, dummy_return_node.bid)
+        )
+        node.value = temp_return_name
+        self.curr_block = dummy_return_node
+
+    def _visit_Regular_LHS(self, node: ast.Assign, index):
+        target = node.targets[index]
+        tmp_assign = ast.Assign(targets=[target], value=node.value)
+        add_stmt(self.curr_block, tmp_assign)
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
+    def _visit_Special_LHS(self, node: ast.Assign, index):
+        target = node.targets[index]
+        # if target is subscript, decompose slice first
+        if isinstance(target, ast.Subscript):
+            decomposed_slice_expr, target.slice = self.decompose_expr(target.slice)
+            self.populate_body(decomposed_slice_expr)
+        tmp_assign = ast.Assign(targets=[target], value=node.value)
+        call_node = self.curr_block
+        add_stmt(call_node, tmp_assign)
+
+        return_node = self.add_edge(call_node.bid, self.new_block().bid)
+        add_stmt(return_node, tmp_assign)
+
+        dummy_return_node = self.add_edge(return_node.bid, self.new_block().bid)
+        add_stmt(dummy_return_node, tmp_assign)
+
+        self.cfg.dummy_labels.add(dummy_return_node.bid)
+        self.cfg.magic_left_inter_flows.add(
+            (call_node.bid, return_node.bid, dummy_return_node.bid)
+        )
+        self.curr_block = dummy_return_node
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        # desugar xxx = yyy to simpler form
+        new_expr_sequence = self.visit(node.value)
+        prev_expr_sequence, node.value = new_expr_sequence[:-1], new_expr_sequence[-1]
+        # now xxx = yyy
+        self.populate_body(prev_expr_sequence)
+
+        if isinstance(node.value, ast.Call):
+            self._visit_Call(node)
+        else:
+            self._visit_NonCall(node)
+        # now assignment gets xxx = a_name
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
+        assert len(node.targets) == 1, node.targets
+        for index, target in enumerate(node.targets):
+            if isinstance(target, (ast.Name, ast.List, ast.Tuple)):
+                self._visit_Regular_LHS(node, index)
+            elif isinstance(target, (ast.Subscript, ast.Attribute)):
+                self._visit_Special_LHS(node, index)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         # We are only interested in types, so transform AugAssign into Assign
