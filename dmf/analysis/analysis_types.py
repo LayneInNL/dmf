@@ -352,6 +352,8 @@ def _setup_List_Type():
             prev_value = one_self.tp_dict.read_value(one_self.tp_container)
             value.inject(prev_value)
             one_self.tp_dict.write_local_value(one_self.tp_container, value)
+            if one_self.tp_dict is not sys.heap[one_self.tp_address]:
+                pass
         return type_2_value(None_Instance)
 
     def extend(self, iterable):
@@ -635,6 +637,15 @@ _setup_Set_Type()
 
 
 def _setup_FrozenSet_Type():
+    def fake_add(self, x):
+        for one_self in self:
+            value = Value()
+            value.inject(x)
+            prev_value = one_self.tp_dict.read_value(one_self.tp_container)
+            value.inject(prev_value)
+            one_self.tp_dict.write_local_value(one_self.tp_container, value)
+        return type_2_value(None_Instance)
+
     def copy(self):
         return self
 

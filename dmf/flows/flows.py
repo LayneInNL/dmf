@@ -1366,12 +1366,70 @@ class CFGVisitor(ast.NodeVisitor):
         node.left, node.comparators = names[0], names[1:]
         return seq + [node]
 
+    def _visit_Call_Special(self, node: ast.Call):
+        assert isinstance(node.func, ast.Name), node
+        # list([iterable])
+        def _destruct_container(name, method):
+            seq = []
+            tmp_var = ast.Name(id=TempVariableName.generate())
+            # tmp = list()
+            tmp_assign = ast.Assign(
+                targets=[tmp_var],
+                value=ast.Call(func=ast.Name(id=name), args=[], keywords=[]),
+            )
+            seq.append(tmp_assign)
+            tmp_var2 = ast.Name(id=TempVariableName.generate())
+            if node.args:
+                iterable = node.args[0]
+                tmp_for = ast.For(
+                    target=tmp_var2,
+                    iter=iterable,
+                    body=[
+                        ast.Call(
+                            func=ast.Attribute(value=tmp_var, attr=method),
+                            args=[tmp_var2],
+                            keywords=[],
+                        )
+                    ],
+                    orelse=[],
+                )
+                seq.append(tmp_for)
+
+            seq.append(tmp_var)
+            return seq
+
+        if node.func.id == list.__name__:
+            return _destruct_container(list.__name__, list.append.__name__)
+        elif node.func.id == tuple.__name__:
+            return _destruct_container(tuple.__name__, "fake_append")
+        elif node.func.id == set.__name__:
+            return _destruct_container(set.__name__, set.add.__name__)
+        elif node.func.id == frozenset.__name__:
+            return _destruct_container(frozenset.__name__, "fake_add")
+        elif node.func.id == dict.__name__:
+            raise NotImplementedError(node)
+
     def visit_Call(self, node: ast.Call) -> Any:
+        print(astor.to_source(node))
         if isinstance(node.func, ast.Lambda):
             raise NotImplementedError
             # seq1, name = self.decompose_expr(node.func)
             # tmp_call = ast.Call(args=node.args, func=name, keywords=node.keywords)
             # return seq1 + [tmp_call]
+
+        if (
+            isinstance(node.func, ast.Name)
+            and node.func.id
+            in (
+                list.__name__,
+                tuple.__name__,
+                set.__dict__,
+                frozenset.__name__,
+                dict.__name__,
+            )
+            and (node.args or node.keywords)
+        ):
+            return self._visit_Call_Special(node)
 
         seq = []
 

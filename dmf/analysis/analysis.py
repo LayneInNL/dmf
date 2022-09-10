@@ -130,8 +130,7 @@ class Analysis(AnalysisBase):
         self.present()
 
     def initialize(self):
-        sys.stack = self.extremal_value.stack
-        sys.heap = self.extremal_value.heap
+        self.extremal_value = deepcopy_state(self.extremal_value, self.extremal_point)
         self.work_list.extendleft(self.generate_flow(self.extremal_point))
         self.analysis_list[self.extremal_point] = self.extremal_value
 
