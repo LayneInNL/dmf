@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import ast
-import builtins
 import sys
 from types import FunctionType
 from typing import Tuple
@@ -28,6 +27,7 @@ from dmf.analysis.artificial_basic_types import (
     c3,
 )
 from dmf.analysis.context_sensitivity import record
+from dmf.analysis.exceptions import IteratingError
 from dmf.analysis.implicit_names import (
     MODULE_PACKAGE_FLAG,
     MODULE_NAME_FLAG,
@@ -41,11 +41,9 @@ from dmf.analysis.typeshed_types import (
     TypeshedClass,
     TypeshedAssign,
     parse_typeshed_module,
-    TypeshedInstance,
     extract_1value,
     Typeshed,
     TypeshedDescriptorGetter,
-    resolve_typeshed_type,
     TypeshedImportedModule,
     TypeshedImportedName,
 )
@@ -127,10 +125,7 @@ class Constructor:
 
     def __call__(self, tp_address, tp_class, tp_heap):
         tp_uuid = f"{tp_address}"
-        tp_dict = tp_heap.write_instance_to_heap(tp_uuid)
-        analysis_instance = AnalysisInstance(
-            tp_address=tp_uuid, tp_dict=tp_dict, tp_class=tp_class
-        )
+        analysis_instance = AnalysisInstance(tp_address=tp_uuid, tp_class=tp_class)
 
         return analysis_instance
 
@@ -139,6 +134,11 @@ class Constructor:
 
     def __iadd__(self, other):
         return self
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
     def __repr__(self):
         return "object.__new__"
@@ -187,10 +187,7 @@ class SuperArtificialClass(ArtificialClass):
             else:
                 super_mros.append([MRO_Any])
 
-        tp_dict = sys.heap.write_instance_to_heap(tp_address)
-        setattr(tp_dict, "super_self", type2)
-        setattr(tp_dict, "super_mros", super_mros)
-        return SuperAnalysisInstance(tp_address, tp_class, tp_dict, type2, super_mros)
+        return SuperAnalysisInstance(tp_address, tp_class, type2, super_mros)
 
 
 Super_Type = SuperArtificialClass("builtins.super")
@@ -204,9 +201,7 @@ class PropertyArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args):
         assert len(args) == 4, args
         fget, fset, fdel, doc, *_ = args
-
-        tp_dict = sys.heap.write_instance_to_heap(tp_address)
-        return PropertyAnalysisInstance(tp_address, tp_class, tp_dict, fget, fset, fdel)
+        return PropertyAnalysisInstance(tp_address, tp_class, fget, fset, fdel)
 
 
 Property_Type = PropertyArtificialClass("builtins.property")
@@ -219,8 +214,7 @@ class ClassmethodArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args):
         assert len(args) == 1, args
         function, *_ = args
-        tp_dict = sys.heap.write_instance_to_heap(tp_address)
-        return ClassmethodAnalysisInstance(tp_address, tp_class, tp_dict, function)
+        return ClassmethodAnalysisInstance(tp_address, tp_class, function)
 
 
 Classmethod_Type = ClassmethodArtificialClass("builtins.classmethod")
@@ -244,16 +238,11 @@ builtin_module_dict.write_local_value("staticmethod", type_2_value(Staticmethod_
 
 # mimic generator
 class GeneratorArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, *arguments):
-        # arguments contain all yielded types
-        assert len(arguments) == 1
-        init_container_value, *_ = arguments
-
-        logger.critical(arguments)
-        tp_dict = sys.heap.write_instance_to_heap(tp_address)
-        return GeneratorAnalysisInstance(
-            tp_address, tp_class, tp_dict, init_container_value
-        )
+    def __call__(self, tp_address, tp_class, *args, **kwargs):
+        # the first argument of args contains all yielded types
+        assert len(args) == 1, args
+        init_container_value, *_ = args
+        return GeneratorAnalysisInstance(tp_address, tp_class, init_container_value)
 
 
 Generator_Type = GeneratorArtificialClass("types.GeneratorType")
@@ -288,11 +277,7 @@ _setup_Generator_Type()
 
 class RangeArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *argument):
-        init_container_value = type_2_value(Int_Instance)
-        tp_dict = sys.heap.write_instance_to_heap(tp_address)
-        return RangeAnalysisInstance(
-            tp_address, tp_class, tp_dict, init_container_value
-        )
+        return RangeAnalysisInstance(tp_address, tp_class)
 
 
 Range_Type = RangeArtificialClass("builtins.range")
@@ -305,14 +290,11 @@ builtin_module_dict.write_local_value("range", type_2_value(Range_Type))
 def _setup_Range_Type():
     def __iter__(self):
         value = Value()
-        for type in self:
-            if isinstance(type, RangeAnalysisInstance):
-                iterator_tp_address = f"{type.tp_address}-range-iterator"
-                list_value = type.tp_dict.read_value(type.tp_container)
-                one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
-                value.inject(one_type)
-            else:
-                raise NotImplementedError(type.tp_class)
+        for one_self in self:
+            iterator_tp_address = f"{one_self.tp_address}-range-iterator"
+            list_value = one_self.tp_dict.read_value(one_self.tp_container)
+            one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
+            value.inject(one_type)
         return value
 
     methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
@@ -327,14 +309,9 @@ _setup_Range_Type()
 
 
 class ListArtificialClass(ArtificialClass):
-    def __call__(self, tp_address, tp_class, *arguments):
-        if len(arguments) == 0:
-            init_container_value = Value()
-        else:
-            init_container_value = Value().make_any()
-        logger.critical(arguments)
-        tp_dict = sys.heap.write_instance_to_heap(tp_address)
-        return ListAnalysisInstance(tp_address, tp_class, tp_dict, init_container_value)
+    def __call__(self, tp_address, tp_class, *args, **kwargs):
+        # tp_dict = sys.heap.write_instance_to_heap(tp_address)
+        return ListAnalysisInstance(tp_address, tp_class)
 
 
 List_Type = ListArtificialClass("builtins.list")
@@ -352,8 +329,6 @@ def _setup_List_Type():
             prev_value = one_self.tp_dict.read_value(one_self.tp_container)
             value.inject(prev_value)
             one_self.tp_dict.write_local_value(one_self.tp_container, value)
-            if one_self.tp_dict is not sys.heap[one_self.tp_address]:
-                pass
         return type_2_value(None_Instance)
 
     def extend(self, iterable):
@@ -850,27 +825,42 @@ _setup_Dict_Type()
 class IteratorArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args, **kwargs):
         value, *_ = args
-        # create instance dict
-        tp_dict = sys.heap.write_instance_to_heap(tp_address)
-        if sys.heap.has_heap_address(tp_address):
-            tp_dict = sys.heap.read_instance_dict(tp_address)
-            return IteratorAnalysisInstance(tp_address, tp_class, tp_dict, None)
-        # create an iterator
-        return IteratorAnalysisInstance(tp_address, tp_class, tp_dict, value)
+        return IteratorAnalysisInstance(tp_address, tp_class, value)
 
 
 Iterator_Type = IteratorArtificialClass("builtins.iterator")
 
 
 def _setup_Iterator_Type():
-    def __next__(self):
-        value = Value()
-        for one_type in self:
-            one_value = one_type.tp_dict.read_value(one_type.tp_container)
-            for each_one_value in one_value:
-                _value = builtins.next(each_one_value)
-                value.inject(_value)
-        return value
+    def __next__(self) -> Value:
+        for one_self in self:
+            value = Value()
+            try:
+                if one_self.location >= one_self.end_location:
+                    raise IteratingError
+                else:
+                    elt = one_self.iterators[one_self.location]
+                    one_self.location += 1
+            except IteratingError:
+                return value
+            else:
+                value.inject(elt)
+                return value
+
+    def __le__(self, other):
+        # means no elements in iterator
+        # raise NotImplementedError
+        logger.critical(
+            f"self.internal: {self.internal}, other.internal: {other.internal}"
+        )
+        return self.location == self.end_location
+
+    def __iadd__(self, other):
+        # raise NotImplementedError
+        logger.critical(
+            f"self.internal: {self.internal}, other.internal: {other.internal}"
+        )
+        return self
 
     methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
     for method in methods:
@@ -884,40 +874,6 @@ def _setup_Iterator_Type():
 
 _setup_Iterator_Type()
 
-# true iterator, stored in heap
-class Iterator:
-    def __init__(self, tp_uuid, value):
-        self.tp_uuid = tp_uuid
-        if isinstance(value, Value):
-            self.internal = list(value.values())
-        else:
-            raise NotImplementedError(value)
-
-    def __next__(self) -> Value:
-        value = Value()
-        try:
-            elt = self.internal.pop()
-        except IndexError:
-            return value
-        else:
-            value.inject(elt)
-            return value
-
-    def __le__(self, other: Iterator):
-        # means no elements in iterator
-        # raise NotImplementedError
-        logger.critical(
-            f"self.internal: {self.internal}, other.internal: {other.internal}"
-        )
-        return len(self.internal) == 0 and len(other.internal) == 0
-
-    def __iadd__(self, other: Iterator):
-        # raise NotImplementedError
-        logger.critical(
-            f"self.internal: {self.internal}, other.internal: {other.internal}"
-        )
-        return self
-
 
 class Analysis:
     def __le__(self, other):
@@ -925,6 +881,20 @@ class Analysis:
 
     def __iadd__(self, other):
         return self
+
+
+class AnalysisInstance(Analysis):
+    def __init__(self, tp_address, tp_class):
+        self.tp_uuid = tp_address
+        self.tp_address = tp_address
+        self.tp_class = tp_class
+
+    @property
+    def tp_dict(self):
+        return sys.heap[self.tp_address]
+
+    def __repr__(self):
+        return f"{self.tp_class.tp_uuid} object"
 
 
 class AnalysisClass(Analysis):
@@ -1064,109 +1034,98 @@ class AnalysisDescriptor(Analysis):
         return self.tp_uuid
 
 
-class AnalysisInstance(Analysis):
-    def __init__(self, tp_address, tp_class, tp_dict):
-        self.tp_uuid = tp_address
-        self.tp_address = tp_address
-        self.tp_class = tp_class
-        self.tp_dict = tp_dict
-
-    def __repr__(self):
-        return f"{self.tp_class.tp_uuid} object"
-
-
 class ClassmethodAnalysisInstance(AnalysisInstance):
     # args should be a single value containing analysis functions
-    def __init__(self, tp_address, tp_class, tp_dict, value):
-        super().__init__(tp_address, tp_class, tp_dict)
+    def __init__(self, tp_address, tp_class, functions):
+        super().__init__(tp_address, tp_class)
         self.tp_container = "function"
-        tp_dict.write_local_value(self.tp_container, value)
+        self.tp_dict.write_local_value(self.tp_container, functions)
 
 
 class StaticmethodAnalysisInstance(AnalysisInstance):
     # args should be a single value containing analysis functions
-    def __init__(self, tp_address, tp_class, tp_dict, value):
-        super().__init__(tp_address, tp_class, tp_dict)
+    def __init__(self, tp_address, tp_class, functions):
+        super().__init__(tp_address, tp_class)
         self.tp_container = "function"
-        tp_dict.write_local_value(self.tp_container, value)
+        self.tp_dict.write_local_value(self.tp_container, functions)
 
 
 class PropertyAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class, tp_dict, fget, fset, fdel, doc=None):
-        super().__init__(tp_address, tp_class, tp_dict)
+    def __init__(self, tp_address, tp_class, fget, fset, fdel, doc=None):
+        super().__init__(tp_address, tp_class)
         self.tp_container = ("fget", "fset", "fdel", "doc")
-        tp_dict.write_local_value(self.tp_container[0], fget)
-        tp_dict.write_local_value(self.tp_container[1], fset)
-        tp_dict.write_local_value(self.tp_container[2], fdel)
+        self.tp_dict.write_local_value(self.tp_container[0], fget)
+        self.tp_dict.write_local_value(self.tp_container[1], fset)
+        self.tp_dict.write_local_value(self.tp_container[2], fdel)
         doc_value = Value()
         doc_value.inject(None_Instance)
         doc_value.inject(Str_Instance)
-        tp_dict.write_local_value(self.tp_container[3], doc_value)
+        self.tp_dict.write_local_value(self.tp_container[3], doc_value)
 
 
 class IteratorAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class, tp_dict, init_value):
-        super().__init__(tp_address, tp_class, tp_dict)
+    def __init__(self, tp_address, tp_class, iter_value):
+        super().__init__(tp_address, tp_class)
         self.tp_container = "iterators"
-        if init_value is None:
-            return
-        iterator = Iterator(tp_address, init_value)
-        tp_dict.write_local_value(self.tp_container, type_2_value(iterator))
+        self.iterators = tuple(iter_value)
+        self.location = 0
+        self.end_location = len(self.iterators)
 
 
 class GeneratorAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class, tp_dict, init_value):
-        super().__init__(tp_address, tp_class, tp_dict)
+    def __init__(self, tp_address, tp_class, init_value, *args, **kwargs):
+        super().__init__(tp_address, tp_class)
         self.tp_container = "internal"
-        tp_dict.write_local_value(self.tp_container, init_value)
+        self.tp_dict.write_local_value(self.tp_container, init_value)
 
 
 class RangeAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class, tp_dict, init_value):
-        super().__init__(tp_address, tp_class, tp_dict)
+    def __init__(self, tp_address, tp_class):
+        super().__init__(tp_address, tp_class)
         self.tp_container = "internal"
-        tp_dict.write_local_value(self.tp_container, init_value)
+        init_container_value = type_2_value(Int_Instance)
+        self.tp_dict.write_local_value(self.tp_container, init_container_value)
 
 
 class ListAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class, tp_dict, initial_value):
-        super().__init__(tp_address, tp_class, tp_dict)
+    def __init__(self, tp_address, tp_class):
+        super().__init__(tp_address, tp_class)
         self.tp_container = "internal"
-        tp_dict.write_local_value(self.tp_container, initial_value)
+        self.tp_dict.write_local_value(self.tp_container, Value())
 
 
 class TupleAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class, tp_dict, initial_value):
-        super().__init__(tp_address, tp_class, tp_dict)
+    def __init__(self, tp_address, tp_class):
+        super().__init__(tp_address, tp_class)
         self.tp_container = "internal"
-        tp_dict.write_local_value(self.tp_container, initial_value)
+        self.tp_dict.write_local_value(self.tp_container, Value())
 
 
 class SetAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class, tp_dict, initial_value):
-        super().__init__(tp_address, tp_class, tp_dict)
+    def __init__(self, tp_address, tp_class):
+        super().__init__(tp_address, tp_class)
         self.tp_container = "internal"
-        tp_dict.write_local_value(self.tp_container, initial_value)
+        self.tp_dict.write_local_value(self.tp_container, Value())
 
 
 class FrozenSetAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class, tp_dict, initial_value):
-        super().__init__(tp_address, tp_class, tp_dict)
+    def __init__(self, tp_address, tp_class):
+        super().__init__(tp_address, tp_class)
         self.tp_container = "internal"
-        tp_dict.write_local_value(self.tp_container, initial_value)
+        self.tp_dict.write_local_value(self.tp_container, Value())
 
 
 class DictAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class, tp_dict, initial_value1, initial_value2):
-        super().__init__(tp_address, tp_class, tp_dict)
+    def __init__(self, tp_address, tp_class):
+        super().__init__(tp_address, tp_class)
         self.tp_container = ("internal1", "internal2")
-        tp_dict.write_local_value(self.tp_container[0], initial_value1)
-        tp_dict.write_local_value(self.tp_container[1], initial_value2)
+        self.tp_dict.write_local_value(self.tp_container[0], Value())
+        self.tp_dict.write_local_value(self.tp_container[1], Value())
 
 
 class SuperAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class, tp_dict, tp_self, tp_mro, *args, **kwargs):
-        super().__init__(tp_address, tp_class, tp_dict)
+    def __init__(self, tp_address, tp_class, tp_self, tp_mro, *args, **kwargs):
+        super().__init__(tp_address, tp_class)
         self.tp_self = tp_self
         self.tp_mro = tp_mro
 

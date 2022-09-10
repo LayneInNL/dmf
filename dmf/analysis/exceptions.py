@@ -23,3 +23,7 @@ class AnalysisAttributeError(Exception):
 
 class TypeshedModuleAttributeError(Exception):
     pass
+
+
+class IteratingError(Exception):
+    pass

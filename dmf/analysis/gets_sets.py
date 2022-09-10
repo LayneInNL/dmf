@@ -29,6 +29,7 @@ from dmf.analysis.analysis_types import (
     PropertyAnalysisInstance,
     StaticmethodAnalysisInstance,
     TypeExprVisitor,
+    SuperAnalysisInstance,
 )
 from dmf.analysis.artificial_basic_types import (
     ArtificialClass,
@@ -197,12 +198,10 @@ def GenericGetAttr(obj, name):
     # get types of obj
     obj_type = _py_type(obj)
     mros = None
-    if isinstance(obj_type, SuperArtificialClass):
-        # super is so complicated
-        tp_dict = sys.heap.read_instance_dict(obj.tp_address)
-        obj = getattr(tp_dict, "super_self")
+    if isinstance(obj, SuperAnalysisInstance):
+        obj = obj.tp_self
+        mros = obj.tp_mro
         obj_type = _py_type(obj)
-        mros = getattr(tp_dict, "super_mros")
 
     # try finding descriptors
     class_variables = _pytype_lookup(obj_type, name, mros)

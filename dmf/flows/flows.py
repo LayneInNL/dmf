@@ -660,7 +660,7 @@ class CFGVisitor(ast.NodeVisitor):
         # now assignment gets xxx = a_name
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
-        assert len(node.targets) == 1, node.targets
+        # assert len(node.targets) == 1, astor.to_source(node)
         for index, target in enumerate(node.targets):
             if isinstance(target, (ast.Name, ast.List, ast.Tuple)):
                 self._visit_Regular_LHS(node, index)

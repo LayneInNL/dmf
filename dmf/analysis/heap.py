@@ -23,8 +23,17 @@ class Heap:
     def __init__(self):
         self.singletons: Dict[str, HeapNamespace] = {}
 
+    def __missing__(self, key):
+        self.singletons[key] = value = HeapNamespace()
+        return value
+
     def __contains__(self, item):
         return item in self.singletons
+
+    def __getitem__(self, item):
+        if item not in self.singletons:
+            return self.__missing__(item)
+        return self.singletons[item]
 
     def __le__(self, other: Heap):
         for heap_address in self.singletons:
