@@ -252,9 +252,6 @@ class Analysis(AnalysisBase):
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = type.tp_function.tp_code
 
-        # used by generator
-        tp_address = record(call_lab, call_ctx)
-
         new_ctx: Tuple = merge(call_lab, None, call_ctx)
         self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
             None,
@@ -262,9 +259,7 @@ class Analysis(AnalysisBase):
             type.tp_function.tp_module,
             type.tp_function.tp_defaults,
             type.tp_function.tp_kwdefaults,
-            (type.tp_function.tp_generator, tp_address)
-            if type.tp_function.tp_generator
-            else type.tp_function.tp_generator,
+            type.tp_function.tp_generator,
         )
 
         inter_flow = (

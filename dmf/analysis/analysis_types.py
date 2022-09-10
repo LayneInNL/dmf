@@ -395,15 +395,12 @@ def _setup_List_Type():
     def __iter__(self):
         value = Value()
         for one_self in self:
-            if isinstance(one_self, ListAnalysisInstance):
-                program_point = sys.program_point
-                heap_address = record(program_point[0], program_point[1])
-                iterator_tp_address = f"{one_self.tp_address}-{heap_address}"
-                list_value = one_self.tp_dict.read_value(one_self.tp_container)
-                one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
-                value.inject(one_type)
-            else:
-                raise NotImplementedError(one_self.tp_class)
+            program_point = sys.program_point
+            heap_address = record(program_point[0], program_point[1])
+            iterator_tp_address = f"{one_self.tp_address}-{heap_address}"
+            list_value = one_self.tp_dict.read_value(one_self.tp_container)
+            one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
+            value.inject(one_type)
         return value
 
     methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
@@ -1068,6 +1065,7 @@ class IteratorAnalysisInstance(AnalysisInstance):
         super().__init__(tp_address, tp_class)
         self.tp_container = "iterators"
         self.iterators = tuple(iter_value)
+        logger.critical(self.iterators)
         self.location = 0
         self.end_location = len(self.iterators)
 
