@@ -933,7 +933,7 @@ TypeshedModule.custom_getattr = _typeshedmodule_custom_getattr
 
 
 class AnalysisModule(Analysis):
-    def __init__(self, tp_name: str, tp_package: str, tp_code):
+    def __init__(self, tp_name: str, tp_package: str, tp_code: Tuple):
         # tp_uuid is module name
         self.tp_uuid: str = tp_name
         # same as tp_name
@@ -944,7 +944,8 @@ class AnalysisModule(Analysis):
         setattr(self.tp_dict, MODULE_PACKAGE_FLAG, self.tp_package)
         setattr(self.tp_dict, MODULE_NAME_FLAG, self.tp_name)
         # entry and exit label of a module
-        self.tp_code = tp_code
+        self.tp_code: Tuple = tp_code
+        self.tp_address = (self.tp_code[0],)
 
     def __le__(self, other: AnalysisModule):
         return self.tp_dict <= other.tp_dict
@@ -977,6 +978,7 @@ class AnalysisFunction(Analysis):
         tp_module: str,
         tp_defaults,
         tp_kwdefaults,
+        tp_address,
         tp_generator: bool = False,
     ):
         # tp_uuid is flow label
@@ -987,6 +989,7 @@ class AnalysisFunction(Analysis):
         self.tp_dict: Namespace = Namespace()
         self.tp_defaults = tp_defaults
         self.tp_kwdefaults = tp_kwdefaults
+        self.tp_address = tp_address
         self.tp_generator: bool = tp_generator
 
     def __le__(self, other: AnalysisFunction):

@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import ast
-import copy
 import sys
 from collections import defaultdict, deque, namedtuple
 from typing import Dict, Tuple, Deque, List
@@ -58,7 +57,6 @@ from dmf.analysis.implicit_names import (
 from dmf.analysis.name_extractor import NameExtractor
 from dmf.analysis.special_types import Any
 from dmf.analysis.state import (
-    compute_function_defaults,
     compute_bases,
     parse_positional_args,
     parse_keyword_args,
@@ -68,7 +66,6 @@ from dmf.analysis.state import (
     State,
     BOTTOM,
     compare_states,
-    merge_states,
     is_bot_state,
     deepcopy_state,
     Stack,
@@ -280,7 +277,7 @@ class Analysis(AnalysisBase):
         # used by generator
         tp_address = record(call_lab, call_ctx)
 
-        new_ctx: Tuple = merge(call_lab, None, call_ctx)
+        new_ctx: Tuple = merge(call_lab, type.tp_address, call_ctx)
         self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
             None,
             None,
@@ -1263,6 +1260,13 @@ class Analysis(AnalysisBase):
         new_stack.write_var(cls_name, Namespace_Local, value)
         return new_state
 
+    def _get_module_heap_address(self, module_name: str) -> Tuple:
+        modules: Value = sys.analysis_modules[module_name]
+        assert len(modules) == 1, modules
+        for module in modules:
+            return module.tp_address
+        raise NotImplementedError(module_name)
+
     # when a function definition is encountered...
     def transfer_FunctionDef(
         self,
@@ -1271,16 +1275,19 @@ class Analysis(AnalysisBase):
         new_state: State,
         node: ast.FunctionDef,
     ):
+        # get function label
         lab, _ = program_point
+        # get function cfg
         func_cfg = self.checkout_cfg(lab)
-
+        # add information about func_cfg to analysis
         entry_lab, exit_lab = self.add_sub_cfg(lab)
-
-        defaults, kwdefaults = compute_function_defaults(new_state, node)
+        # compute function defaults
+        defaults, kwdefaults = new_state.compute_function_defaults(node)
 
         func_module: str = getattr(
             new_state.stack.frames[-1].f_globals, MODULE_NAME_FLAG
         )
+        module_address: Tuple = self._get_module_heap_address(func_module)
 
         value = Value()
         value.inject_type(
@@ -1290,6 +1297,7 @@ class Analysis(AnalysisBase):
                 tp_code=(entry_lab, exit_lab),
                 tp_defaults=defaults,
                 tp_kwdefaults=kwdefaults,
+                tp_address=module_address,
                 # if is_generator is True, this is a generator function.
                 tp_generator=func_cfg.is_generator,
             )

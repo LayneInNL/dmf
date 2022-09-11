@@ -157,6 +157,29 @@ class State:
         else:
             raise NotImplementedError(expr)
 
+    def compute_function_defaults(self, node: ast.FunctionDef):
+        arguments: ast.arguments = node.args
+
+        # defaults is a list of default values for arguments that can be passed positionally.
+        # If there are fewer defaults, they correspond to the last n arguments.
+        args_diff_len = len(arguments.args) - len(arguments.defaults)
+        defaults = [None] * args_diff_len
+        for default in arguments.defaults:
+            default_value = self.compute_value_of_expr(default)
+            defaults.append(default_value)
+
+        # kw_defaults is a list of default values for keyword-only arguments.
+        # If one is None, the corresponding argument is required.
+        kwdefaults = []
+        for kw_default in arguments.kw_defaults:
+            if kw_default is None:
+                kwdefaults.append(kw_default)
+            else:
+                kw_default_value = self.compute_value_of_expr(kw_default)
+                kwdefaults.append(kw_default_value)
+
+        return defaults, kwdefaults
+
 
 def deepcopy_state(state: State, program_point) -> State:
 
@@ -219,33 +242,6 @@ def merge_states(lhs: State, rhs: State | BOTTOM) -> State:
 
     lhs += rhs
     return lhs
-
-
-def compute_function_defaults(state: State, node: ast.FunctionDef):
-    stack, _ = state.stack, state.heap
-
-    # https: // docs.python.org / 3.11 / library / ast.html  # ast.arguments
-    arguments: ast.arguments = node.args
-
-    # defaults is a list of default values for arguments that can be passed positionally.
-    # If there are fewer defaults, they correspond to the last n arguments.
-    args_diff_len = len(arguments.args) - len(arguments.defaults)
-    defaults = [None] * args_diff_len
-    for default in arguments.defaults:
-        default_value = state.compute_value_of_expr(default)
-        defaults.append(default_value)
-
-    # kw_defaults is a list of default values for keyword-only arguments.
-    # If one is None, the corresponding argument is required.
-    kwdefaults = []
-    for kw_default in arguments.kw_defaults:
-        if kw_default is None:
-            kwdefaults.append(kw_default)
-        else:
-            kw_default_value = state.compute_value_of_expr(kw_default)
-            kwdefaults.append(kw_default_value)
-
-    return defaults, kwdefaults
 
 
 def compute_bases(state: State, node: ast.ClassDef) -> List[List]:
