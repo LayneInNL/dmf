@@ -102,8 +102,8 @@ class Analysis(AnalysisBase):
             Heap(),
             qualified_module_name,
         )
-        curr_module: Value = sys.analysis_modules[qualified_module_name]
-        curr_module = curr_module.extract_1_elt()
+        curr_modules: Value = sys.analysis_modules[qualified_module_name]
+        curr_module = curr_modules.extract_1_elt()
         start_lab, final_lab = curr_module.tp_code
         # start point
         self.extremal_point: ProgramPoint = (start_lab, ())
@@ -731,13 +731,10 @@ class Analysis(AnalysisBase):
                 # correspond to object.__new__(cls)
                 # it has the form of temp_func(cls)
                 stmt = self.get_stmt_by_point(program_point)
-                new_stack, new_heap = new_state.stack, new_state.heap
                 types = new_state.compute_value_of_expr(stmt.args[0])
                 assert len(types) == 1
                 for cls in types:
-                    tp_dict = sys.heap.write_instance_to_heap(address)
-                    instance = type(address, cls, tp_dict)
-                    new_heap.write_instance_to_heap(instance)
+                    instance = type(address, cls)
                     dummy_value.inject_type(instance)
 
             # type is a typeshed class, for example, slice

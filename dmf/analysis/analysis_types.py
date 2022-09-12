@@ -125,9 +125,7 @@ class Constructor:
         self.tp_class = Function_Type
 
     def __call__(self, tp_address, tp_class):
-        tp_uuid = f"{tp_address}"
-        analysis_instance = AnalysisInstance(tp_address=tp_uuid, tp_class=tp_class)
-
+        analysis_instance = AnalysisInstance(tp_address=tp_address, tp_class=tp_class)
         return analysis_instance
 
     def __le__(self, other):
