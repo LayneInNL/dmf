@@ -39,6 +39,7 @@ class _MROAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
         return "MRO_Any"
 
 
+# meaning that __mro__ is incomplete
 MRO_Any = _MROAny()
 
 
@@ -50,6 +51,7 @@ class _BasesAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
         return "Bases_Any"
 
 
+# meaning that __bases__ is incomplete
 Bases_Any = _BasesAny()
 
 
@@ -75,4 +77,5 @@ class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
         return iter([self])
 
 
+# mimic typing.Any
 Any = _TypeAny()

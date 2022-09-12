@@ -1410,7 +1410,6 @@ class CFGVisitor(ast.NodeVisitor):
             raise NotImplementedError(node)
 
     def visit_Call(self, node: ast.Call) -> Any:
-        print(astor.to_source(node))
         if isinstance(node.func, ast.Lambda):
             raise NotImplementedError
             # seq1, name = self.decompose_expr(node.func)

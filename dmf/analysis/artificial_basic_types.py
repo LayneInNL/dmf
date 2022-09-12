@@ -50,7 +50,7 @@ class Artificial(metaclass=UniqueArtificialObject):
 class ArtificialFunction(Artificial):
     def __init__(self, tp_function: FunctionType, tp_qualname: str):
         # use memory address to denote uniqueness
-        self.tp_uuid: str = f"arti-{tp_qualname}"
+        self.tp_uuid: str = f"artificial {tp_qualname}"
         # human-readable function name
         self.tp_qualname: str = tp_qualname
         # function itself
@@ -69,22 +69,14 @@ class ArtificialFunction(Artificial):
         finally:
             return value
 
-    # def __le__(self, other):
-    #     result = self.tp_dict <= other.tp_dict
-    #     return result
-    #
-    # def __iadd__(self, other):
-    #     self.tp_dict += other.tp_dict
-    #     return self
-
     def __repr__(self):
-        return f"artificial function {self.tp_uuid}"
+        return self.tp_uuid
 
 
 # mimic methods such as list.append
 class ArtificialMethod(Artificial):
     def __init__(self, tp_function: ArtificialFunction, tp_instance):
-        self.tp_uuid: str = f"arti-{tp_function.tp_uuid}-{tp_instance.tp_uuid}"
+        self.tp_uuid: str = f"artificial {tp_function.tp_uuid}-{tp_instance.tp_uuid}"
         self.tp_function: ArtificialFunction = tp_function
         self.tp_instance = tp_instance
 
@@ -99,36 +91,22 @@ class ArtificialMethod(Artificial):
         finally:
             return value
 
-    # def __le__(self, other):
-    #     return self.tp_function <= other.tp_function
-    #
-    # def __iadd__(self, other):
-    #     self.tp_function += other.tp_function
-    #     return self
-
     def __repr__(self):
-        return f"artificial-method {self.tp_uuid}"
+        return self.tp_uuid
 
 
 # mimic such as builtins.list
 class ArtificialClass(Artificial):
     def __init__(self, tp_qualname: str):
         # fully qualified name
-        self.tp_uuid: str = f"arti-{tp_qualname}"
+        self.tp_uuid: str = f"artificial class {tp_qualname}"
         # fully qualified name
         self.tp_qualname: str = tp_qualname
         # instance dict
         self.tp_dict: Namespace = Namespace()
 
-    # def __le__(self, other):
-    #     return self.tp_dict <= other.tp_dict
-    #
-    # def __iadd__(self, other):
-    #     self.tp_dict += other.tp_dict
-    #     return self
-
     def __repr__(self):
-        return f"artificial-class {self.tp_uuid}"
+        return self.tp_uuid
 
     def __call__(self, *args, **kwargs):
         raise NotImplementedError
@@ -138,7 +116,7 @@ class ArtificialClass(Artificial):
 # if called with 1 arg, return its type
 # if called with 3 args, it's creating a class. just return Any
 class TypeArtificialClass(ArtificialClass):
-    def __call__(self, tp_address: int, tp_class, *args, **kwargs) -> Value:
+    def __call__(self, tp_address, tp_class, *args, **kwargs) -> Value:
         if len(args) == 1:
             objs: Value = args[0]
             value = Value()

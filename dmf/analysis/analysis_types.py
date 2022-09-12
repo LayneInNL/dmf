@@ -226,8 +226,7 @@ class StaticmethodArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args):
         assert len(args) == 1, args
         function, *_ = args
-        tp_dict = sys.heap.write_instance_to_heap(tp_address)
-        return StaticmethodAnalysisInstance(tp_address, tp_class, tp_dict, function)
+        return StaticmethodAnalysisInstance(tp_address, tp_class, function)
 
 
 Staticmethod_Type = StaticmethodArtificialClass("builtins.staticmethod")
