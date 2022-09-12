@@ -30,10 +30,12 @@
 
 
 class Test:
-    pass
+    def test(self):
+        return "Hello"
 
 
 t = Test()
 t.x = 1
 t.x = "hello"
 result = t.x
+result1 = t.test()

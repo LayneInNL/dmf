@@ -40,6 +40,7 @@ from dmf.analysis.analysisbase import AnalysisBase, ProgramPoint
 from dmf.analysis.artificial_basic_types import ArtificialMethod
 from dmf.analysis.builtin_functions import import_a_module
 from dmf.analysis.context_sensitivity import merge, record
+from dmf.analysis.exceptions import ParsingDefaultsError, ParsingKwDefaultsError
 from dmf.analysis.gets_sets import getattrs, _getattr, setattrs, _setattr
 from dmf.analysis.implicit_names import (
     POS_ARG_LEN,
@@ -57,12 +58,6 @@ from dmf.analysis.implicit_names import (
 from dmf.analysis.name_extractor import NameExtractor
 from dmf.analysis.special_types import Any
 from dmf.analysis.state import (
-    compute_bases,
-    parse_positional_args,
-    parse_keyword_args,
-    parse_default_args,
-    parse_kwonly_args,
-    compute_func_args,
     State,
     BOTTOM,
     compare_states,
@@ -247,9 +242,10 @@ class Analysis(AnalysisBase):
         ret_lab: int,
     ):
         call_lab, call_ctx = program_point
-        entry_lab, exit_lab = type.tp_function.tp_code
+        special_method = type.tp_function
+        entry_lab, exit_lab = special_method.tp_code
 
-        new_ctx: Tuple = merge(call_lab, None, call_ctx)
+        new_ctx: Tuple = merge(call_lab, special_method.tp_address, call_ctx)
         self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
             None,
             None,
@@ -301,14 +297,10 @@ class Analysis(AnalysisBase):
 
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = type.tp_function.tp_code
+        # may be a class instance, may be a class
         instance: AnalysisInstance = type.tp_instance
         function: AnalysisFunction = type.tp_function
-        if hasattr(instance, "tp_address"):
-            # instance is an instance
-            new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
-        else:
-            # instance is a class, encountered in @classmethod
-            new_ctx: Tuple = merge(call_lab, None, call_ctx)
+        new_ctx: Tuple = merge(call_lab, instance.tp_address, call_ctx)
 
         self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
             type_2_value(instance),
@@ -644,9 +636,7 @@ class Analysis(AnalysisBase):
 
         call_stmt: ast.Call = self.get_stmt_by_label(call_lab)
         new_stack, new_heap = new_state.stack, new_state.heap
-        args, keywords = compute_func_args(
-            new_state, call_stmt.args, call_stmt.keywords
-        )
+        args, keywords = new_state.compute_func_args(call_stmt.args, call_stmt.keywords)
         # new_stack, new_heap = new_state
         inits: Value = new_state.compute_value_of_expr(call_stmt.func)
 
@@ -702,8 +692,8 @@ class Analysis(AnalysisBase):
     ):
 
         call_stmt: ast.Call = self.get_stmt_by_point(program_point)
-        computed_args, computed_kwargs = compute_func_args(
-            new_state, call_stmt.args, call_stmt.keywords
+        computed_args, computed_kwargs = new_state.compute_func_args(
+            call_stmt.args, call_stmt.keywords
         )
 
         call_lab, call_ctx = program_point
@@ -784,16 +774,13 @@ class Analysis(AnalysisBase):
         type: AnalysisClass,
     ):
         call_lab, call_ctx = program_point
-        new_stack, new_heap = new_state.stack, new_state.heap
 
         tp_address = record(call_lab, call_ctx)
         new_method, _ = _getattr(type, "__new__")
 
         for new in new_method:
             if isinstance(new, Constructor):
-                one_direct_res = new(
-                    tp_address=tp_address, tp_class=type, tp_heap=new_heap
-                )
+                one_direct_res = new(tp_address=tp_address, tp_class=type)
                 dummy_value.inject(one_direct_res)
             elif isinstance(new, AnalysisFunction):
                 analysis_method = AnalysisMethod(tp_function=new, tp_instance=type)
@@ -1050,6 +1037,16 @@ class Analysis(AnalysisBase):
     def transfer_entry(
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
+        """
+        entry node could be ast.arguments or ast.Pass
+        the former is used in a function definition
+        the latter is used in a class definition or other stuff
+        :param program_point:
+        :param old_state:
+        :param new_state:
+        :return:
+        """
+
         stmt = self.get_stmt_by_point(program_point)
 
         new_stack, new_heap = new_state.stack, new_state.heap
@@ -1084,11 +1081,18 @@ class Analysis(AnalysisBase):
 
         if isinstance(stmt, ast.arguments):
             # Positional and keyword arguments
-            start_pos = 0 if instance_info else 1
-            arg_flags = parse_positional_args(start_pos, stmt, new_state)
-            arg_flags = parse_keyword_args(arg_flags, stmt, new_state)
-            _ = parse_default_args(arg_flags, stmt, new_state, defaults_info)
-            parse_kwonly_args(stmt, new_state, kwdefaults_info)
+            try:
+                start_pos = 0 if instance_info else 1
+                arg_flags = new_state.parse_positional_args(start_pos, stmt)
+                arg_flags = new_state.parse_keyword_args(arg_flags, stmt)
+                arg_flags = new_state.parse_default_args(arg_flags, stmt, defaults_info)
+                _ = new_state.parse_kwonly_args(stmt, kwdefaults_info)
+            except (ParsingDefaultsError, ParsingKwDefaultsError):
+                return BOTTOM
+        elif isinstance(stmt, ast.Pass):
+            pass
+        else:
+            raise NotImplementedError(stmt)
 
         return new_state
 
@@ -1102,7 +1106,6 @@ class Analysis(AnalysisBase):
         if len(return_value) == 0:
             none_value = type_2_value(None_Instance)
             new_stack.write_var(RETURN_FLAG, Namespace_Local, none_value)
-
         return new_state
 
     # transfer return label
@@ -1247,14 +1250,18 @@ class Analysis(AnalysisBase):
         module: str = getattr(new_stack.frames[-1].f_globals, MODULE_NAME_FLAG)
 
         value: Value = Value()
-        bases = compute_bases(new_state, stmt)
+        bases = new_state.compute_bases(stmt)
+        # call_lab is the allocation label of this class
         call_lab = self.get_classdef_call_label(return_lab)
+        # tp_address is an OS context
+        tp_address = record(call_lab, return_ctx)
         analysis_class: AnalysisClass = AnalysisClass(
             tp_uuid=call_lab,
             tp_module=module,
             tp_bases=bases,
             tp_dict=f_locals,
             tp_code=(call_lab, return_lab),
+            tp_address=tp_address,
         )
         value.inject(analysis_class)
         new_stack.write_var(cls_name, Namespace_Local, value)

@@ -27,3 +27,11 @@ class TypeshedModuleAttributeError(Exception):
 
 class IteratingError(Exception):
     pass
+
+
+class ParsingDefaultsError(Exception):
+    pass
+
+
+class ParsingKwDefaultsError(Exception):
+    pass

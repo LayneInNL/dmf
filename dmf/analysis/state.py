@@ -28,6 +28,7 @@ from dmf.analysis.analysis_types import (
     Object_Type,
     Int_Type,
 )
+from dmf.analysis.exceptions import ParsingDefaultsError, ParsingKwDefaultsError
 from dmf.analysis.heap import Heap
 from dmf.analysis.implicit_names import POS_ARG_LEN, MODULE_NAME_FLAG
 from dmf.analysis.stack import Stack, Frame
@@ -180,6 +181,109 @@ class State:
 
         return defaults, kwdefaults
 
+    def compute_func_args(self, args: List[ast.expr], keywords: List[ast.keyword]):
+        computed_args = []
+        for arg in args:
+            val = self.compute_value_of_expr(arg)
+            computed_args.append(val)
+
+        computed_keywords = {}
+        for keyword in keywords:
+            val = self.compute_value_of_expr(keyword.value)
+            computed_keywords[keyword.arg] = val
+        return computed_args, computed_keywords
+
+    def compute_bases(self, node: ast.ClassDef) -> List[List]:
+        # should I use state at call label or state at return label?
+        base_types: List[List] = []
+        if node.bases:
+            for base in node.bases:
+                cls_types = self.compute_value_of_expr(base)
+                cls_type_list = cls_types.value_2_list()
+                base_types.append(cls_type_list)
+        else:
+            base_types.append([Object_Type])
+        return base_types
+
+    def parse_positional_args(self, start_pos: int, arguments: ast.arguments):
+        args_flag = [False for _ in arguments.args]
+        stack = self.stack
+        f_locals = stack.top_frame().f_locals
+        positional_len: int = getattr(f_locals, POS_ARG_LEN)
+        real_pos_len = positional_len - start_pos + 1
+
+        if real_pos_len > len(arguments.args):
+            if arguments.vararg is None:
+                raise TypeError(arguments.vararg)
+
+            for idx, arg in enumerate(arguments.args):
+                arg_value = f_locals.read_value(str(idx))
+                stack.write_var(arg.arg, "local", arg_value)
+                args_flag[idx] = True
+                f_locals.del_local_var(str(idx))
+
+            # idx += 1
+            # # consider vararg
+            # while idx < real_pos_len:
+            #     f_locals.del_local_var(str(idx))
+            #     idx += 1
+
+        else:
+            for arg_idx, pos_idx in enumerate(range(start_pos, positional_len + 1)):
+                arg = arguments.args[arg_idx]
+                arg_value = f_locals.read_value(str(pos_idx))
+                stack.write_var(arg.arg, "local", arg_value)
+                args_flag[arg_idx] = True
+                f_locals.del_local_var(str(pos_idx))
+
+        if arguments.vararg:
+            f_locals.write_local_value(arguments.vararg.arg, Value.make_any())
+
+        return args_flag
+
+    def parse_keyword_args(self, arg_flags, arguments: ast.arguments):
+        stack = self.stack
+        f_locals = stack.top_frame().f_locals
+
+        # keyword arguments
+        for idx, elt in enumerate(arg_flags):
+            arg_name = arguments.args[idx].arg
+            if not elt:
+                if arg_name in f_locals:
+                    arg_flags[idx] = True
+        return arg_flags
+
+    def parse_default_args(
+        self, arg_flags: List, arguments: ast.arguments, defaults: List
+    ):
+        stack = self.stack
+        for idx, elt in enumerate(arg_flags):
+            if not elt:
+                arg_name = arguments.args[idx].arg
+                default = defaults[idx]
+                if default is None:
+                    raise ParsingDefaultsError
+                stack.write_var(arg_name, "local", default)
+                arg_flags[idx] = True
+        assert all(arg_flags), arg_flags
+        return arg_flags
+
+    def parse_kwonly_args(self, arguments: ast.arguments, kwdefaults: Dict):
+        stack = self.stack
+        f_locals = stack.top_frame().f_locals
+        for idx, kwonly_arg in enumerate(arguments.kwonlyargs):
+            kwonly_arg_name = kwonly_arg.arg
+            if kwonly_arg_name not in f_locals:
+                default_value = kwdefaults[idx]
+                # if default_value is None, no default value for this kw only
+                if default_value is None:
+                    raise ParsingKwDefaultsError
+                else:
+                    stack.write_var(kwonly_arg_name, "local", default_value)
+        # TODO: kwargs
+        if arguments.kwarg:
+            stack.write_var(arguments.kwarg.arg, "local", Value.make_any())
+
 
 def deepcopy_state(state: State, program_point) -> State:
 
@@ -242,111 +346,3 @@ def merge_states(lhs: State, rhs: State | BOTTOM) -> State:
 
     lhs += rhs
     return lhs
-
-
-def compute_bases(state: State, node: ast.ClassDef) -> List[List]:
-    # should I use state at call label or state at return label?
-    base_types: List[List] = []
-    if node.bases:
-        for base in node.bases:
-            cls_types = state.compute_value_of_expr(base)
-            cls_type_list = cls_types.value_2_list()
-            base_types.append(cls_type_list)
-    else:
-        base_types.append([Object_Type])
-    return base_types
-
-
-def parse_positional_args(start_pos: int, arguments: ast.arguments, state: State):
-    args_flag = [False for _ in arguments.args]
-    stack = state.stack
-    f_locals = stack.top_frame().f_locals
-    # positional_len: int = f_locals.read_value(POS_ARG_END)
-    positional_len: int = getattr(f_locals, POS_ARG_LEN)
-    real_pos_len = positional_len - start_pos + 1
-
-    if real_pos_len > len(arguments.args):
-        if arguments.vararg is None:
-            raise TypeError(arguments.vararg)
-
-        for idx, arg in enumerate(arguments.args):
-            arg_value = f_locals.read_value(str(idx))
-            stack.write_var(arg.arg, "local", arg_value)
-            args_flag[idx] = True
-            f_locals.del_local_var(str(idx))
-
-        # idx += 1
-        # # consider vararg
-        # while idx < real_pos_len:
-        #     f_locals.del_local_var(str(idx))
-        #     idx += 1
-
-    else:
-        for arg_idx, pos_idx in enumerate(range(start_pos, positional_len + 1)):
-            arg = arguments.args[arg_idx]
-            arg_value = f_locals.read_value(str(pos_idx))
-            stack.write_var(arg.arg, "local", arg_value)
-            args_flag[arg_idx] = True
-            f_locals.del_local_var(str(pos_idx))
-
-    if arguments.vararg:
-        f_locals.write_local_value(arguments.vararg.arg, Value.make_any())
-
-    return args_flag
-
-
-def parse_keyword_args(arg_flags, arguments: ast.arguments, state: State):
-    stack = state.stack
-    f_locals = stack.top_frame().f_locals
-
-    # keyword arguments
-    for idx, elt in enumerate(arg_flags):
-        arg_name = arguments.args[idx].arg
-        if not elt:
-            if arg_name in f_locals:
-                arg_flags[idx] = True
-    return arg_flags
-
-
-def parse_default_args(arg_flags, arguments: ast.arguments, state: State, defaults):
-    stack = state.stack
-    for idx, elt in enumerate(arg_flags):
-        if not elt:
-            arg_name = arguments.args[idx].arg
-            default = defaults[idx]
-            if default is None:
-                raise TypeError
-            stack.write_var(arg_name, "local", default)
-            arg_flags[idx] = True
-    assert all(arg_flags), arg_flags
-    return arg_flags
-
-
-def parse_kwonly_args(arguments: ast.arguments, state: State, kwdefaults):
-    stack = state.stack
-    f_locals = stack.top_frame().f_locals
-    for idx, kwonly_arg in enumerate(arguments.kwonlyargs):
-        kwonly_arg_name = kwonly_arg.arg
-        if kwonly_arg_name not in f_locals:
-            default_value = kwdefaults[idx]
-            if default_value is None:
-                raise TypeError
-            else:
-                stack.write_var(kwonly_arg_name, "local", default_value)
-    # TODO: kwargs
-    if arguments.kwarg:
-        stack.write_var(arguments.kwarg.arg, "local", Value.make_any())
-
-
-def compute_func_args(state: State, args: List[ast.expr], keywords: List[ast.keyword]):
-
-    computed_args = []
-    for arg in args:
-        val = state.compute_value_of_expr(arg)
-        computed_args.append(val)
-
-    computed_keywords = {}
-    for keyword in keywords:
-        val = state.compute_value_of_expr(keyword.value)
-        computed_keywords[keyword.arg] = val
-    return computed_args, computed_keywords

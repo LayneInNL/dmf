@@ -46,6 +46,7 @@ from dmf.analysis.typeshed_types import (
     TypeshedDescriptorGetter,
     TypeshedImportedModule,
     TypeshedImportedName,
+    TypeshedInstance,
 )
 from dmf.analysis.union_namespace import UnionNamespace
 from dmf.analysis.value import Value, type_2_value
@@ -123,7 +124,7 @@ class Constructor:
         self.tp_uuid = "arti-builtins.object.__new__"
         self.tp_class = Function_Type
 
-    def __call__(self, tp_address, tp_class, tp_heap):
+    def __call__(self, tp_address, tp_class):
         tp_uuid = f"{tp_address}"
         analysis_instance = AnalysisInstance(tp_address=tp_uuid, tp_class=tp_class)
 
@@ -895,7 +896,7 @@ class AnalysisInstance(Analysis):
 
 
 class AnalysisClass(Analysis):
-    def __init__(self, tp_uuid, tp_bases, tp_module, tp_dict, tp_code):
+    def __init__(self, tp_uuid, tp_bases, tp_module, tp_dict, tp_code, tp_address):
         # tp_uuid is flow label
         self.tp_uuid: str = str(tp_uuid)
 
@@ -906,6 +907,8 @@ class AnalysisClass(Analysis):
         self.tp_module = tp_module
         self.tp_dict = tp_dict
         self.tp_code = tp_code
+
+        self.tp_address = tp_address
 
     def __le__(self, other: AnalysisClass):
         return self.tp_dict <= other.tp_dict
@@ -1183,6 +1186,8 @@ class TypeExprVisitor(ast.NodeVisitor):
         elif isinstance(self.typeshed, TypeshedAssign):
             curr_value = self.visit(self.typeshed.tp_code)
             value.inject(curr_value)
+        elif isinstance(self.typeshed, TypeshedInstance):
+            value.inject(self.typeshed)
         else:
             raise NotImplementedError(self.typeshed)
         return value
