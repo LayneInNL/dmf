@@ -1367,7 +1367,19 @@ class CFGVisitor(ast.NodeVisitor):
         return seq + [node]
 
     def _visit_Call_Special(self, node: ast.Call):
-        assert isinstance(node.func, ast.Name), node
+        if not isinstance(node.func, ast.Name):
+            return [], node
+        if node.func.id not in (
+            list.__name__,
+            tuple.__name__,
+            set.__dict__,
+            frozenset.__name__,
+            # dict.__name__,
+        ):
+            return [], node
+        if not (node.args or node.keywords):
+            return [], node
+
         # list([iterable])
         def _destruct_container(name, method):
             seq = []
@@ -1395,8 +1407,7 @@ class CFGVisitor(ast.NodeVisitor):
                 )
                 seq.append(tmp_for)
 
-            seq.append(tmp_var)
-            return seq
+            return seq, tmp_var
 
         if node.func.id == list.__name__:
             return _destruct_container(list.__name__, list.append.__name__)
@@ -1406,29 +1417,12 @@ class CFGVisitor(ast.NodeVisitor):
             return _destruct_container(set.__name__, set.add.__name__)
         elif node.func.id == frozenset.__name__:
             return _destruct_container(frozenset.__name__, "fake_add")
-        elif node.func.id == dict.__name__:
-            raise NotImplementedError(node)
+        else:
+            raise NotImplementedError(astor.to_source(node))
 
     def visit_Call(self, node: ast.Call) -> Any:
         if isinstance(node.func, ast.Lambda):
-            raise NotImplementedError
-            # seq1, name = self.decompose_expr(node.func)
-            # tmp_call = ast.Call(args=node.args, func=name, keywords=node.keywords)
-            # return seq1 + [tmp_call]
-
-        if (
-            isinstance(node.func, ast.Name)
-            and node.func.id
-            in (
-                list.__name__,
-                tuple.__name__,
-                set.__dict__,
-                frozenset.__name__,
-                dict.__name__,
-            )
-            and (node.args or node.keywords)
-        ):
-            return self._visit_Call_Special(node)
+            raise NotImplementedError(node.func)
 
         seq = []
 
@@ -1445,6 +1439,8 @@ class CFGVisitor(ast.NodeVisitor):
             seq1, keyword.value = self.decompose_expr(keyword.value)
             seq.extend(seq1)
 
+        additional_expr_seq, node = self._visit_Call_Special(node)
+        seq.extend(additional_expr_seq)
         return seq + [node]
 
     def visit_Num(self, node: ast.Num) -> Any:
