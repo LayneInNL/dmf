@@ -178,8 +178,6 @@ class SuperArtificialClass(ArtificialClass):
 
         if isinstance(type2, AnalysisInstance):
             type2_class = type2.tp_class
-        elif isinstance(type2, AnalysisClass):
-            type2_class = type2
         else:
             raise NotImplementedError(type2)
 

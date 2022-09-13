@@ -675,20 +675,30 @@ class Analysis(AnalysisBase):
         assert isinstance(call_stmt, ast.Call), call_stmt
 
         call_lab, call_ctx = program_point
+        tp_address = record(call_lab, call_ctx)
+        ret_lab, dummy_ret_lab = self.get_special_new_return_label(call_lab)
 
         value: Value = new_state.compute_value_of_expr(call_stmt.func)
         # iterate all types to find which is callable
         for type in value:
             if isinstance(type, AnalysisClass):
-                self._detect_flow_class(
-                    program_point, old_state, new_state, dummy_value, type
-                )
+                new_method = analysis_getattr(type, "__new__")
+                for new in new_method:
+                    if isinstance(new, Constructor):
+                        one_direct_res = new(tp_address=tp_address, tp_class=type)
+                        dummy_value.inject(one_direct_res)
+                    elif isinstance(new, AnalysisFunction):
+                        analysis_method = AnalysisMethod(
+                            tp_function=new, tp_instance=type
+                        )
+                        self._add_analysismethod_interflow(
+                            program_point, analysis_method, ret_lab
+                        )
 
-        if len(dummy_value):
-            _, dummy_ret_lab = self.get_special_new_return_label(call_lab)
-            dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
-            new_state.stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
-            self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
+        # if len(dummy_value):
+        dummy_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
+        new_state.stack.write_var(dummy_stmt.id, Namespace_Local, dummy_value)
+        self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     # deal with cases such as name()
     def _detect_flow_call(
@@ -762,35 +772,7 @@ class Analysis(AnalysisBase):
 
         dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_state.stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
-
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
-
-    # deal with class initialization
-    # find __new__ and __init__ method
-    # then use it to create class instance
-    def _detect_flow_class(
-        self,
-        program_point: ProgramPoint,
-        old_state: State,
-        new_state: State,
-        dummy_value: Value,
-        type: AnalysisClass,
-    ):
-        call_lab, call_ctx = program_point
-
-        tp_address = record(call_lab, call_ctx)
-        new_method = analysis_getattr(type, "__new__")
-
-        for new in new_method:
-            if isinstance(new, Constructor):
-                one_direct_res = new(tp_address=tp_address, tp_class=type)
-                dummy_value.inject(one_direct_res)
-            elif isinstance(new, AnalysisFunction):
-                analysis_method = AnalysisMethod(tp_function=new, tp_instance=type)
-                ret_lab, _ = self.get_special_new_return_label(call_lab)
-                self._add_analysismethod_interflow(
-                    program_point, analysis_method, ret_lab
-                )
 
     def transfer(self, program_point: ProgramPoint) -> State | BOTTOM:
         # if old_state is BOTTOM, skip this transfer
