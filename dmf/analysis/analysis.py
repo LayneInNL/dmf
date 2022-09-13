@@ -41,7 +41,12 @@ from dmf.analysis.artificial_basic_types import ArtificialMethod
 from dmf.analysis.builtin_functions import import_a_module
 from dmf.analysis.context_sensitivity import merge, record
 from dmf.analysis.exceptions import ParsingDefaultsError, ParsingKwDefaultsError
-from dmf.analysis.gets_sets import getattrs, _getattr, setattrs, _setattr
+from dmf.analysis.gets_sets import (
+    analysis_getattrs,
+    analysis_getattr,
+    setattrs,
+    _setattr,
+)
 from dmf.analysis.implicit_names import (
     POS_ARG_LEN,
     INIT_FLAG,
@@ -362,7 +367,7 @@ class Analysis(AnalysisBase):
             receiver_value = new_state.compute_value_of_expr(target.value)
             for one_receiver in receiver_value:
                 one_receiver_type = one_receiver.tp_class
-                direct_result, _ = _getattr(one_receiver_type, "__delitem__")
+                direct_result = analysis_getattr(one_receiver_type, "__delitem__")
                 for one_direct in direct_result:
                     # turn into anlaysis method
                     if isinstance(one_direct, AnalysisFunction):
@@ -415,7 +420,7 @@ class Analysis(AnalysisBase):
             receiver_value = new_state.compute_value_of_expr(target.value)
             for one_receiver in receiver_value:
                 one_receiver_type = one_receiver.tp_class
-                direct_result, _ = _getattr(one_receiver_type, "__setitem__")
+                direct_result = analysis_getattr(one_receiver_type, "__setitem__")
                 for one_direct in direct_result:
                     if isinstance(one_direct, AnalysisFunction):
                         analysis_method = AnalysisMethod(
@@ -467,7 +472,7 @@ class Analysis(AnalysisBase):
             # dummy return node
             for one_receiver in lhs_value:
                 one_receiver_type = one_receiver.tp_class
-                direct_res, _ = _getattr(one_receiver_type, operator_name)
+                direct_res = analysis_getattr(one_receiver_type, operator_name)
                 for one_direct_res in direct_res:
                     # typeshed function
                     if isinstance(one_direct_res, TypeshedFunction):
@@ -494,7 +499,7 @@ class Analysis(AnalysisBase):
                 unary_method_name = unary_methods[type(expr.op)]
                 receiver_value = new_state.compute_value_of_expr(expr.operand)
                 for one_receiver in receiver_value:
-                    direct_res, _ = _getattr(one_receiver, unary_method_name)
+                    direct_res = analysis_getattr(one_receiver, unary_method_name)
                     for one_direct_res in direct_res:
                         # typeshed function
                         if isinstance(one_direct_res, TypeshedFunction):
@@ -533,8 +538,7 @@ class Analysis(AnalysisBase):
         elif isinstance(expr, ast.Attribute):
             # compute receiver value
             lhs_value = new_state.compute_value_of_expr(expr.value)
-            direct_result, descriptor_result = getattrs(lhs_value, expr.attr)
-            dummy_value.inject(direct_result)
+            descriptor_result = analysis_getattrs(lhs_value, expr.attr)
 
             # add flows of possible descriptors
             for descriptor in descriptor_result:
@@ -542,10 +546,8 @@ class Analysis(AnalysisBase):
                     self._add_analysisfunction_interflow(
                         program_point, descriptor.tp_function, ret_lab
                     )
-                elif descriptor is Any:
-                    logger.info("Here the descriptor is Any")
                 else:
-                    raise NotImplementedError(descriptor)
+                    dummy_value.inject(descriptor)
         elif isinstance(expr, ast.Subscript):
             # deal with something = x.y
             # at first compute x
@@ -554,7 +556,7 @@ class Analysis(AnalysisBase):
             for each_receiver in receiver_value:
                 each_subscript_type = each_receiver.tp_class
                 # then find __getitem__ based on its type
-                res, descr_res = _getattr(each_subscript_type, "__getitem__")
+                res = analysis_getattr(each_subscript_type, "__getitem__")
                 for each_res in res:
                     # special methods can be user-defined functions
                     if isinstance(each_res, AnalysisFunction):
@@ -719,7 +721,7 @@ class Analysis(AnalysisBase):
             elif isinstance(type, AnalysisMethod):
                 self._add_analysismethod_interflow(program_point, type, ret_lab)
             elif isinstance(type, AnalysisInstance):
-                one_direct_result, _ = _getattr(type.tp_class, "__call__")
+                one_direct_result = analysis_getattr(type.tp_class, "__call__")
                 for one in one_direct_result:
                     if isinstance(one, AnalysisFunction):
                         one_method = AnalysisMethod(tp_function=one, tp_instance=type)
@@ -777,7 +779,7 @@ class Analysis(AnalysisBase):
         call_lab, call_ctx = program_point
 
         tp_address = record(call_lab, call_ctx)
-        new_method, _ = _getattr(type, "__new__")
+        new_method = analysis_getattr(type, "__new__")
 
         for new in new_method:
             if isinstance(new, Constructor):
@@ -972,7 +974,7 @@ class Analysis(AnalysisBase):
             raise NotImplementedError(call_expr)
         elif isinstance(call_expr, ast.Attribute):
             receiver_value = new_state.compute_value_of_expr(call_expr.value)
-            _, descriptor_result = getattrs(receiver_value, call_expr.attr)
+            descriptor_result = analysis_getattrs(receiver_value, call_expr.attr)
             for descriptor in descriptor_result:
                 if isinstance(descriptor, AnalysisDescriptor):
                     args = descriptor.tp_args
@@ -1222,7 +1224,7 @@ class Analysis(AnalysisBase):
             name = alias.name
             asname = alias.asname
             for module in modules:
-                direct_res, _ = _getattr(module, name)
+                direct_res = analysis_getattr(module, name)
                 if len(direct_res) == 0:
                     sub_module_name = f"{stmt.module}.{name}"
                     sub_module = import_a_module(sub_module_name, package, stmt.level)

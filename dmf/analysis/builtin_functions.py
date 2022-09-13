@@ -32,7 +32,7 @@ from dmf.analysis.artificial_basic_types import (
     ArtificialFunction,
 )
 from dmf.analysis.context_sensitivity import record
-from dmf.analysis.gets_sets import _getattr
+from dmf.analysis.gets_sets import analysis_getattr
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.typeshed_types import (
     parse_typeshed_module,
@@ -166,7 +166,7 @@ def _setup():
         value = Value()
         for obj in objs:
             obj_type = obj.tp_class
-            direct_res, _ = _getattr(obj_type, "__iter__")
+            direct_res = analysis_getattr(obj_type, "__iter__")
             for one_direct_res in direct_res:
                 if isinstance(one_direct_res, ArtificialFunction):
                     one_res = one_direct_res(objs)
@@ -205,7 +205,7 @@ def _setup():
     def next(objs, default=None):
         value = Value()
         for obj in objs:
-            direct_res, _ = _getattr(obj, "__next__")
+            direct_res = analysis_getattr(obj, "__next__")
             for one_direct_res in direct_res:
                 if isinstance(one_direct_res, ArtificialFunction):
                     one_res = one_direct_res(type_2_value(obj))

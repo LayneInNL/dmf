@@ -29,7 +29,7 @@ from dmf.analysis.analysis_types import (
     Int_Type,
 )
 from dmf.analysis.exceptions import ParsingDefaultsError, ParsingKwDefaultsError
-from dmf.analysis.gets_sets import _getattr
+from dmf.analysis.gets_sets import analysis_getattr
 from dmf.analysis.heap import Heap
 from dmf.analysis.implicit_names import POS_ARG_LEN, MODULE_NAME_FLAG
 from dmf.analysis.stack import Stack, Frame
@@ -121,7 +121,7 @@ class State:
             value = Value()
             receiver_value = self.compute_value_of_expr(expr.value)
             for one_receiver in receiver_value:
-                one_value, _ = _getattr(one_receiver, expr.attr)
+                one_value = analysis_getattr(one_receiver, expr.attr)
                 value.inject_value(one_value)
             return value
         elif isinstance(expr, ast.Yield):
