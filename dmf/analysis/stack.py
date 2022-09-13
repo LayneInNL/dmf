@@ -17,12 +17,11 @@ from __future__ import annotations
 import sys
 from typing import List
 
-from dmf.analysis.implicit_names import MODULE_NAME_FLAG
+from dmf.analysis.analysis_types import artificial_namespace
 from dmf.analysis.namespace import (
     Namespace,
-    Var,
-    LocalVar,
 )
+from dmf.analysis.symbol_table import Var, LocalVar, SymbolTable
 from dmf.analysis.value import Value
 
 Namespace_Global = "global"
@@ -32,7 +31,9 @@ Namespace_Local = "local"
 builtin_modules = sys.analysis_typeshed_modules.read_value("builtins")
 assert len(builtin_modules) == 1
 builtin_module = builtin_modules.value_2_list()[0]
-f_builtins = builtin_module.tp_dict
+f_builtins2 = builtin_module.tp_dict
+
+f_builtins1 = artificial_namespace
 
 
 class Frame:
@@ -113,30 +114,17 @@ class Frame:
 
     def _read_global_namespace(self, name: str) -> Value:
         if name in self.f_globals:
-            var = self.f_globals.read_var_type(name)
-            if isinstance(var, LocalVar):
-                return self.f_globals.read_value(name)
-            else:
-                raise AttributeError(name)
+            return self.f_globals.read_value(name)
         raise AttributeError(name)
 
     def _read_builtin_namespace(self, name: str) -> Value:
-        if name in f_builtins:
-            var = f_builtins.read_var_type(name)
-            if isinstance(var, LocalVar):
-                return f_builtins.read_value(name)
-            else:
-                raise AttributeError(name)
-        raise AttributeError(name)
+        if name in f_builtins1:
+            return f_builtins1.read_value(name)
 
-    # raise AttributeError(name)
-    # if name in self.f_builtins:
-    #     var = self.f_builtins.read_var_type(name)
-    #     if isinstance(var, LocalVar):
-    #         return self.f_builtins.read_value(name)
-    #     else:
-    #         raise AttributeError(name)
-    # raise AttributeError(name)
+        if name in f_builtins2:
+            return f_builtins2.read_value(name)
+
+        raise AttributeError(name)
 
     def write_var(self, name: str, scope: str, value: Value):
         if name in self.f_locals:
@@ -145,7 +133,7 @@ class Frame:
                 self.f_locals.write_local_value(name, value)
             else:
                 val = self.f_locals.read_value(name)
-                assert isinstance(val, Namespace)
+                assert isinstance(val, SymbolTable), val
                 val.write_local_value(name, value)
         else:
             if scope == Namespace_Local:
@@ -156,9 +144,8 @@ class Frame:
             elif scope == Namespace_Global:
                 namespace = self._find_global_namespace(name)
                 self.f_locals.write_global_value(name, namespace)
-            elif scope == "special":
+            else:
                 raise NotImplementedError
-                self.f_locals.write_special_value(name, value)
 
     def _find_nonlocal_namespace(self, name: str) -> Namespace:
         parent_frame: Frame = self.f_back
@@ -223,6 +210,9 @@ class Stack:
         return top
 
     def top_frame(self) -> Frame:
+        if not self.frames:
+            print("heere")
+            a = 1
         return self.frames[-1]
 
     def top_namespace_contains(self, name):

@@ -19,6 +19,8 @@ import sys
 from types import FunctionType
 from typing import Tuple
 
+import astor
+
 from dmf.analysis.artificial_basic_types import (
     ArtificialClass,
     ArtificialFunction,
@@ -207,7 +209,7 @@ artificial_namespace.write_local_value("super", type_2_value(Super_Type))
 class PropertyArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args, **kwargs):
         assert len(args) == 4, args
-        fget, fset, fdel, doc, *_ = args
+        fget, fset, fdel, *_ = args
         return PropertyAnalysisInstance(tp_address, tp_class, fget, fset, fdel)
 
 
@@ -1170,21 +1172,28 @@ class TypeExprVisitor(ast.NodeVisitor):
                     else:
                         value.inject(one_curr)
         elif isinstance(self.typeshed, TypeshedAssign):
-            curr_value = self.visit(self.typeshed.tp_code)
-            if self.typeshed.is_annassign:
-                for one_curr in curr_value:
-                    if isinstance(one_curr, TypeshedClass):
-                        one_curr_instance = one_curr()
-                        value.inject(one_curr_instance)
-                    else:
-                        value.inject(one_curr)
+            try:
+                curr_value = self.visit(self.typeshed.tp_code)
+            except RecursionError:
+                return Value.make_any()
             else:
-                value.inject(curr_value)
+                if self.typeshed.is_annassign:
+                    for one_curr in curr_value:
+                        if isinstance(one_curr, TypeshedClass):
+                            one_curr_instance = one_curr()
+                            value.inject(one_curr_instance)
+                        else:
+                            value.inject(one_curr)
+                else:
+                    value.inject(curr_value)
         elif isinstance(self.typeshed, TypeshedInstance):
             value.inject(self.typeshed)
         else:
             raise NotImplementedError(self.typeshed)
         return value
+
+    def generic_visit(self, node: ast.AST):
+        raise NotImplementedError(astor.to_source(node))
 
     def visit_BinOp(self, node: ast.BinOp):
         value = Value()
@@ -1195,6 +1204,9 @@ class TypeExprVisitor(ast.NodeVisitor):
         rhs_value = self.visit(node.right)
         value.inject(rhs_value)
         return value
+
+    def visit_Call(self, node: ast.Call):
+        return Value.make_any()
 
     def visit_Num(self, node: ast.Num):
         if isinstance(node.n, int):
@@ -1253,38 +1265,8 @@ class TypeExprVisitor(ast.NodeVisitor):
     def visit_Index(self, node: ast.Index):
         return self.visit(node.value)
 
-    def visit_Starred(self, node: ast.Starred):
-        raise NotImplementedError
-
-    _builtin_name_mapping = {
-        "bool": Bool_Type(),
-        "int": Int_Type(),
-        "float": Float_Type(),
-        "str": Str_Type(),
-        "bytes": Bytes_Type(),
-        "bytearray": ByteArray_Type(),
-    }
-    _builtin_container_mapping = {
-        "list": List_Type,
-        "tuple": Tuple_Type,
-        "set": Set_Type,
-        "frozenset": Frozenset_Type,
-        "dict": Dict_Type,
-    }
-
     def visit_Name(self, node: ast.Name):
         id = node.id
-        # if id in self._builtin_name_mapping:
-        #     return type_2_value(self._builtin_name_mapping[id])
-        # elif id in self._builtin_container_mapping:
-        #     container_type = self._builtin_container_mapping[id]
-        #     label, context = sys.program_point
-        #     heap_address = record(label, context)
-        #     list_object = container_type(heap_address, List_Type, typeshed_init=True)
-        #     value = type_2_value(list_object)
-        #     return value
-        # elif id == ("range", "memoryview", "complex"):
-        #     raise NotImplementedError
         if id == "Any":
             return Value.make_any()
         elif id in builtin_module_dict:

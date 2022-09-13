@@ -15,36 +15,11 @@ from __future__ import annotations
 
 import sys
 
+from dmf.analysis.symbol_table import Var, NonlocalVar, GlobalVar, LocalVar, SymbolTable
 from dmf.analysis.value import Value
 
 
-class Var:
-    def __init__(self, name: str):
-        self.name: str = name
-
-    def __hash__(self):
-        return hash(self.name)
-
-    def __eq__(self, other: Var):
-        return self.name == other.name
-
-
-class LocalVar(Var):
-    def __repr__(self):
-        return f"({self.name}, local)"
-
-
-class NonlocalVar(Var):
-    def __repr__(self):
-        return f"({self.name}, nonlocal)"
-
-
-class GlobalVar(Var):
-    def __repr__(self):
-        return f"({self.name}, global)"
-
-
-class Namespace(dict):
+class Namespace(SymbolTable):
     def __repr__(self):
         filtered_dict = {
             key: value for key, value in self.items() if not key.name.startswith("_var")

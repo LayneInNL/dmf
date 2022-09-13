@@ -80,18 +80,19 @@ def _find_name_in_mro(obj_type, name, mros=None) -> Value:
         for cls in tp_mro:
             if cls is MRO_Any:
                 return Value.make_any()
+            elif cls is Any:
+                return Value.make_any()
             else:
                 # tp_dict could belong to AnalysisClass, ArtificialClass and
                 # TypeshedClass
                 if name not in cls.tp_dict:
                     if hasattr(cls, "tp_fallback"):
                         fallback_clses = cls.tp_fallback
-                        assert len(fallback_clses) == 1
-                        fallback_cls = fallback_clses.value_2_list()[0]
-                        if name in fallback_cls.tp_dict:
-                            curr_mro_value = fallback_cls.tp_dict.read_value(name)
-                            all_mro_value.inject(curr_mro_value)
-                            break
+                        for one_fallback in fallback_clses:
+                            if name in one_fallback.tp_dict:
+                                curr_mro_value = one_fallback.tp_dict.read_value(name)
+                                all_mro_value.inject(curr_mro_value)
+                                break
 
                 else:
                     curr_mro_value = cls.tp_dict.read_value(name)
@@ -141,6 +142,8 @@ def _setattr(obj, name, value) -> Value:
     tp = _py_type(obj)
     if isinstance(obj, AnalysisInstance):
         return GenericSetAttr(obj, name, value)
+    elif isinstance(obj, AnalysisClass):
+        return type_setattro(obj, name, value)
     raise NotImplementedError(f"setattr({obj},{name},{value})")
     # # work on class
     # if isinstance(obj, ClassLevel):
@@ -184,6 +187,7 @@ def _getattr(obj, name) -> Tuple[Value, Value]:
             raise NotImplementedError(name)
         return direct_result, descriptor_result
     elif isinstance(obj, TypeshedClass):
+        return Value.make_any(), Value.make_any()
         return type_getattro(obj, name)
     else:
         raise NotImplementedError(obj)
@@ -325,6 +329,8 @@ def type_getattro(type, name) -> Tuple[Value, Value]:
                         class_variable_type_get, descr_value, obj_value, obj_type_value
                     )
                     descr_value.inject(one_descr)
+                elif class_variable_type_get is Any:
+                    descr_value.inject(Value.make_any())
                 else:
                     raise NotImplementedError(f"{type},{name}")
 

@@ -28,8 +28,10 @@ def record(heap: int, ctx: Tuple) -> Tuple:
     :param ctx:  context
     :return: new heap context
     """
-    return ctx[-1:] + (heap,)
+    # return ctx[-1:] + (heap,)
+    return (heap,)
 
 
 def merge(heap: int, hctx: Tuple, ctx: Tuple) -> Tuple:
-    return hctx[-2:]
+    # return hctx[-2:]
+    return hctx[-1:]

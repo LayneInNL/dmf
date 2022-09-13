@@ -65,6 +65,7 @@ from dmf.analysis.state import (
     deepcopy_state,
     Stack,
     Heap,
+    merge_states,
 )
 from dmf.analysis.typeshed_types import (
     TypeshedFunction,
@@ -129,6 +130,7 @@ class Analysis(AnalysisBase):
     def _push_state_to(self, state: State, program_point: ProgramPoint):
         old: State | BOTTOM = self.analysis_list[program_point]
         if not compare_states(state, old):
+            state = merge_states(state, old)
             self.analysis_list[program_point]: State = state
             self.detect_flow(program_point)
             added_program_points = self.generate_flow(program_point)
@@ -540,6 +542,8 @@ class Analysis(AnalysisBase):
                     self._add_analysisfunction_interflow(
                         program_point, descriptor.tp_function, ret_lab
                     )
+                elif descriptor is Any:
+                    logger.info("Here the descriptor is Any")
                 else:
                     raise NotImplementedError(descriptor)
         elif isinstance(expr, ast.Subscript):

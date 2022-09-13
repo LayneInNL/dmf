@@ -11,11 +11,11 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-from dmf.analysis.namespace import LocalVar, Var
+from dmf.analysis.symbol_table import LocalVar, Var, SymbolTable
 from dmf.analysis.value import Value
 
 
-class UnionNamespace(dict):
+class UnionNamespace(SymbolTable):
     def __missing__(self, key):
         self[key] = value = Value()
         return value

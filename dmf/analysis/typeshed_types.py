@@ -72,15 +72,11 @@ class TypeshedModule(Typeshed):
         super().__init__(tp_name, tp_module, tp_qualname)
         self.tp_dict: Namespace = tp_dict
 
+    def __contains__(self, item):
+        return item in self.tp_dict
+
     def custom_getattr(self, name):
         raise NotImplementedError
-        # if name not in self.tp_dict:
-        #     return Value.make_any()
-        # else:
-        #     value = Value()
-        #     one_value = self.tp_dict.read_value(name)
-        #     value.inject(one_value)
-        #     return value
 
     def __repr__(self):
         return f"typeshed module object {self.tp_name}"
@@ -327,14 +323,14 @@ class ModuleVisitor(ast.NodeVisitor):
 
         for alias in node.names:
             if alias.asname is not None:
-                typeshed_possible_importedname = TypeshedImportedName(
+                typeshed_importedname = TypeshedImportedName(
                     tp_name=alias.asname,
                     tp_module=self.module_name,
                     tp_qualname=f"{self.qualname}-{alias.asname}",
                     tp_imported_module=source_module,
                     tp_imported_name=alias.name,
                 )
-                value = type_2_value(typeshed_possible_importedname)
+                value = type_2_value(typeshed_importedname)
                 self.module_dict.write_local_value(alias.asname, value)
             elif alias.name == "*":
                 modules = parse_typeshed_module(module=node.module)
@@ -343,14 +339,14 @@ class ModuleVisitor(ast.NodeVisitor):
                         if not var.name.startswith("_"):
                             self.module_dict.write_local_value(var.name, value)
             else:
-                typeshed_possible_importedname = TypeshedImportedName(
+                typeshed_importedname = TypeshedImportedName(
                     tp_name=alias.name,
                     tp_module=self.module_name,
                     tp_qualname=f"{self.qualname}-{alias.name}",
                     tp_imported_module=source_module,
                     tp_imported_name=alias.name,
                 )
-                value = type_2_value(typeshed_possible_importedname)
+                value = type_2_value(typeshed_importedname)
                 self.module_dict.write_local_value(alias.name, value)
 
 
