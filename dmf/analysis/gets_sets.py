@@ -172,8 +172,8 @@ def _getattr(obj, name) -> Tuple[Value, Value]:
     elif isinstance(obj, ArtificialClass):
         return type_getattro(obj, name)
     # work on class
-    elif isinstance(obj, AnalysisFunction):
-        return GenericGetAttr(obj, name)
+    # elif isinstance(obj, AnalysisFunction):
+    #     return GenericGetAttr(obj, name)
     elif isinstance(obj, (AnalysisModule, TypeshedModule)):
         direct_result, descriptor_result = Value(), Value()
         if name in obj.tp_dict:

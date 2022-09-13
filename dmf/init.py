@@ -14,7 +14,7 @@
 import sys
 
 # https://docs.python.org/3.7/library/sys.html#sys.setrecursionlimit
-sys.setrecursionlimit(10000)
+# sys.setrecursionlimit(10000)
 
 from dmf.flows import construct_CFG
 

@@ -508,27 +508,7 @@ class Analysis(AnalysisBase):
                         elif isinstance(one_direct_res, ArtificialFunction):
                             one_value = one_direct_res(one_receiver)
                             dummy_value.inject(one_value)
-        elif isinstance(
-            expr,
-            (
-                ast.BoolOp,
-                ast.Lambda,
-                ast.IfExp,
-                ast.Call,
-                ast.ListComp,
-                ast.SetComp,
-                ast.DictComp,
-                ast.GeneratorExp,
-                ast.Await,
-                ast.Constant,
-                ast.List,
-                ast.Tuple,
-                ast.Dict,
-                ast.Set,
-                ast.Starred,
-            ),
-        ):
-            raise NotImplementedError(expr)
+
         elif isinstance(expr, ast.Yield):
             one_value = new_state.compute_value_of_expr(expr)
             # used by generators
@@ -547,22 +527,7 @@ class Analysis(AnalysisBase):
             # I looked into the example projects, just return bool is fine.
             one_value = new_state.compute_value_of_expr(expr)
             dummy_value.inject(one_value)
-        elif isinstance(
-            expr,
-            (
-                ast.Str,
-                ast.FormattedValue,
-                ast.JoinedStr,
-                ast.Bytes,
-                ast.NameConstant,
-                ast.Ellipsis,
-                ast.Num,
-                ast.Name,
-                ast.Index,
-            ),
-        ):
-            one_value = new_state.compute_value_of_expr(expr)
-            dummy_value.inject(one_value)
+
         elif isinstance(expr, ast.Attribute):
             # compute receiver value
             lhs_value = new_state.compute_value_of_expr(expr.value)
@@ -613,6 +578,43 @@ class Analysis(AnalysisBase):
                     dummy_value.inject(one_value)
                 else:
                     raise NotImplementedError(one_slice)
+        elif isinstance(
+            expr,
+            (
+                ast.Str,
+                ast.FormattedValue,
+                ast.JoinedStr,
+                ast.Bytes,
+                ast.NameConstant,
+                ast.Ellipsis,
+                ast.Num,
+                ast.Name,
+                ast.Index,
+            ),
+        ):
+            one_value = new_state.compute_value_of_expr(expr)
+            dummy_value.inject(one_value)
+        elif isinstance(
+            expr,
+            (
+                ast.BoolOp,
+                ast.Lambda,
+                ast.IfExp,
+                ast.Call,
+                ast.ListComp,
+                ast.SetComp,
+                ast.DictComp,
+                ast.GeneratorExp,
+                ast.Await,
+                ast.Constant,
+                ast.List,
+                ast.Tuple,
+                ast.Dict,
+                ast.Set,
+                ast.Starred,
+            ),
+        ):
+            raise NotImplementedError(expr)
         else:
             raise NotImplementedError(expr)
 
@@ -739,9 +741,7 @@ class Analysis(AnalysisBase):
 
             # type is a typeshed class, for example, slice
             elif isinstance(type, TypeshedClass):
-                typeshed_instance = TypeshedInstance(
-                    type.tp_name, type.tp_module, type.tp_qualname, type
-                )
+                typeshed_instance = type()
                 dummy_value.inject(typeshed_instance)
             elif isinstance(type, TypeshedFunction):
                 functions = type.functions

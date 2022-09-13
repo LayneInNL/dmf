@@ -87,9 +87,12 @@ class TypeshedModule(Typeshed):
 
 
 class TypeshedAssign(Typeshed):
-    def __init__(self, tp_name, tp_module, tp_qualname, tp_code: ast.expr):
+    def __init__(
+        self, tp_name, tp_module, tp_qualname, tp_code: ast.expr, is_annassign
+    ):
         super().__init__(tp_name, tp_module, tp_qualname)
         self.tp_code: ast.expr = tp_code
+        self.is_annassign: bool = is_annassign
 
 
 class TypeshedClass(Typeshed):
@@ -105,12 +108,10 @@ class TypeshedClass(Typeshed):
 
     def __call__(self, *args, **kwargs):
         value = Value()
-        instance_name = f"{self.tp_name}.object"
-        instance_qual_name = f"{self.tp_qualname}.object"
         an_object = TypeshedInstance(
-            tp_name=instance_name,
+            tp_name=f"{self.tp_name}.object",
             tp_module=self.tp_module,
-            tp_qualname=instance_qual_name,
+            tp_qualname=f"{self.tp_qualname}.object",
             tp_class=self,
         )
         value.inject(an_object)
@@ -153,8 +154,8 @@ class TypeshedImportedName(Typeshed):
 # typeshed instance
 class TypeshedInstance(Typeshed):
     def __init__(self, tp_name: str, tp_module: str, tp_qualname: str, tp_class):
-        tp_name = f"{tp_name}"
-        tp_qualname = f"{tp_qualname}"
+        tp_name = tp_name
+        tp_qualname = tp_qualname
         super().__init__(tp_name, tp_module, tp_qualname)
         self.tp_class = tp_class
         self.tp_dict: Namespace = Namespace()
@@ -174,7 +175,7 @@ def parse_typeshed_module(module: str):
     # parse module
     module_ast = ast.parse(module_content)
     # setup parsing env
-    visitor = ModuleVisitor(module, module_ast)
+    visitor = ModuleVisitor(module, module_ast, qualified_name=module)
     module_dict = visitor.build()
     typeshed_module = TypeshedModule(
         tp_name=module, tp_module=module, tp_qualname=module, tp_dict=module_dict
@@ -187,11 +188,13 @@ def parse_typeshed_module(module: str):
 
 
 class ModuleVisitor(ast.NodeVisitor):
-    def __init__(self, module: str, module_ast: ast.Module) -> None:
+    def __init__(
+        self, module: str, module_ast: ast.Module, qualified_name: str
+    ) -> None:
         self.module_name: str = module
         self.module_ast = module_ast
         self.module_dict = Namespace()
-        self.qualname = module
+        self.qualname = qualified_name
 
     def build(self):
         self.visit(self.module_ast)
@@ -236,7 +239,9 @@ class ModuleVisitor(ast.NodeVisitor):
         class_name = node.name
 
         children_name_extractor = ModuleVisitor(
-            f"{self.module_name}.{class_name}", ast.Module(body=node.body)
+            self.module_name,
+            ast.Module(body=node.body),
+            qualified_name=f"{self.module_dict}.{node.name}",
         )
         class_body_dict = children_name_extractor.build()
 
@@ -257,6 +262,7 @@ class ModuleVisitor(ast.NodeVisitor):
                 tp_module=self.module_name,
                 tp_qualname=f"{self.qualname}.{target.id}",
                 tp_code=node.value,
+                is_annassign=False,
             )
             value = type_2_value(typeshed_assign)
             self.module_dict.write_local_value(target.id, value)
@@ -268,6 +274,7 @@ class ModuleVisitor(ast.NodeVisitor):
             tp_module=self.module_name,
             tp_qualname=f"{self.qualname}.{target.id}",
             tp_code=node.annotation,
+            is_annassign=True,
         )
         value = type_2_value(typeshed_annassign)
         self.module_dict.write_local_value(target.id, value)
@@ -330,7 +337,11 @@ class ModuleVisitor(ast.NodeVisitor):
                 value = type_2_value(typeshed_possible_importedname)
                 self.module_dict.write_local_value(alias.asname, value)
             elif alias.name == "*":
-                raise NotImplementedError
+                modules = parse_typeshed_module(module=node.module)
+                for module in modules:
+                    for var, value in module.tp_dict.items():
+                        if not var.name.startswith("_"):
+                            self.module_dict.write_local_value(var.name, value)
             else:
                 typeshed_possible_importedname = TypeshedImportedName(
                     tp_name=alias.name,

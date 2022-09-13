@@ -11,7 +11,13 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import resource
+
+resource.setrlimit(resource.RLIMIT_STACK, (2**30, -1))
 import sys
+
+# https://docs.python.org/3.7/library/sys.html#sys.setrecursionlimit
+sys.setrecursionlimit(10000)
 
 import init
 from dmf.analysis.builtin_functions import _setup
