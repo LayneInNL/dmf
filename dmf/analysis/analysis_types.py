@@ -496,17 +496,7 @@ artificial_namespace.write_local_value("set", type_2_value(Set_Type))
 
 class FrozensetArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args, **kwargs):
-        if typeshed_init in kwargs:
-            init_container_value = Value.make_any()
-        elif len(args) == 0:
-            init_container_value = Value()
-        else:
-            init_container_value = Value().make_any()
-        logger.critical(args)
-        tp_dict = sys.heap.write_instance_to_heap(tp_address)
-        return FrozenSetAnalysisInstance(
-            tp_address, tp_class, tp_dict, init_container_value
-        )
+        return FrozenSetAnalysisInstance(tp_address, tp_class)
 
 
 Frozenset_Type = FrozensetArtificialClass("builtins.frozenset")
@@ -1191,109 +1181,104 @@ class TypeExprVisitor(ast.NodeVisitor):
         return value
 
     def generic_visit(self, node: ast.AST):
+        return Value.make_any()
         raise NotImplementedError(astor.to_source(node))
 
-    def visit_BinOp(self, node: ast.BinOp):
-        value = Value()
-        if not isinstance(node.op, ast.BitOr):
-            raise NotImplementedError
-        lhs_value = self.visit(node.left)
-        value.inject(lhs_value)
-        rhs_value = self.visit(node.right)
-        value.inject(rhs_value)
-        return value
-
-    def visit_Call(self, node: ast.Call):
-        return Value.make_any()
-
-    def visit_Num(self, node: ast.Num):
-        if isinstance(node.n, int):
-            value = type_2_value(Int_Instance)
-            return value
-        elif isinstance(node.n, float):
-            value = type_2_value(Float_Instance)
-            return value
-        else:
-            raise NotImplementedError(node)
-
-    def visit_Str(self, node: ast.Str):
-        value = type_2_value(Str_Instance)
-        return value
-
-    def visit_Bytes(self, node: ast.Bytes):
-        value = type_2_value(Bytes_Instance)
-        return value
-
-    def visit_NameConstant(self, node: ast.NameConstant):
-        if node.value is not None:
-            value = type_2_value(Bool_Instance)
-            return value
-        else:
-            value = type_2_value(None_Instance)
-            return value
-
-    def visit_Ellipsis(self, node: ast.Ellipsis):
-        value = type_2_value(Ellipsis_Instance)
-        return value
-
-    def visit_Constant(self, node: ast.Constant):
-        raise NotImplementedError
-
-    def visit_Attribute(self, node: ast.Attribute):
-        value = Value()
-
-        # compute receiver value
-        receiver_value = self.visit(node.value)
-        for one_receiver in receiver_value:
-            if node.attr in one_receiver.tp_dict:
-                attr_value = one_receiver.tp_dict.read_value(node.attr)
-                value.inject(attr_value)
-            else:
-                raise AttributeError(node)
-        refined_value = refine_value(value)
-        return refined_value
-
-    def visit_Subscript(self, node: ast.Subscript):
-        if not isinstance(node.value, ast.Name):
-            raise NotImplementedError(node)
-        if node.value.id == "Literal":
-            return self.visit(node.slice)
-        return self.visit(ast.Name(id="Any"))
-
-    def visit_Index(self, node: ast.Index):
-        return self.visit(node.value)
-
-    def visit_Name(self, node: ast.Name):
-        id = node.id
-        if id == "Any":
-            return Value.make_any()
-        elif id in builtin_module_dict:
-            value = Value()
-            blt_value = builtin_module_dict.read_value(id)
-            for one_value in blt_value:
-                res = TypeExprVisitor(one_value).refine()
-                value.inject(res)
-            return value
-        else:
-            # check if it's in module
-            value = Value()
-            # get typeshed module
-            modules: Value = parse_typeshed_module(self.typeshed.tp_module)
-            for module in modules:
-                if id in module.tp_dict:
-                    name_value = module.tp_dict.read_value(id)
-                    value.inject(name_value)
-                else:
-                    raise AttributeError(self.typeshed.tp_module, id)
-            refined_value = refine_value(value)
-            return refined_value
-
-    def visit_Tuple(self, node: ast.Tuple):
-        value = Value()
-        for elt in node.elts:
-            one_value = self.visit(elt)
-            value.inject(one_value)
-        return value
+    # def visit_BinOp(self, node: ast.BinOp):
+    #     value = Value()
+    #     if not isinstance(node.op, ast.BitOr):
+    #         raise NotImplementedError
+    #     lhs_value = self.visit(node.left)
+    #     value.inject(lhs_value)
+    #     rhs_value = self.visit(node.right)
+    #     value.inject(rhs_value)
+    #     return value
+    #
+    # def visit_Call(self, node: ast.Call):
+    #     return Value.make_any()
+    #
+    # def visit_Num(self, node: ast.Num):
+    #     if isinstance(node.n, int):
+    #         value = type_2_value(Int_Instance)
+    #         return value
+    #     elif isinstance(node.n, float):
+    #         value = type_2_value(Float_Instance)
+    #         return value
+    #     else:
+    #         raise NotImplementedError(node)
+    #
+    # def visit_Str(self, node: ast.Str):
+    #     value = type_2_value(Str_Instance)
+    #     return value
+    #
+    # def visit_Bytes(self, node: ast.Bytes):
+    #     value = type_2_value(Bytes_Instance)
+    #     return value
+    #
+    # def visit_NameConstant(self, node: ast.NameConstant):
+    #     if node.value is not None:
+    #         value = type_2_value(Bool_Instance)
+    #         return value
+    #     else:
+    #         value = type_2_value(None_Instance)
+    #         return value
+    #
+    # def visit_Attribute(self, node: ast.Attribute):
+    #     value = Value()
+    #
+    #     # compute receiver value
+    #     receiver_value = self.visit(node.value)
+    #     for one_receiver in receiver_value:
+    #         if node.attr in one_receiver.tp_dict:
+    #             attr_value = one_receiver.tp_dict.read_value(node.attr)
+    #             value.inject(attr_value)
+    #         else:
+    #             raise AttributeError(node)
+    #     refined_value = refine_value(value)
+    #     return refined_value
+    #
+    # def visit_Subscript(self, node: ast.Subscript):
+    #     if not isinstance(node.value, ast.Name):
+    #         raise NotImplementedError(node)
+    #     if node.value.id == "Literal":
+    #         return self.visit(node.slice)
+    #     return self.visit(ast.Name(id="Any"))
+    #
+    # def visit_Name(self, node: ast.Name):
+    #     id = node.id
+    #     if id in ("Any", "Union", "Callable", "TypeVar", "Generic"):
+    #         return Value.make_any()
+    #
+    #     if id in builtin_module_dict:
+    #         value = Value()
+    #         blt_value = builtin_module_dict.read_value(id)
+    #         for one_value in blt_value:
+    #             res = TypeExprVisitor(one_value).refine()
+    #             value.inject(res)
+    #         return value
+    #     else:
+    #         # check if it's in module
+    #         value = Value()
+    #         # get typeshed module
+    #         modules: Value = parse_typeshed_module(self.typeshed.tp_module)
+    #         for module in modules:
+    #             if id in module.tp_dict:
+    #                 name_value = module.tp_dict.read_value(id)
+    #                 value.inject(name_value)
+    #             else:
+    #                 raise AttributeError(self.typeshed.tp_module, id)
+    #         refined_value = refine_value(value)
+    #         return refined_value
+    #
+    # def visit_Index(self, node: ast.Index):
+    #     return self.visit(node.value)
+    #
+    # def visit_Tuple(self, node: ast.Tuple):
+    #     value = Value()
+    #     for elt in node.elts:
+    #         one_value = self.visit(elt)
+    #         value.inject(one_value)
+    #     return value
 
 
 # further parse types

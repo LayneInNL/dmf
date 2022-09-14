@@ -23,6 +23,26 @@ from dmf.analysis.typeshed import get_stub_file
 from dmf.analysis.value import type_2_value, Value
 
 
+class _Typeshed_Type_Type:
+    def __init__(self):
+        self.tp_class = self
+        self.tp_dict = Namespace()
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
+
+
+Typeshed_Type_Type = _Typeshed_Type_Type()
+
+
 class UniqueTypeshedObject(type):
     typeshed_object_dict = {}
 
@@ -219,10 +239,6 @@ class ModuleVisitor(ast.NodeVisitor):
 
         functions: Value = self.module_dict.read_value(function_name)
 
-        if node.decorator_list and not is_property:
-            # other decorators, ignore
-            return
-
         # as far as I know, the decorators of
         # ast.FunctionDef in typeshed could be classified as three categories:
         # 1. Normal functions(without decorators)
@@ -237,7 +253,7 @@ class ModuleVisitor(ast.NodeVisitor):
         children_name_extractor = ModuleVisitor(
             self.module_name,
             ast.Module(body=node.body),
-            qualified_name=f"{self.module_dict}.{node.name}",
+            qualified_name=f"{self.module_name}.{node.name}",
         )
         class_body_dict = children_name_extractor.build()
 

@@ -174,7 +174,8 @@ def analysis_getattr(obj, name) -> Value:
     # elif isinstance(obj, AnalysisFunction):
     #     return GenericGetAttr(obj, name)
     elif isinstance(obj, TypeshedClass):
-        return Value.make_any()
+        one_return = type_getattro(obj, name)
+        return one_return
     else:
         raise NotImplementedError(obj)
 
