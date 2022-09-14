@@ -314,9 +314,10 @@ def _resolve_name(name, package, level):
 def import_a_module(name, package=None, level=0) -> Value:
     import isort
 
+    value = Value()
     # package is needed
-    if level > 0:
-        name = _resolve_name(name, package, level)
+    # if level > 0:
+    #     name = _resolve_name(name, package, level)
     category = isort.place_module(name)
     # DEFAULT: Tuple[str, ...] = (FUTURE, STDLIB, THIRDPARTY, FIRSTPARTY, LOCALFOLDER)
     if category == "FUTURE":
@@ -327,8 +328,10 @@ def import_a_module(name, package=None, level=0) -> Value:
         else:
             module = import_a_module_from_typeshed(name)
     else:
-        module = import_module(name)
+        if not name.startswith(sys.first_party):
+            return Value.make_any()
+        else:
+            module = import_module(name)
 
-    value = Value()
     value.inject(module)
     return value

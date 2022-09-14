@@ -13,6 +13,8 @@
 #  limitations under the License.
 import resource
 
+from dmf.log.logger import logger
+
 resource.setrlimit(resource.RLIMIT_STACK, (2**30, -1))
 import sys
 
@@ -41,9 +43,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     main_path = args.main
     project_path = args.project
-    if not main_path:
+    if not main_path or not project_path:
         exit()
 
+    sys.first_party = os.path.basename(os.path.normpath(project_path))
+    logger.info(f"first party: {sys.first_party}")
     sys.analysis_path.append(project_path)
 
     # get main module absolute path

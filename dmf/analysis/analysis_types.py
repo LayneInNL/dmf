@@ -873,7 +873,7 @@ class AnalysisInstance(Analysis):
         return sys.heap[self.tp_address]
 
     def __repr__(self):
-        return f"{self.tp_class.tp_uuid} object"
+        return f"{self.tp_address} object"
 
 
 class AnalysisClass(Analysis):

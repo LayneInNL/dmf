@@ -706,12 +706,12 @@ def _load_backward_compatible(spec):
 
 
 def _load_unlocked(spec):
-    # A helper for direct use by the import system.
-    if spec.loader is not None:
-        # raise NotImplementedError(spec)
-        # not a namespace package
-        if not hasattr(spec.loader, "exec_module"):
-            return _load_backward_compatible(spec)
+    # # A helper for direct use by the import system.
+    # if spec.loader is not None:
+    #     # raise NotImplementedError(spec)
+    #     # not a namespace package
+    #     if not hasattr(spec.loader, "exec_module"):
+    #         return _load_backward_compatible(spec)
 
     module = module_from_spec(spec)
     with _installed_safely(module):

@@ -51,11 +51,13 @@ class Namespace(SymbolTable):
         for var, _ in self.items():
             if name == var.name:
                 return var
+        raise AttributeError(name)
 
     def read_value(self, name: str) -> Value:
         for var, val in self.items():
             if name == var.name:
                 return val
+        raise AttributeError(name)
 
     def write_local_value(self, name: str, value: Value):
         assert isinstance(value, Value), value

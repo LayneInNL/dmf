@@ -1170,19 +1170,31 @@ class Analysis(AnalysisBase):
     ):
         name = stmt.names[0].name
         asname = stmt.names[0].asname
+
+        # execute normal import
+        module = import_a_module(name)
+
+        # import x.y
         if asname is None:
-            # execute normal import
-            import_a_module(name)
             # get top-level name
             name = name.partition(".")[0]
             # but we only want top-level name
             module = import_a_module(name)
+        # import x.y as z
         else:
             name = asname
-            module = import_a_module(name)
         new_state.stack.write_var(name, Namespace_Local, module)
         logger.debug("Import module {}".format(module))
         return new_state
+
+    @staticmethod
+    def _resolve_name(name, package, level):
+        """Resolve a relative module name to an absolute one."""
+        bits = package.rsplit(".", level - 1)
+        if len(bits) < level:
+            raise ValueError("attempted relative import beyond top-level package")
+        base = bits[0]
+        return "{}.{}".format(base, name) if name else base
 
     # from xxx import yyy, zzz as aaa
     def transfer_ImportFrom(
@@ -1192,25 +1204,31 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.ImportFrom,
     ):
-        package = None
-        if stmt.level > 0:
-            package: str = getattr(
-                new_state.stack.frames[-1].f_globals, MODULE_PACKAGE_FLAG
-            )
-
         new_stack = new_state.stack
-        logger.debug("ImportFrom module {}".format(stmt.module))
-        modules: Value = import_a_module(stmt.module, package, stmt.level)
+        if stmt.level > 0:
+            package: str = getattr(new_stack.frames[-1].f_globals, MODULE_PACKAGE_FLAG)
+            name = stmt.module if stmt.module else ""
+            resolved_module = self._resolve_name(name, package, stmt.level)
+            stmt.module = resolved_module
+        modules: Value = import_a_module(stmt.module)
 
         for alias in stmt.names:
             name = alias.name
+            if name == "http":
+                pass
+                pass
             asname = alias.asname
             for module in modules:
-                direct_res = analysis_getattr(module, name)
-                if len(direct_res) == 0:
+                try:
+                    direct_res = module.tp_dict.read_value(name)
+                except AttributeError:
                     sub_module_name = f"{stmt.module}.{name}"
-                    sub_module = import_a_module(sub_module_name, package, stmt.level)
-                    direct_res.inject(sub_module)
+                    direct_res = import_a_module(sub_module_name)
+                # direct_res = analysis_getattr(module, name)
+                # if len(direct_res) == 0:
+                #     sub_module_name = f"{stmt.module}.{name}"
+                #     sub_module = import_a_module(sub_module_name, package, stmt.level)
+                #     direct_res.inject(sub_module)
                 if asname is None:
                     new_stack.write_var(name, Namespace_Local, direct_res)
                 else:
