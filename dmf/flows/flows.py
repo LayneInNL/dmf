@@ -498,19 +498,27 @@ class CFGVisitor(ast.NodeVisitor):
             decomposed_expr_sequence = decomposed_expr_sequence[:-1]
             self.populate_body(decomposed_expr_sequence)
 
-            call_node = self.curr_block
-            add_stmt(call_node, delete_node)
-            return_node = self.add_edge(call_node.bid, self.new_block().bid)
-            add_stmt(return_node, delete_node)
-            dummy_return_node = self.add_edge(return_node.bid, self.new_block().bid)
-            add_stmt(dummy_return_node, delete_node)
+            if isinstance(target, ast.Name):
+                add_stmt(self.curr_block, delete_node)
+                self.curr_block = self.add_edge(
+                    self.curr_block.bid, self.new_block().bid
+                )
+            else:
+                call_node = self.curr_block
+                add_stmt(call_node, delete_node)
+                return_node = self.add_edge(call_node.bid, self.new_block().bid)
+                add_stmt(return_node, delete_node)
+                dummy_return_node = self.add_edge(return_node.bid, self.new_block().bid)
+                add_stmt(dummy_return_node, delete_node)
 
-            self.cfg.magic_del_inter_flows.add(
-                (call_node.bid, return_node.bid, dummy_return_node.bid)
-            )
-            self.cfg.dummy_labels.add(dummy_return_node.bid)
+                self.cfg.magic_del_inter_flows.add(
+                    (call_node.bid, return_node.bid, dummy_return_node.bid)
+                )
+                self.cfg.dummy_labels.add(dummy_return_node.bid)
 
-            self.curr_block = self.add_edge(dummy_return_node.bid, self.new_block().bid)
+                self.curr_block = self.add_edge(
+                    dummy_return_node.bid, self.new_block().bid
+                )
 
     def _visit_Call(self, node: ast.Assign):
         assert isinstance(node.value, ast.Call)
