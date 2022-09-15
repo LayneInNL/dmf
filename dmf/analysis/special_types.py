@@ -64,6 +64,16 @@ class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
     def __repr__(self):
         return "Any"
 
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    # Any[xxx]
+    def __getitem__(self, item):
+        return self
+
     def __getattr__(self, item):
         return self
 
