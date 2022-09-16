@@ -512,7 +512,9 @@ class CFGVisitor(ast.NodeVisitor):
             node.value = ast.NameConstant(value=None)
         seq, node.value, deleted_vars = self.decompose_expr(node.value)
         self.populate_body(seq)
+
         add_stmt(self.curr_block, node)
+        self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
         self.populate_body(deleted_vars)
         if self.final_body_entry_stack and self.final_body_exit_stack:
