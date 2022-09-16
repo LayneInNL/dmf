@@ -15,12 +15,14 @@
 from __future__ import annotations
 
 import ast
-import os
 from collections import defaultdict
 from typing import Dict, List, Tuple, Set, Optional, Any
 
 import astor
 import graphviz as gv
+
+VisitedExprRes = Tuple[List, List]
+DecomposedExprRes = Tuple[List, ast.Name, List]
 
 
 class TempVariableName:
@@ -30,6 +32,11 @@ class TempVariableName:
     def generate(cls) -> str:
         cls.counter += 1
         return f"_var{cls.counter}"
+
+    @classmethod
+    def generate_name_node(cls) -> ast.Name:
+        cls.counter += 1
+        return ast.Name(id=f"_var{cls.counter}")
 
 
 class BlockId:
@@ -110,7 +117,7 @@ class CFG:
         self.flows: Set[Tuple[int, int]] = set()
 
         self.call_return_inter_flows: Set[
-            Tuple[int, int, int, int, int, int, int, int, int]
+            Tuple[int, int, int, int, int, int, int, int, int, int, int]
         ] = set()
         self.classdef_inter_flows: Set[Tuple[int, int]] = set()
         self.special_init_inter_flows: Set[Tuple[int, int, int]] = set()
@@ -163,8 +170,10 @@ class CFG:
                 id4,
                 id5,
                 id6,
+                deleted_var1,
                 id7,
                 id8,
+                deleted_var2,
                 id9,
             ) in self.call_return_inter_flows:
                 if id1 == block.bid:
@@ -320,8 +329,10 @@ class CFGVisitor(ast.NodeVisitor):
             init,
             init_return,
             init_dummy_return,
+            deleted_first_var,
             l4,
             l5,
+            deleted_second_var,
             dummy2,
         ) in self.cfg.call_return_inter_flows:
             self.cfg.flows -= {(l1, l2), (l4, l5)}
@@ -427,12 +438,15 @@ class CFGVisitor(ast.NodeVisitor):
         node.decorator_list = []
 
         # deal with node.arguments
-        seq = self.visit_arguments(node.args)
+        seq, deleted_vars = self.visit_arguments(node.args)
         self.populate_body(seq)
 
         add_stmt(self.curr_block, node)
         self.add_FuncCFG(node)
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        for deleted_var in deleted_vars:
+            add_stmt(self.curr_block, deleted_var)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
         self.visit_DecoratorList(node, decorator_list)
 
@@ -444,22 +458,25 @@ class CFGVisitor(ast.NodeVisitor):
             stmt_sequence.append(ast.Assign(targets=targets, value=make_decorator))
         self.populate_body(stmt_sequence)
 
-    def visit_arguments(self, node: ast.arguments) -> Any:
+    def visit_arguments(self, node: ast.arguments) -> VisitedExprRes:
         seq = []
+        vars = []
 
         # defaults args
         defaults: List[ast.expr] = node.defaults
         for idx, expr in enumerate(defaults):
-            seq1, defaults[idx] = self.decompose_expr(expr)
+            seq1, defaults[idx], vars1 = self.decompose_expr(expr)
             seq.extend(seq1)
+            vars.extend(vars1)
 
         # kw_defaults args
         kw_defaults: List[ast.expr] = node.kw_defaults
         for idx, expr in enumerate(kw_defaults):
-            seq1, kw_defaults[idx] = self.decompose_expr(expr)
+            seq1, kw_defaults[idx], vars1 = self.decompose_expr(expr)
             seq.extend(seq1)
+            vars.extend(vars1)
 
-        return seq
+        return seq, vars
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         decorator_list = node.decorator_list
@@ -528,7 +545,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         # __new__ return node
         new_node = self.add_edge(call_node.bid, self.new_block().bid)
-        new_var = ast.Name(id=TempVariableName.generate())
+        new_var = TempVariableName.generate_name_node()
         add_stmt(new_node, new_var)
 
         # __new__ dummy return node
@@ -544,7 +561,7 @@ class CFGVisitor(ast.NodeVisitor):
         init_attribute_assign_node = self.add_edge(
             init_attribute_node.bid, self.new_block().bid
         )
-        init_attribute_name = ast.Name(id=TempVariableName.generate())
+        init_attribute_name = TempVariableName.generate_name_node()
         add_stmt(init_attribute_assign_node, init_attribute_name)
 
         # __init__ attr dummy assigned
@@ -554,9 +571,15 @@ class CFGVisitor(ast.NodeVisitor):
         self.cfg.dummy_labels.add(init_attribute_assign_node_dummy.bid)
         add_stmt(init_attribute_assign_node_dummy, init_attribute_name)
 
+        # delete the first temp var
+        deleted_first_var_block = self.add_edge(
+            init_attribute_assign_node_dummy.bid, self.new_block().bid
+        )
+        add_stmt(deleted_first_var_block, ast.Delete(targets=[new_var]))
+
         # __init__ call node
         init_call_node = self.add_edge(
-            init_attribute_assign_node_dummy.bid, self.new_block().bid
+            deleted_first_var_block.bid, self.new_block().bid
         )
         init_call = ast.Call(
             func=init_attribute_name,
@@ -567,11 +590,18 @@ class CFGVisitor(ast.NodeVisitor):
 
         # __init__ return node
         init_return_node = self.add_edge(init_call_node.bid, self.new_block().bid)
-        init_var = ast.Name(id=TempVariableName.generate())
+        init_var = TempVariableName.generate_name_node()
         add_stmt(init_return_node, init_var)
 
+        deleted_second_var_block = self.add_edge(
+            init_return_node.bid, self.new_block().bid
+        )
+        add_stmt(deleted_second_var_block, ast.Delete(targets=[init_attribute_name]))
+
         # __init__ dummy return node(return node)
-        dummy_return_node = self.add_edge(init_return_node.bid, self.new_block().bid)
+        dummy_return_node = self.add_edge(
+            deleted_second_var_block.bid, self.new_block().bid
+        )
         add_stmt(dummy_return_node, init_var)
         self.cfg.dummy_labels.add(dummy_return_node.bid)
 
@@ -584,8 +614,10 @@ class CFGVisitor(ast.NodeVisitor):
                 init_attribute_node.bid,
                 init_attribute_assign_node.bid,
                 init_attribute_assign_node_dummy.bid,
+                deleted_first_var_block.bid,
                 init_call_node.bid,
                 init_return_node.bid,
+                deleted_second_var_block.bid,
                 dummy_return_node.bid,
             )
         )
@@ -603,8 +635,10 @@ class CFGVisitor(ast.NodeVisitor):
         node.value = init_var
         self.curr_block = dummy_return_node
 
+        return []
+
     def _visit_NonCall(self, node: ast.Assign):
-        temp_return_name = ast.Name(id=TempVariableName.generate())
+        temp_return_name = TempVariableName.generate_name_node()
 
         call_node = self.curr_block
         add_stmt(call_node, node.value)
@@ -625,17 +659,20 @@ class CFGVisitor(ast.NodeVisitor):
         node.value = temp_return_name
         self.curr_block = dummy_return_node
 
-    def _visit_Regular_LHS(self, node: ast.Assign, index):
-        target = node.targets[index]
+        return []
+
+    def _visit_Regular_LHS(self, node: ast.Assign, target):
         tmp_assign = ast.Assign(targets=[target], value=node.value)
         add_stmt(self.curr_block, tmp_assign)
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        return []
 
-    def _visit_Special_LHS(self, node: ast.Assign, index):
-        target = node.targets[index]
+    def _visit_Special_LHS(self, node: ast.Assign, target):
         # if target is subscript, decompose slice first
         if isinstance(target, ast.Subscript):
-            decomposed_slice_expr, target.slice = self.decompose_expr(target.slice)
+            decomposed_slice_expr, target.slice, deleted_vars = self.decompose_expr(
+                target.slice
+            )
             self.populate_body(decomposed_slice_expr)
         tmp_assign = ast.Assign(targets=[target], value=node.value)
         call_node = self.curr_block
@@ -654,26 +691,44 @@ class CFGVisitor(ast.NodeVisitor):
         self.curr_block = dummy_return_node
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
+        if isinstance(node, ast.Subscript):
+            for deleted_var in deleted_vars:
+                add_stmt(self.curr_block, deleted_var)
+                self.curr_block = self.add_edge(
+                    self.curr_block.bid, self.new_block().bid
+                )
+        return []
+
     def visit_Assign(self, node: ast.Assign) -> None:
         # desugar xxx = yyy to simpler form
-        new_expr_sequence = self.visit(node.value)
+        new_expr_sequence, deleted_vars = self.visit(node.value)
         prev_expr_sequence, node.value = new_expr_sequence[:-1], new_expr_sequence[-1]
         # now xxx = yyy
         self.populate_body(prev_expr_sequence)
 
         if isinstance(node.value, ast.Call):
-            self._visit_Call(node)
+            right_deleted_vars = self._visit_Call(node)
         else:
-            self._visit_NonCall(node)
+            right_deleted_vars = self._visit_NonCall(node)
         # now assignment gets xxx = a_name
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+        for right_deleted_var in right_deleted_vars:
+            add_stmt(self.curr_block, right_deleted_var)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
-        # assert len(node.targets) == 1, astor.to_source(node)
-        for index, target in enumerate(node.targets):
+        for target in node.targets:
             if isinstance(target, (ast.Name, ast.List, ast.Tuple)):
-                self._visit_Regular_LHS(node, index)
+                left_deleted_vars = self._visit_Regular_LHS(node, target)
             elif isinstance(target, (ast.Subscript, ast.Attribute)):
-                self._visit_Special_LHS(node, index)
+                left_deleted_vars = self._visit_Special_LHS(node, target)
+
+        for left_deleted_var in left_deleted_vars:
+            add_stmt(self.curr_block, left_deleted_var)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+
+        for deleted_var in deleted_vars:
+            add_stmt(self.curr_block, deleted_var)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         # We are only interested in types, so transform AugAssign into Assign
@@ -722,7 +777,7 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_While(self, node: ast.While) -> None:
 
-        test_sequence, node.test = self.decompose_expr(node.test)
+        test_sequence, node.test, deleted_vars = self.decompose_expr(node.test)
         self.populate_body(test_sequence)
 
         loop_guard: BasicBlock = self.add_loop_block()
@@ -754,11 +809,14 @@ class CFGVisitor(ast.NodeVisitor):
 
         # Continue building the CFG in the after-while block.
         self.curr_block = after_while_block
+        for deleted_var in deleted_vars:
+            add_stmt(self.curr_block, deleted_var)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.after_loop_stack.pop()
         self.loop_guard_stack.pop()
 
     def visit_If(self, node: ast.If) -> None:
-        test_sequence, node.test = self.decompose_expr(node.test)
+        test_sequence, node.test, deleted_vars = self.decompose_expr(node.test)
         self.populate_body(test_sequence)
 
         # Add the If statement at the end of the current block.
@@ -786,6 +844,9 @@ class CFGVisitor(ast.NodeVisitor):
 
         # Continue building the CFG in the after-if block.
         self.curr_block: BasicBlock = after_if_block
+        for deleted_var in deleted_vars:
+            add_stmt(self.curr_block, deleted_var)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_With(self, node: ast.With) -> None:
         # https: // docs.python.org / zh - cn / 3.12 / reference / compound_stmts.html
@@ -1005,22 +1066,20 @@ class CFGVisitor(ast.NodeVisitor):
     # decompose_expr(expr)-> List[expr], ast.Name
 
     # self.visit(expr) returns destructed expr. and the last element is simplified expr itself.
-
-    def decompose_expr(self, expr: ast.expr) -> Tuple:
+    def decompose_expr(self, expr: ast.expr) -> Tuple[List, ast.Name, List]:
         if expr is None:
-            return [], None
-        seq = self.visit(expr)
-        if not isinstance(seq[-1], ast.Name):
-            tmp_var = TempVariableName.generate()
+            raise NotImplementedError(expr)
+
+        resulted_sequence, resulted_vars = self.visit(expr)
+        if not isinstance(resulted_sequence[-1], ast.Name):
+            tmp_var_node = TempVariableName.generate_name_node()
             ast_assign = ast.Assign(
-                targets=[ast.Name(id=tmp_var, ctx=ast.Store())],
-                value=seq[-1],
+                targets=[tmp_var_node],
+                value=resulted_sequence[-1],
             )
-            ast_name = ast.Name(id=tmp_var, ctx=ast.Load())
-            seq = seq[:-1] + [ast_assign]
-            return seq, ast_name
-        else:
-            return seq[:-1], seq[-1]
+            resulted_sequence = resulted_sequence[:-1] + [ast_assign, tmp_var_node]
+            resulted_vars.append(ast.Delete(targets=[tmp_var_node]))
+        return resulted_sequence[:-1], resulted_sequence[-1], resulted_vars
 
     ################################################################
     ################################################################
@@ -1031,11 +1090,10 @@ class CFGVisitor(ast.NodeVisitor):
     #   tmp = b
     #   if b:
     #     tmp=c
-    def visit_BoolOp(self, node: ast.BoolOp) -> Any:
-        new_var: str = TempVariableName.generate()
+    def visit_BoolOp(self, node: ast.BoolOp) -> VisitedExprRes:
+        tmp_var_node = TempVariableName.generate_name_node()
         assign_list = [
-            ast.Assign(targets=[ast.Name(id=new_var, ctx=ast.Store())], value=value)
-            for value in node.values
+            ast.Assign(targets=[tmp_var_node], value=value) for value in node.values
         ]
         current_sequence = assign_list[-1:]
         for assign in reversed(assign_list[:-1]):
@@ -1048,124 +1106,130 @@ class CFGVisitor(ast.NodeVisitor):
             )
             current_sequence = [assign, tmp_if]
 
-        return current_sequence + [ast.Name(id=new_var, ctx=ast.Load())]
+        resulted_sequence = current_sequence + [tmp_var_node]
+        resulted_vars = [ast.Delete(targets=[tmp_var_node])]
+        return resulted_sequence, resulted_vars
 
-    def visit_BinOp(self, node: ast.BinOp) -> Any:
-        seq1, node.left = self.decompose_expr(node.left)
-        seq2, node.right = self.decompose_expr(node.right)
+    def visit_BinOp(self, node: ast.BinOp) -> VisitedExprRes:
+        seq1, node.left, vars1 = self.decompose_expr(node.left)
+        seq2, node.right, vars2 = self.decompose_expr(node.right)
 
-        return seq1 + seq2 + [node]
+        resulted_sequence = seq1 + seq2 + [node]
+        resulted_vars = vars1 + vars2
+        return resulted_sequence, resulted_vars
 
-    def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
-        seq, node.operand = self.decompose_expr(node.operand)
+    def visit_UnaryOp(self, node: ast.UnaryOp) -> VisitedExprRes:
+        seq, node.operand, vars = self.decompose_expr(node.operand)
 
-        return seq + [node]
+        resulted_sequence = seq + [node]
+        resulted_vars = vars
+        return resulted_sequence, resulted_vars
 
-    def visit_Lambda(self, node: ast.Lambda) -> Any:
-        tmp_var = ast.Name(id=TempVariableName.generate())
+    def visit_Lambda(self, node: ast.Lambda) -> VisitedExprRes:
+        tmp_var_node = TempVariableName.generate_name_node()
         tmp_function_def = ast.FunctionDef(
-            name=tmp_var,
+            name=tmp_var_node,
             args=node.args,
             body=[ast.Return(node.body)],
             decorator_list=[],
             returns=None,
         )
-        return [tmp_function_def, tmp_var]
+        resulted_sequence = [tmp_function_def, tmp_var_node]
+        resulted_vars = []
+        return resulted_sequence, resulted_vars
 
-        # seq_args = self.visit_arguments(node.args)
-        # seq_ret, name = self.decompose_expr(node.body)
-        #
-        # tmp_function_def = ast.FunctionDef(
-        #     name=tmp_var,
-        #     args=node.args,
-        #     body=seq_ret + [ast.Return(name)],
-        #     decorator_list=[],
-        #     returns=None,
-        # )
-        # tmp_function_name = ast.Name(id=tmp_var, ctx=ast.Load())
-        #
-        # return seq_args + [tmp_function_def, tmp_function_name]
-
-    def visit_IfExp(self, node: ast.IfExp) -> Any:
-        tmp_var: str = TempVariableName.generate()
-        tmp_name: ast.Name = ast.Name(id=tmp_var, ctx=ast.Store())
+    def visit_IfExp(self, node: ast.IfExp) -> VisitedExprRes:
+        tmp_name_node = TempVariableName.generate_name_node()
         new_if: ast.If = ast.If(
             test=node.test,
-            body=[ast.Assign(targets=[tmp_name], value=node.body)],
-            orelse=[ast.Assign(targets=[tmp_name], value=node.orelse)],
+            body=[ast.Assign(targets=[tmp_name_node], value=node.body)],
+            orelse=[ast.Assign(targets=[tmp_name_node], value=node.orelse)],
         )
 
-        return [new_if, tmp_name]
+        resulted_sequence = [new_if, tmp_name_node]
+        resulted_vars = [ast.Delete(targets=[tmp_name_node])]
+        return resulted_sequence, resulted_vars
 
-    def visit_Dict(self, node: ast.Dict) -> Any:
+    def visit_Dict(self, node: ast.Dict) -> VisitedExprRes:
         seq = []
-        temp_dict_name = ast.Name(id=TempVariableName.generate())
+        tmp_name_node = TempVariableName.generate_name_node()
         temp_dict_assign = ast.Assign(
-            targets=[temp_dict_name],
+            targets=[tmp_name_node],
             value=ast.Call(func=ast.Name(id="dict"), args=[], keywords=[]),
         )
         seq.append(temp_dict_assign)
         for key, value in zip(node.keys, node.values):
             # x[y] = z
-            temp_list_append = ast.Assign(
-                targets=[ast.Subscript(value=temp_dict_name, slice=key)], value=value
+            temp_dict_append = ast.Assign(
+                targets=[ast.Subscript(value=tmp_name_node, slice=key)], value=value
             )
-            seq.append(temp_list_append)
-        return seq + [temp_dict_name]
+            seq.append(temp_dict_append)
+
+        resulted_sequence = seq + [tmp_name_node]
+        resulted_vars = [ast.Delete(targets=[tmp_name_node])]
+        return resulted_sequence, resulted_vars
 
     def visit_Set(self, node: ast.Set) -> Any:
         seq = []
-        temp_list_name = ast.Name(id=TempVariableName.generate())
+        tmp_name_node = TempVariableName.generate_name_node()
         temp_list_assign = ast.Assign(
-            targets=[temp_list_name],
+            targets=[tmp_name_node],
             value=ast.Call(func=ast.Name(id="set"), args=[], keywords=[]),
         )
         seq.append(temp_list_assign)
         for idx, elt in enumerate(node.elts):
-            temp_list_append = ast.Expr(
+            tmp_set_append = ast.Expr(
                 value=ast.Call(
                     # list.append
-                    func=ast.Attribute(value=temp_list_name, attr="add"),
+                    func=ast.Attribute(value=tmp_name_node, attr="add"),
                     args=[elt],
                     keywords=[],
                 )
             )
-            seq.append(temp_list_append)
-        return seq + [temp_list_name]
+            seq.append(tmp_set_append)
 
-    def visit_ListComp(self, node: ast.ListComp) -> Any:
+        resulted_sequence = seq + [tmp_name_node]
+        resulted_vars = [ast.Delete(targets=[tmp_name_node])]
+        return resulted_sequence, resulted_vars
+
+    def visit_ListComp(self, node: ast.ListComp) -> VisitedExprRes:
 
         new_expr_sequence = []
-        listcomp_var = TempVariableName.generate()
+        tmp_name_node = TempVariableName.generate_name_node()
         new_expr_sequence.append(
             ast.Assign(
-                targets=[ast.Name(id=listcomp_var, ctx=ast.Store())],
+                targets=[tmp_name_node],
                 value=ast.List(elts=[], ctx=ast.Load()),
             )
         )
         new_expr_sequence += self._visit_ListComp(
-            listcomp_var, node.elt, node.generators
+            tmp_name_node, node.elt, node.generators
         )
-        new_expr_sequence.append(ast.Name(id=listcomp_var, ctx=ast.Load()))
-        return new_expr_sequence
+        new_expr_sequence.append(tmp_name_node)
+
+        resulted_sequence = new_expr_sequence
+        resulted_vars = [ast.Delete(targets=[tmp_name_node])]
+        return resulted_sequence, resulted_vars
 
     def _visit_ListComp(
-        self, listcomp_var: str, elt: ast.expr, generators: List[ast.comprehension]
+        self,
+        tmp_name_node: ast.Name,
+        elt: ast.expr,
+        generators: List[ast.comprehension],
     ) -> Any:
         if not generators:
+            seq, name, vars = self.decompose_expr(elt)
             tmp_call = ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id=listcomp_var, ctx=ast.Load()),
+                    value=tmp_name_node,
                     attr="append",
                     ctx=ast.Load(),
                 ),
-                args=[elt],
+                args=[name],
                 keywords=[],
             )
-            seq, name = self.decompose_expr(elt)
-            tmp_call.args = [name]
-
             seq.append(ast.Expr(value=tmp_call))
+            seq.extend(vars)
             return seq
         else:
             return [
@@ -1176,48 +1240,56 @@ class CFGVisitor(ast.NodeVisitor):
                         ast.If(
                             test=self.combine_conditions(generators[0].ifs),
                             body=self._visit_ListComp(
-                                listcomp_var, elt, generators[1:]
+                                tmp_name_node, elt, generators[1:]
                             ),
                             orelse=[],
                         )
                     ]
                     if generators[0].ifs
-                    else self._visit_ListComp(listcomp_var, elt, generators[1:]),
+                    else self._visit_ListComp(tmp_name_node, elt, generators[1:]),
                     orelse=[],
                 )
             ]
 
-    def visit_SetComp(self, node: ast.SetComp) -> Any:
+    def visit_SetComp(self, node: ast.SetComp) -> VisitedExprRes:
         new_expr_sequence = []
-        setcomp_var = TempVariableName.generate()
+        tmp_name_node = TempVariableName.generate_name_node()
         new_expr_sequence.append(
             ast.Assign(
-                targets=[ast.Name(id=setcomp_var, ctx=ast.Store())],
+                targets=[tmp_name_node],
                 value=ast.Call(
                     args=[], func=ast.Name(id="set", ctx=ast.Load()), keywords=[]
                 ),
             )
         )
-        new_expr_sequence += self._visit_SetComp(setcomp_var, node.elt, node.generators)
-        new_expr_sequence.append(ast.Name(id=setcomp_var, ctx=ast.Load()))
-        return new_expr_sequence
+        new_expr_sequence += self._visit_SetComp(
+            tmp_name_node, node.elt, node.generators
+        )
+        new_expr_sequence.append(tmp_name_node)
+
+        resulted_sequence = new_expr_sequence
+        resulted_vars = [ast.Delete(targets=[tmp_name_node])]
+        return resulted_sequence, resulted_vars
 
     def _visit_SetComp(
-        self, setcomp_var: str, elt: ast.expr, generators: List[ast.comprehension]
+        self,
+        tmp_name_node: ast.Name,
+        elt: ast.expr,
+        generators: List[ast.comprehension],
     ):
         if not generators:
+            seq, name, vars = self.decompose_expr(elt)
             tmp_call = ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id=setcomp_var, ctx=ast.Load()),
+                    value=tmp_name_node,
                     attr="add",
                     ctx=ast.Load(),
                 ),
-                args=[elt],
+                args=[name],
                 keywords=[],
             )
-            seq, name = self.decompose_expr(elt)
-            tmp_call.args = [name]
             seq.append(ast.Expr(value=tmp_call))
+            seq.extend(vars)
             return seq
         else:
             return [
@@ -1227,51 +1299,59 @@ class CFGVisitor(ast.NodeVisitor):
                     body=[
                         ast.If(
                             test=self.combine_conditions(generators[0].ifs),
-                            body=self._visit_SetComp(setcomp_var, elt, generators[1:]),
+                            body=self._visit_SetComp(
+                                tmp_name_node, elt, generators[1:]
+                            ),
                             orelse=[],
                         )
                     ]
                     if generators[0].ifs
-                    else self._visit_SetComp(setcomp_var, elt, generators[1:]),
+                    else self._visit_SetComp(tmp_name_node, elt, generators[1:]),
                     orelse=[],
                 )
             ]
 
     def visit_DictComp(self, node: ast.DictComp) -> Any:
         new_expr_sequence = []
-        dictcomp_var = TempVariableName.generate()
+        tmp_name_node = TempVariableName.generate_name_node()
         new_expr_sequence.append(
             ast.Assign(
-                targets=[ast.Name(id=dictcomp_var, ctx=ast.Store())],
+                targets=[tmp_name_node],
                 value=ast.Dict(keys=[], values=[]),
             )
         )
         new_expr_sequence += self._visit_DictComp(
-            dictcomp_var, node.key, node.value, node.generators
+            tmp_name_node, node.key, node.value, node.generators
         )
-        new_expr_sequence.append(ast.Name(id=dictcomp_var, ctx=ast.Load()))
-        return new_expr_sequence
+        new_expr_sequence.append(tmp_name_node)
+
+        resulted_sequence = new_expr_sequence
+        resulted_vars = [ast.Delete(targets=[tmp_name_node])]
+        return resulted_sequence, resulted_vars
 
     def _visit_DictComp(
-        self, dictcomp_var: str, key: ast.expr, value: ast.expr, generators
+        self, dictcomp_var: ast.Name, key: ast.expr, value: ast.expr, generators
     ):
         if not generators:
-            tmp_index = ast.Index(value=key)
-            seq1, name1 = self.decompose_expr(key)
-            tmp_index.value = name1
+            tmp_index = ast.Index(value=None)
+            seq1, tmp_index.value, vars1 = self.decompose_expr(key)
             tmp_subscript = ast.Subscript(
-                value=ast.Name(id=dictcomp_var, ctx=ast.Load()),
+                value=dictcomp_var,
                 slice=tmp_index,
-                ctx=ast.Store(),
             )
             tmp_assign = ast.Assign(
                 targets=[tmp_subscript],
-                value=value,
+                value=None,
             )
-            seq2, name2 = self.decompose_expr(value)
-            tmp_assign.value = name2
+            seq2, tmp_assign.value, vars2 = self.decompose_expr(value)
 
-            return seq1 + seq2 + [tmp_assign]
+            resulted_sequence = (
+                seq1
+                + seq2
+                + [tmp_assign]
+                + [ast.Delete(targets=[target]) for target in vars1 + vars2]
+            )
+            return resulted_sequence
         else:
             return [
                 ast.For(
@@ -1292,7 +1372,7 @@ class CFGVisitor(ast.NodeVisitor):
                 )
             ]
 
-    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Any:
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> VisitedExprRes:
         new_expr_sequence = []
         generator_var = TempVariableName.generate()
         new_expr_sequence.append(
@@ -1316,14 +1396,17 @@ class CFGVisitor(ast.NodeVisitor):
                 func=ast.Name(id=generator_var, ctx=ast.Load()), args=[], keywords=[]
             )
         )
-        return new_expr_sequence
+
+        resulted_sequence = new_expr_sequence
+        resulted_vars = [ast.Delete(targets=[ast.Name(id=generator_var)])]
+        return resulted_sequence, resulted_vars
 
     def _visit_GeneratorExp(self, elt: ast.expr, generators: List[ast.comprehension]):
         if not generators:
-            tmp_yield = ast.Yield(value=elt)
-            seq, name = self.decompose_expr(elt)
-            tmp_yield.value = name
+            tmp_yield = ast.Yield(value=None)
+            seq, tmp_yield.value, vars = self.decompose_expr(elt)
             seq.append(ast.Expr(value=tmp_yield))
+            seq.extend(vars)
             return seq
         else:
             return [
@@ -1343,40 +1426,48 @@ class CFGVisitor(ast.NodeVisitor):
                 )
             ]
 
-    def visit_Yield(self, node: ast.Yield) -> Any:
+    def visit_Yield(self, node: ast.Yield) -> VisitedExprRes:
         # encounter yield, this function is a generator function
         self.is_generator = True
 
         if node.value is None:
             node.value = ast.NameConstant(value=None)
-            return [node]
 
-        seq, node.value = self.decompose_expr(node.value)
+        seq, node.value, vars = self.decompose_expr(node.value)
 
-        return seq + [node]
+        resulted_sequence = seq + [node]
+        resulted_vars = [ast.Delete(targets=[target]) for target in vars]
+        return resulted_sequence, resulted_vars
 
-    def visit_YieldFrom(self, node: ast.YieldFrom) -> Any:
+    def visit_YieldFrom(self, node: ast.YieldFrom) -> VisitedExprRes:
         # encounter yield from, this function is a generator function
         self.is_generator = True
 
-        seq, node.value = self.decompose_expr(node.value)
+        seq, node.value, vars = self.decompose_expr(node.value)
 
-        return seq + [node]
+        resulted_sequence = seq + [node]
+        resulted_vars = [ast.Delete(targets=[target]) for target in vars]
+        return resulted_sequence, resulted_vars
 
-    def visit_Compare(self, node: ast.Compare) -> Any:
+    def visit_Compare(self, node: ast.Compare) -> VisitedExprRes:
         seq = []
         names = []
+        vars = []
         for expr in [node.left] + node.comparators:
-            seq1, name1 = self.decompose_expr(expr)
+            seq1, name1, vars1 = self.decompose_expr(expr)
             seq.extend(seq1)
             names.append(name1)
+            vars.extend(vars1)
 
         node.left, node.comparators = names[0], names[1:]
-        return seq + [node]
 
-    def _visit_Call_Special(self, node: ast.Call):
+        resulted_sequence = seq + [node]
+        resulted_vars = vars
+        return resulted_sequence, resulted_vars
+
+    def _visit_Call_Special(self, node: ast.Call) -> VisitedExprRes:
         if not isinstance(node.func, ast.Name):
-            return [], node
+            return [node], []
         if node.func.id not in (
             list.__name__,
             tuple.__name__,
@@ -1384,21 +1475,21 @@ class CFGVisitor(ast.NodeVisitor):
             frozenset.__name__,
             # dict.__name__,
         ):
-            return [], node
+            return [node], []
         if not (node.args or node.keywords):
-            return [], node
+            return [node], []
 
         # list([iterable])
-        def _destruct_container(name, method):
+        def _destruct_container(name, method) -> VisitedExprRes:
             seq = []
-            tmp_var = ast.Name(id=TempVariableName.generate())
+            tmp_var = TempVariableName.generate_name_node()
             # tmp = list()
             tmp_assign = ast.Assign(
                 targets=[tmp_var],
                 value=ast.Call(func=ast.Name(id=name), args=[], keywords=[]),
             )
             seq.append(tmp_assign)
-            tmp_var2 = ast.Name(id=TempVariableName.generate())
+            tmp_var2 = TempVariableName.generate_name_node()
             if node.args:
                 iterable = node.args[0]
                 tmp_for = ast.For(
@@ -1415,7 +1506,10 @@ class CFGVisitor(ast.NodeVisitor):
                 )
                 seq.append(tmp_for)
 
-            return seq, tmp_var
+            resulted_vars = [
+                ast.Delete(targets=[target]) for target in [tmp_var2, tmp_var]
+            ]
+            return seq + [tmp_var], resulted_vars
 
         if node.func.id == list.__name__:
             return _destruct_container(list.__name__, list.append.__name__)
@@ -1428,94 +1522,122 @@ class CFGVisitor(ast.NodeVisitor):
         else:
             raise NotImplementedError(astor.to_source(node))
 
-    def visit_Call(self, node: ast.Call) -> Any:
+    def visit_Call(self, node: ast.Call) -> VisitedExprRes:
         if isinstance(node.func, ast.Lambda):
             raise NotImplementedError(node.func)
 
         seq = []
+        vars = []
 
         # decompose func
-        seq1, node.func = self.decompose_expr(node.func)
+        seq1, node.func, vars1 = self.decompose_expr(node.func)
         seq.extend(seq1)
+        vars.extend(vars1)
 
         # decompose args
         for idx, expr in enumerate(node.args):
-            seq1, node.args[idx] = self.decompose_expr(expr)
+            seq1, node.args[idx], vars1 = self.decompose_expr(expr)
             seq.extend(seq1)
+            vars.extend(vars1)
 
         for idx, keyword in enumerate(node.keywords):
-            seq1, keyword.value = self.decompose_expr(keyword.value)
+            seq1, keyword.value, vars1 = self.decompose_expr(keyword.value)
             seq.extend(seq1)
+            vars.extend(vars1)
 
-        additional_expr_seq, node = self._visit_Call_Special(node)
-        seq.extend(additional_expr_seq)
-        return seq + [node]
+        seq1, vars1 = self._visit_Call_Special(node)
+        seq.extend(seq1)
+        vars.extend(vars1)
+        return seq, vars
 
-    def visit_Num(self, node: ast.Num) -> Any:
-        return [node]
+    def visit_Num(self, node: ast.Num) -> VisitedExprRes:
+        return [node], []
 
-    def visit_Str(self, node: ast.Str) -> Any:
-        return [node]
+    def visit_Str(self, node: ast.Str) -> VisitedExprRes:
+        return [node], []
 
-    def visit_FormattedValue(self, node: ast.FormattedValue) -> Any:
+    def visit_FormattedValue(self, node: ast.FormattedValue) -> VisitedExprRes:
         seq = []
+        vars = []
 
         # deal with node.value
-        seq1, node.value = self.decompose_expr(node.value)
+        seq1, node.value, vars1 = self.decompose_expr(node.value)
         seq.extend(seq1)
+        vars.extend(vars1)
 
         # deal with node.format_spec
         if node.format_spec:
-            seq1, node.format_spec = self.decompose_expr(node.format_spec)
+            seq1, node.format_spec, vars1 = self.decompose_expr(node.format_spec)
             seq.extend(seq1)
+            vars.extend(vars1)
 
-        return seq + [node]
+        resulted_sequence = seq
+        resulted_vars = vars
+        return resulted_sequence, resulted_vars
 
-    def visit_JoinedStr(self, node: ast.JoinedStr) -> Any:
+    def visit_JoinedStr(self, node: ast.JoinedStr) -> VisitedExprRes:
         seq = []
+        vars = []
         for idx, value in enumerate(node.values):
-            seq1, node.values[idx] = self.decompose_expr(value)
+            seq1, node.values[idx], vars1 = self.decompose_expr(value)
             seq.extend(seq1)
-        return seq + [node]
+            vars.extend(vars1)
 
-    def visit_Bytes(self, node: ast.Bytes) -> Any:
-        return [node]
+        resulted_sequence = seq
+        resulted_vars = vars
+        return resulted_sequence, resulted_vars
 
-    def visit_NameConstant(self, node: ast.NameConstant) -> Any:
-        return [node]
+    def visit_Bytes(self, node: ast.Bytes) -> VisitedExprRes:
+        return [node], []
 
-    def visit_Ellipsis(self, node: ast.Ellipsis) -> Any:
-        return [node]
+    def visit_NameConstant(self, node: ast.NameConstant) -> VisitedExprRes:
+        return [node], []
+
+    def visit_Ellipsis(self, node: ast.Ellipsis) -> VisitedExprRes:
+        return [node], []
 
     def visit_Constant(self, node: ast.Constant) -> Any:
-        return [node]
+        raise NotImplementedError(node)
 
     # x.y
     # -> tmp = x.y
-    def visit_Attribute(self, node) -> Any:
-        seq, node.value = self.decompose_expr(node.value)
-        return seq + [node]
+    def visit_Attribute(self, node) -> VisitedExprRes:
+        seq, node.value, vars = self.decompose_expr(node.value)
 
-    def visit_Subscript(self, node: ast.Subscript) -> Any:
+        resulted_sequence = seq
+        resulted_vars = vars
+        return resulted_sequence, resulted_vars
+
+    def visit_Subscript(self, node: ast.Subscript) -> VisitedExprRes:
         seq = []
-        seq1, node.value = self.decompose_expr(node.value)
+        vars = []
+
+        seq1, node.value, vars1 = self.decompose_expr(node.value)
         seq.extend(seq1)
-        seq2, node.slice = self.decompose_expr(node.slice)
+        vars.extend(vars1)
+        seq2, node.slice, vars2 = self.decompose_expr(node.slice)
         seq.extend(seq2)
-        return seq + [node]
+        vars.extend(vars2)
 
-    def visit_Starred(self, node) -> Any:
-        seq, node.value = self.decompose_expr(node.value)
-        return seq + [node]
+        resulted_sequence = seq
+        resulted_vars = vars
+        return resulted_sequence, resulted_vars
 
-    def visit_Name(self, node: ast.Name) -> Any:
-        return [node]
+    def visit_Starred(self, node) -> VisitedExprRes:
+        seq, node.value, vars = self.decompose_expr(node.value)
 
-    def visit_List(self, node: ast.List) -> Any:
+        resulted_sequence = seq
+        resulted_vars = vars
+        return resulted_sequence, resulted_vars
+
+    def visit_Name(self, node: ast.Name) -> VisitedExprRes:
+        return [node], []
+
+    def visit_List(self, node: ast.List) -> VisitedExprRes:
         seq = []
-        temp_list_name = ast.Name(id=TempVariableName.generate())
+        tmp_name_node = TempVariableName.generate_name_node()
         temp_list_assign = ast.Assign(
-            targets=[temp_list_name],
+            targets=[tmp_name_node],
             value=ast.Call(func=ast.Name(id="list"), args=[], keywords=[]),
         )
         seq.append(temp_list_assign)
@@ -1523,19 +1645,22 @@ class CFGVisitor(ast.NodeVisitor):
             temp_list_append = ast.Expr(
                 value=ast.Call(
                     # list.append
-                    func=ast.Attribute(value=temp_list_name, attr="append"),
+                    func=ast.Attribute(value=tmp_name_node, attr="append"),
                     args=[elt],
                     keywords=[],
                 )
             )
             seq.append(temp_list_append)
-        return seq + [temp_list_name]
 
-    def visit_Tuple(self, node: ast.Tuple) -> Any:
+        resulted_sequence = seq + [tmp_name_node]
+        resulted_vars = [ast.Delete(targets=[tmp_name_node])]
+        return resulted_sequence, resulted_vars
+
+    def visit_Tuple(self, node: ast.Tuple) -> VisitedExprRes:
         seq = []
-        temp_list_name = ast.Name(id=TempVariableName.generate())
+        tmp_name_node = TempVariableName.generate_name_node()
         temp_list_assign = ast.Assign(
-            targets=[temp_list_name],
+            targets=[tmp_name_node],
             value=ast.Call(func=ast.Name(id="tuple"), args=[], keywords=[]),
         )
         seq.append(temp_list_assign)
@@ -1543,27 +1668,41 @@ class CFGVisitor(ast.NodeVisitor):
             temp_list_append = ast.Expr(
                 value=ast.Call(
                     # list.append
-                    func=ast.Attribute(value=temp_list_name, attr="fake_append"),
+                    func=ast.Attribute(value=tmp_name_node, attr="fake_append"),
                     args=[elt],
                     keywords=[],
                 )
             )
             seq.append(temp_list_append)
-        return seq + [temp_list_name]
 
-    def visit_Slice(self, node: ast.Slice) -> Any:
+        resulted_sequence = seq + [tmp_name_node]
+        resulted_vars = [ast.Delete(targets=[tmp_name_node])]
+        return resulted_sequence, resulted_vars
+
+    def visit_Slice(self, node: ast.Slice) -> VisitedExprRes:
         seq = []
-        seq1, node.lower = self.decompose_expr(node.lower)
-        seq.extend(seq1)
-        seq2, node.upper = self.decompose_expr(node.upper)
-        seq.extend(seq2)
-        seq3, node.step = self.decompose_expr(node.step)
-        seq.extend(seq3)
-        return seq + [node]
+        vars = []
 
-    def visit_ExtSlice(self, node: ast.ExtSlice) -> Any:
+        seq1, node.lower, vars1 = self.decompose_expr(node.lower)
+        seq.extend(seq1)
+        vars.extend(vars1)
+        seq2, node.upper, vars2 = self.decompose_expr(node.upper)
+        seq.extend(seq2)
+        vars.extend(vars2)
+        seq3, node.step, vars3 = self.decompose_expr(node.step)
+        seq.extend(seq3)
+        vars.extend(vars3)
+
+        resulted_sequence = seq + [node]
+        resulted_vars = vars
+        return resulted_sequence, resulted_vars
+
+    def visit_ExtSlice(self, node: ast.ExtSlice) -> VisitedExprRes:
         raise NotImplementedError(node)
 
-    def visit_Index(self, node: ast.Index) -> Any:
-        seq, node.value = self.decompose_expr(node.value)
-        return seq + [node]
+    def visit_Index(self, node: ast.Index) -> VisitedExprRes:
+        seq, node.value, vars = self.decompose_expr(node.value)
+
+        resulted_sequence = seq + [node]
+        resulted_vars = vars
+        return resulted_sequence, resulted_vars

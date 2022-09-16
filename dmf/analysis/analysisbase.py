@@ -179,15 +179,39 @@ class AnalysisBase:
         raise KeyError
 
     def get_special_new_return_label(self, label):
-        for l1, l2, l3, l4, l5, l6, l7, l8, l9 in self.call_return_inter_flows:
-            if label == l1:
-                return l2, l3
+        for (
+            new,
+            new_return,
+            new_dummy_return,
+            init_lookup,
+            init_lookup_return,
+            init_lookup_dummy_return,
+            deleted_first_var,
+            init_call,
+            init_call_return,
+            deleted_second_var,
+            init_call_dummy_return,
+        ) in self.call_return_inter_flows:
+            if label == new:
+                return new_return, new_dummy_return
         raise KeyError
 
     def get_func_return_label(self, label):
-        for l1, l2, l3, l4, l5, l6, l7, l8, l9 in self.call_return_inter_flows:
-            if label == l1:
-                return l8, l9
+        for (
+            new,
+            new_return,
+            new_dummy_return,
+            init_lookup,
+            init_lookup_return,
+            init_lookup_dummy_return,
+            deleted_first_var,
+            init_call,
+            init_call_return,
+            deleted_second_var,
+            init_call_dummy_return,
+        ) in self.call_return_inter_flows:
+            if label == new:
+                return init_call_return, init_call_dummy_return
         raise KeyError
 
     def get_special_init_return_label(self, label):

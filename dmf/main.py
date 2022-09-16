@@ -11,12 +11,15 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-import resource
+
+import sys
+
+if sys.platform.startswith("linux"):
+    import resource
+
+    resource.setrlimit(resource.RLIMIT_STACK, (2**30, -1))
 
 from dmf.log.logger import logger
-
-resource.setrlimit(resource.RLIMIT_STACK, (2**30, -1))
-import sys
 
 # https://docs.python.org/3.7/library/sys.html#sys.setrecursionlimit
 sys.setrecursionlimit(10000)
