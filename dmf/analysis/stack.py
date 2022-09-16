@@ -170,6 +170,7 @@ class Frame:
         return self.f_globals
 
     def delete_var(self, name: str):
+        # delete names in current scope
         if name in self.f_locals:
             var: Var = self.f_locals.read_var_type(name)
             if not isinstance(var, LocalVar):

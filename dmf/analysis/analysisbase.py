@@ -189,8 +189,8 @@ class AnalysisBase:
             deleted_first_var,
             init_call,
             init_call_return,
-            deleted_second_var,
             init_call_dummy_return,
+            deleted_second_var,
         ) in self.call_return_inter_flows:
             if label == new:
                 return new_return, new_dummy_return
@@ -207,8 +207,8 @@ class AnalysisBase:
             deleted_first_var,
             init_call,
             init_call_return,
-            deleted_second_var,
             init_call_dummy_return,
+            deleted_second_var,
         ) in self.call_return_inter_flows:
             if label == new:
                 return init_call_return, init_call_dummy_return

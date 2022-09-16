@@ -28,11 +28,7 @@ class SearchContext(NamedTuple):
 
 def init_search_context():
     version = sys.version_info[:2]
-    if sys.platform == "win32":
-        typeshed = os.path.join(dmf.resources.__path__[0], "typeshed/stdlib")
-    else:
-        paths = list(dmf.resources.__path__)
-        typeshed = os.path.join(paths[0], "typeshed/stdlib")
+    typeshed = os.path.join(dmf.resources.__path__[0], "typeshed/stdlib")
     abs_typeshed = os.path.abspath(typeshed)
     platform = sys.platform
     return SearchContext(
