@@ -89,7 +89,7 @@ class SizedHeapNamespace:
         else:
             for var in other.types:
                 self.types[var] += other.types[var]
-        self.threshold_check()
+            self.threshold_check()
         return self
 
     def __contains__(self, name: str):

@@ -125,6 +125,10 @@ Typeshed_Object_Type: Value = builtin_module_dict.read_value("object")
 Object_Type.tp_fallback = Typeshed_Object_Type
 # builtin_module_dict.write_local_value("object", type_2_value(Object_Type))
 
+
+# special attribute __name__
+artificial_namespace.write_local_value("__name__", type_2_value(Str_Type()))
+
 # mimic object.__new__
 class Constructor:
     def __init__(self):

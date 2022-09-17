@@ -761,9 +761,9 @@ class CFGVisitor(ast.NodeVisitor):
         iter_call: ast.Call = ast.Call(
             args=[node.iter], func=ast.Name(id="iter", ctx=ast.Load()), keywords=[]
         )
-        iter_seq: List = self.visit(iter_call)
+        iter_seq, deleted_vars = self.visit(iter_call)
 
-        iter_name = ast.Name(id=TempVariableName.generate())
+        iter_name = TempVariableName.generate_name_node()
         new_assign = ast.Assign(
             targets=[iter_name],
             value=iter_seq[-1],
@@ -785,6 +785,7 @@ class CFGVisitor(ast.NodeVisitor):
             orelse=node.orelse,
         )
         iter_seq.append(new_while)
+        iter_seq.extend(deleted_vars)
         iter_seq.append(ast.Delete(targets=[iter_name]))
         self.populate_body(iter_seq)
 
@@ -1009,9 +1010,13 @@ class CFGVisitor(ast.NodeVisitor):
             self.curr_block = self.add_edge(call_node.bid, self.new_block().bid)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        call_node = self.curr_block
-        add_stmt(call_node, node)
-        self.curr_block = self.add_edge(call_node.bid, self.new_block().bid)
+        for name in node.names:
+            call_node = self.curr_block
+            tmp_importfrom = ast.ImportFrom(
+                module=node.module, names=[name], level=node.level
+            )
+            add_stmt(call_node, tmp_importfrom)
+            self.curr_block = self.add_edge(call_node.bid, self.new_block().bid)
 
     def visit_Global(self, node: ast.Global) -> None:
         for name in node.names:
@@ -1027,11 +1032,10 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Expr(self, node: ast.Expr) -> None:
 
-        tmp_var = TempVariableName.generate()
-        tmp_assign = ast.Assign(
-            targets=[ast.Name(id=tmp_var, ctx=ast.Store())], value=node.value
-        )
-        self.visit(tmp_assign)
+        tmp_var = TempVariableName.generate_name_node()
+        tmp_assign = ast.Assign(targets=[tmp_var], value=node.value)
+        tmp_delete = ast.Delete(targets=[tmp_var])
+        self.populate_body([tmp_assign, tmp_delete])
 
     def visit_Pass(self, node: ast.Pass) -> None:
         add_stmt(self.curr_block, node)
@@ -1080,8 +1084,9 @@ class CFGVisitor(ast.NodeVisitor):
 
     # self.visit(expr) returns destructed expr. and the last element is simplified expr itself.
     def decompose_expr(self, expr: ast.expr) -> Tuple[List, ast.Name, List]:
+        # to deal with cases such as Slice(expr? lower)
         if expr is None:
-            raise NotImplementedError(expr)
+            return [], expr, []
 
         resulted_sequence, resulted_vars = self.visit(expr)
         if not isinstance(resulted_sequence[-1], ast.Name):
@@ -1355,12 +1360,7 @@ class CFGVisitor(ast.NodeVisitor):
             )
             seq2, tmp_assign.value, vars2 = self.decompose_expr(value)
 
-            resulted_sequence = (
-                seq1
-                + seq2
-                + [tmp_assign]
-                + [ast.Delete(targets=[target]) for target in vars1 + vars2]
-            )
+            resulted_sequence = seq1 + seq2 + [tmp_assign] + vars1 + vars2
             return resulted_sequence
         else:
             return [

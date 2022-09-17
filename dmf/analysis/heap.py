@@ -13,26 +13,29 @@
 #  limitations under the License.
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Set, Tuple
 
 from dmf.analysis.heap_namespace import SizedHeapNamespace
-from dmf.analysis.special_types import Any
-from dmf.analysis.value import Value
 
 
 class Heap:
-    threshold = 100
+    """
+    Heap to store heap allocated objects
+    """
 
-    def threshold_check(self):
-        if self.singletons is Any:
-            return
-        elif len(self.singletons) > self.threshold:
-            self.singletons = Any
-        else:
-            pass
+    # threshold = 100
+
+    # def threshold_check(self):
+    #     if self.singletons is Any:
+    #         return
+    #     elif len(self.singletons) > self.threshold:
+    #         self.singletons = Any
+    #     else:
+    #         pass
 
     def __init__(self):
-        self.singletons: Dict[str, SizedHeapNamespace] | Any = {}
+        # self.singletons: Dict[str, SizedHeapNamespace] | Any = {}
+        self.singletons: Dict[Tuple, SizedHeapNamespace] = {}
 
     def __missing__(self, key):
         value = SizedHeapNamespace()
@@ -42,16 +45,20 @@ class Heap:
         return item in self.singletons
 
     def __getitem__(self, item):
-        if self.singletons is Any:
-            return Any
-
+        # if self.singletons is Any:
+        #     return Any
         if item not in self.singletons:
             default_value = self.__missing__(item)
             self.singletons[item] = default_value
-        self.threshold_check()
+        # self.threshold_check()
         return self.singletons[item]
 
     def __le__(self, other: Heap):
+        # if self.singletons is Any:
+        #     return True
+        # elif other.singletons is Any:
+        #     return False
+        # else:
         for heap_address in self.singletons:
             if heap_address not in other.singletons:
                 return False
@@ -63,6 +70,12 @@ class Heap:
         return True
 
     def __iadd__(self, other: Heap):
+        # if self.singletons is Any:
+        #     return self
+        # elif other.singletons is Any:
+        #     self.singletons = Any
+        #     return self
+        # else:
         for heap_address in other.singletons:
             if heap_address not in self.singletons:
                 self.singletons[heap_address] = other.singletons[heap_address]
@@ -70,26 +83,18 @@ class Heap:
                 self_namespace = self.singletons[heap_address]
                 other_namespace = other.singletons[heap_address]
                 self_namespace += other_namespace
-        self.threshold_check()
+        # self.threshold_check()
         return self
 
     def __repr__(self):
         return "heaps: {}".format(self.singletons)
 
-    def write_instance_to_heap(self, heap_uuid: str):
-        if heap_uuid not in self.singletons:
-            self.singletons[heap_uuid] = SizedHeapNamespace()
-        return self.singletons[heap_uuid]
+    def get_heaper(self) -> Set:
+        heaper_set = set()
+        for heap_address in self.singletons.keys():
+            heaper_set.add(heap_address)
+        return heaper_set
 
-    def write_field_to_address(self, heap_address: str, field: str, value: Value):
-        assert heap_address in self.singletons
-        tp_dict = self.singletons[heap_address]
-        tp_dict.write_local_value(field, value)
-
-    def read_field_from_address(self, heap_address: str, field: str):
-        assert heap_address in self.singletons
-        tp_dict = self.singletons[heap_address]
-        return tp_dict.read_value(field)
-
-    def read_instance_dict(self, heap_address: str):
-        return self.singletons[heap_address]
+    def get_heapee(self) -> Set:
+        heapee_set = set()
+        pass

@@ -1214,9 +1214,6 @@ class Analysis(AnalysisBase):
 
         for alias in stmt.names:
             name = alias.name
-            if name == "http":
-                pass
-                pass
             asname = alias.asname
             for module in modules:
                 try:
@@ -1224,15 +1221,15 @@ class Analysis(AnalysisBase):
                 except AttributeError:
                     sub_module_name = f"{stmt.module}.{name}"
                     direct_res = import_a_module(sub_module_name)
-                # direct_res = analysis_getattr(module, name)
-                # if len(direct_res) == 0:
-                #     sub_module_name = f"{stmt.module}.{name}"
-                #     sub_module = import_a_module(sub_module_name, package, stmt.level)
-                #     direct_res.inject(sub_module)
-                if asname is None:
-                    new_stack.write_var(name, Namespace_Local, direct_res)
+                    if asname is None:
+                        new_stack.write_var(name, Namespace_Local, direct_res)
+                    else:
+                        new_stack.write_var(asname, Namespace_Local, direct_res)
                 else:
-                    new_stack.write_var(asname, Namespace_Local, direct_res)
+                    if asname is None:
+                        new_stack.write_var(name, Namespace_Local, direct_res)
+                    else:
+                        new_stack.write_var(asname, Namespace_Local, direct_res)
         return new_state
 
     def transfer_return_classdef(

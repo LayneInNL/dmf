@@ -14,7 +14,7 @@
 
 import sys
 
-if sys.platform.startswith("linux"):
+if sys.platform == "linux":
     import resource
 
     resource.setrlimit(resource.RLIMIT_STACK, (2**30, -1))
@@ -22,7 +22,7 @@ if sys.platform.startswith("linux"):
 from dmf.log.logger import logger
 
 # https://docs.python.org/3.7/library/sys.html#sys.setrecursionlimit
-sys.setrecursionlimit(10000)
+sys.setrecursionlimit(10**8)
 
 import init
 from dmf.analysis.builtin_functions import _setup

@@ -171,8 +171,8 @@ def analysis_getattr(obj, name) -> Value:
         one_return = type_getattro(obj, name)
         return one_return
     # work on class
-    # elif isinstance(obj, AnalysisFunction):
-    #     return GenericGetAttr(obj, name)
+    elif isinstance(obj, AnalysisFunction):
+        return GenericGetAttr(obj, name)
     elif isinstance(obj, TypeshedClass):
         one_return = type_getattro(obj, name)
         return one_return

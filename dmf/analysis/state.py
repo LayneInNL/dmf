@@ -71,6 +71,13 @@ class State:
         self.heap += other.heap
         return self
 
+    def collect_garbage(self):
+        # heapee to store all used heap address
+        # for instance, lab1 -> {name, lab2}. lab2 is a heapee
+        heapee = set()
+        # heaper to store all heap address headers
+        heaper = set()
+
     def init_first_stack_frame(self, module_name: str):
         modules: Value = sys.analysis_modules[module_name]
         module = modules.extract_1_elt()
@@ -94,30 +101,8 @@ class State:
         self.stack.frames[-1].f_globals = real_module.tp_dict
 
     def compute_value_of_expr(self, expr: ast.expr):
-        if isinstance(
-            expr,
-            (
-                ast.BoolOp,
-                ast.BinOp,
-                ast.UnaryOp,
-                ast.Constant,
-                ast.Subscript,
-                ast.Starred,
-                ast.Lambda,
-                ast.IfExp,
-                ast.Dict,
-                ast.Set,
-                ast.ListComp,
-                ast.SetComp,
-                ast.GeneratorExp,
-                ast.Await,
-                ast.Call,
-                ast.List,
-                ast.Tuple,
-            ),
-        ):
-            raise NotImplementedError(expr)
-        elif isinstance(expr, ast.Attribute):
+
+        if isinstance(expr, ast.Attribute):
             value = Value()
             receiver_value = self.compute_value_of_expr(expr.value)
             for one_receiver in receiver_value:
@@ -162,6 +147,29 @@ class State:
         elif isinstance(expr, ast.Index):
             value = self.compute_value_of_expr(expr.value)
             return value
+        elif isinstance(
+            expr,
+            (
+                ast.BoolOp,
+                ast.BinOp,
+                ast.UnaryOp,
+                ast.Constant,
+                ast.Subscript,
+                ast.Starred,
+                ast.Lambda,
+                ast.IfExp,
+                ast.Dict,
+                ast.Set,
+                ast.ListComp,
+                ast.SetComp,
+                ast.GeneratorExp,
+                ast.Await,
+                ast.Call,
+                ast.List,
+                ast.Tuple,
+            ),
+        ):
+            raise NotImplementedError(expr)
         else:
             raise NotImplementedError(expr)
 
@@ -326,6 +334,7 @@ def deepcopy_state(state: State, program_point) -> State:
 
     sys.stack = new_state.stack
     sys.heap = new_state.heap
+    sys.state = new_state
     sys.program_point = program_point
     return new_state
 
