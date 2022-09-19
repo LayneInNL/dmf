@@ -128,8 +128,10 @@ class Analysis(AnalysisBase):
         self.present()
 
     def initialize(self):
-        self.extremal_value = deepcopy_state(self.extremal_value, self.extremal_point)
         self.work_list.extendleft(self.generate_flow(self.extremal_point))
+        self.extremal_value = deepcopy_state(
+            self.extremal_value, self.extremal_point, self
+        )
         self.analysis_list[self.extremal_point] = self.extremal_value
 
     def _push_state_to(self, state: State, program_point: ProgramPoint):
@@ -140,6 +142,10 @@ class Analysis(AnalysisBase):
             self.detect_flow(program_point)
             added_program_points = self.generate_flow(program_point)
             self.work_list.extendleft(added_program_points)
+
+        # additional flows?
+        self.work_list.extendleft(reversed(sys.prepend_flows))
+        sys.prepend_flows.clear()
 
     def iterate(self):
         # as long as there are flows in work_list
@@ -181,7 +187,7 @@ class Analysis(AnalysisBase):
             # curr_state is the previous program point
             next_state: State = self.analysis_list[program_point]
             dummy_value: Value = Value()
-            next_next_state: State = deepcopy_state(next_state, program_point)
+            next_next_state: State = deepcopy_state(next_state, program_point, self)
 
             # class definition
             if self.is_classdef_call_point(program_point):
@@ -190,7 +196,7 @@ class Analysis(AnalysisBase):
                 self._detect_flow_call(
                     program_point, next_state, next_next_state, dummy_value
                 )
-                next_next_class_state = deepcopy_state(next_state, program_point)
+                next_next_class_state = deepcopy_state(next_state, program_point, self)
                 dummy_class_value = Value()
                 self._detect_flow_call_class(
                     program_point, next_state, next_next_class_state, dummy_class_value
@@ -780,7 +786,7 @@ class Analysis(AnalysisBase):
         if is_bot_state(old_state):
             return BOTTOM
 
-        new_state: State = deepcopy_state(old_state, program_point)
+        new_state: State = deepcopy_state(old_state, program_point, self)
         if self.is_dummy_point(program_point):
             return self.transfer_dummy(program_point, old_state, new_state)
         elif self.is_call_point(program_point):
@@ -1173,6 +1179,11 @@ class Analysis(AnalysisBase):
 
         # execute normal import
         module = import_a_module(name)
+        if sys.prepend_flows:
+            # meaning that a module needs importing
+            curr_flows = self.generate_flow(program_point)
+            sys.prepend_flows.extend(curr_flows)
+            return BOTTOM
 
         # import x.y
         if asname is None:
@@ -1205,12 +1216,18 @@ class Analysis(AnalysisBase):
         stmt: ast.ImportFrom,
     ):
         new_stack = new_state.stack
+        qualified_module_name = stmt.module
         if stmt.level > 0:
             package: str = getattr(new_stack.frames[-1].f_globals, MODULE_PACKAGE_FLAG)
             name = stmt.module if stmt.module else ""
-            resolved_module = self._resolve_name(name, package, stmt.level)
-            stmt.module = resolved_module
-        modules: Value = import_a_module(stmt.module)
+            qualified_module_name = self._resolve_name(name, package, stmt.level)
+        modules: Value = import_a_module(qualified_module_name)
+
+        if sys.prepend_flows:
+            # meaning that a module needs importing
+            curr_flows = self.generate_flow(program_point)
+            sys.prepend_flows.extend(curr_flows)
+            return BOTTOM
 
         for alias in stmt.names:
             name = alias.name
@@ -1219,8 +1236,13 @@ class Analysis(AnalysisBase):
                 try:
                     direct_res = module.tp_dict.read_value(name)
                 except AttributeError:
-                    sub_module_name = f"{stmt.module}.{name}"
+                    sub_module_name = f"{qualified_module_name}.{name}"
                     direct_res = import_a_module(sub_module_name)
+                    if sys.prepend_flows:
+                        # meaning that a module needs importing
+                        curr_flows = self.generate_flow(program_point)
+                        sys.prepend_flows.extend(curr_flows)
+                        return BOTTOM
                     if asname is None:
                         new_stack.write_var(name, Namespace_Local, direct_res)
                     else:
@@ -1393,6 +1415,10 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Pass,
     ) -> State:
+        # the exit label of a module must be ast.Pass
+        # if it is encountered, pop last frame
+        if program_point[0] in self.module_exit_labels:
+            new_state.stack.pop_frame()
         return new_state
 
     def transfer_Break(

@@ -129,6 +129,8 @@ class CFG:
         self.magic_right_inter_flows: Set[Tuple[int, int, int]] = set()
         self.magic_left_inter_flows: Set[Tuple[int, int, int]] = set()
         self.magic_del_inter_flows: Set[Tuple[int, int, int]] = set()
+        self.module_entry_labels: Set[int] = set()
+        self.module_exit_labels: Set[int] = set()
 
         self.call_labels: Set[int] = set()
         self.return_labels: Set[int] = set()
@@ -381,8 +383,11 @@ class CFGVisitor(ast.NodeVisitor):
         # pre structure cleaning
         self.cfg.start_block = self.curr_block
         add_stmt(self.cfg.start_block, self.parent_node)
+        self.cfg.module_entry_labels.add(self.cfg.start_block.bid)
         self.cfg.final_block = self.new_block()
         add_stmt(self.cfg.final_block, ast.Pass())
+        # add final label in order to execute pop out frame
+        self.cfg.module_exit_labels.add(self.cfg.final_block.bid)
 
         self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
         self.generic_visit(node)
@@ -1002,21 +1007,21 @@ class CFGVisitor(ast.NodeVisitor):
 
     def visit_Import(self, node: ast.Import) -> None:
         for name in node.names:
-            # call node
-            call_node = self.curr_block
             single_import: ast.Import = ast.Import(names=[name])
-            add_stmt(call_node, single_import)
-            # the node after return node
-            self.curr_block = self.add_edge(call_node.bid, self.new_block().bid)
+            add_stmt(self.curr_block, single_import)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+            add_stmt(self.curr_block, ast.Pass())
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         for name in node.names:
-            call_node = self.curr_block
-            tmp_importfrom = ast.ImportFrom(
+            single_importfrom = ast.ImportFrom(
                 module=node.module, names=[name], level=node.level
             )
-            add_stmt(call_node, tmp_importfrom)
-            self.curr_block = self.add_edge(call_node.bid, self.new_block().bid)
+            add_stmt(self.curr_block, single_importfrom)
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
+            add_stmt(self.curr_block, ast.Pass())
+            self.curr_block = self.add_edge(self.curr_block.bid, self.new_block().bid)
 
     def visit_Global(self, node: ast.Global) -> None:
         for name in node.names:

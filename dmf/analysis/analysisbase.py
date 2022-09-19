@@ -36,6 +36,8 @@ class AnalysisBase:
         self.magic_left_inter_flows = sys.magic_left_inter_tuples
         self.magic_del_inter_flows = sys.magic_del_inter_tuples
         self.special_init_flows = sys.special_init_inter_flows
+        self.module_entry_labels = sys.module_entry_labels
+        self.module_exit_labels = sys.module_exit_labels
 
         self.inter_flows: Set[
             Tuple[ProgramPoint, ProgramPoint, ProgramPoint, ProgramPoint]

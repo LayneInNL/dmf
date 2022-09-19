@@ -22,6 +22,7 @@ work. One should use importlib as the public-facing version of this module.
 
 # Bootstrap-related code ######################################################
 import _thread, _warnings, _weakref
+from copy import deepcopy
 
 from dmf.analysis.value import type_2_value
 
@@ -345,8 +346,9 @@ class _installed_safely:
             spec = self._spec
             if any(arg is not None for arg in args):
                 try:
+                    ...
                     # del sys.modules[spec.name]
-                    del sys.fake_analysis_modules[spec.name]
+                    # del sys.fake_analysis_modules[spec.name]
                 except KeyError:
                     pass
             else:
@@ -730,9 +732,18 @@ def _load_unlocked(spec):
             if module.__name__ in sys.analysis_modules:
                 raise NotImplementedError(module)
             sys.analysis_modules[module.__name__] = type_2_value(real_analysis_module)
-            analysis = sys.Analysis(real_analysis_module.tp_name)
-            analysis.compute_fixed_point()
-            print(sys.analysis_modules)
+
+            # module namespace
+            module_namespace = real_analysis_module.tp_dict
+            module_start_state = deepcopy(sys.state)
+            # add a new frame for this module
+            module_start_state.exec_a_module(module_namespace)
+            # start program point
+            start_program_point = (entry_lab, ())
+            # add flows related to this module
+            module_flows = sys.analysis.generate_flow(start_program_point)
+            sys.prepend_flows.extend(module_flows)
+            sys.analysis.analysis_list[start_program_point] = module_start_state
             # spec.loader.exec_module(module)
 
     # We don't ensure that the import-related module attributes get

@@ -50,6 +50,9 @@ sys.magic_right_inter_tuples = set()
 sys.magic_left_inter_tuples = set()
 sys.magic_del_inter_tuples = set()
 sys.special_init_inter_flows = set()
+sys.module_entry_labels = set()
+sys.module_exit_labels = set()
+sys.prepend_flows = []
 # mimic labels
 sys.dummy_labels = set()
 sys.call_labels = set()
@@ -67,6 +70,8 @@ def merge_cfg_info(cfg):
     sys.magic_left_inter_tuples.update(cfg.magic_left_inter_flows)
     sys.magic_del_inter_tuples.update(cfg.magic_del_inter_flows)
     sys.special_init_inter_flows.update(cfg.special_init_inter_flows)
+    sys.module_entry_labels.update(cfg.module_entry_labels)
+    sys.module_exit_labels.update(cfg.module_exit_labels)
 
     sys.dummy_labels.update(cfg.dummy_labels)
     sys.call_labels.update(cfg.call_labels)

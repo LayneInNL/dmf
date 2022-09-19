@@ -22,6 +22,7 @@ from dmf.analysis.namespace import (
     Namespace,
 )
 from dmf.analysis.symbol_table import Var, LocalVar, SymbolTable
+from dmf.analysis.union_namespace import UnionNamespace
 from dmf.analysis.value import Value
 
 Namespace_Global = "global"
@@ -40,7 +41,7 @@ class Frame:
     def __init__(self, *, f_locals, f_back, f_globals):
         self.f_locals: Namespace[Var, Value] = f_locals
         self.f_back: Frame | None = f_back
-        self.f_globals: Namespace[Var, Value] = f_globals
+        self.f_globals: UnionNamespace[Var, Value] = f_globals
 
     # compare f_locals, f_globals and f_builtins
     # don't know how to compare f_back for now

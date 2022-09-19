@@ -11,6 +11,8 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+from copy import deepcopy
+
 from dmf.analysis.symbol_table import LocalVar, Var, SymbolTable
 from dmf.analysis.value import Value
 
@@ -19,6 +21,13 @@ class UnionNamespace(SymbolTable):
     def __missing__(self, key):
         self[key] = value = Value()
         return value
+
+    def __deepcopy__(self, memo):
+        for var in self:
+            value = self[var]
+            new_value = deepcopy(value)
+            self[var] = new_value
+        return self
 
     def __le__(self, other):
         for var in self:

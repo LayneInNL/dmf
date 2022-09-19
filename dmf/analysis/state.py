@@ -78,6 +78,12 @@ class State:
         # heaper to store all heap address headers
         heaper = set()
 
+    def exec_a_module(self, tp_dict):
+        back_frame = self.stack.frames[-1]
+        self.stack.frames.append(
+            Frame(f_locals=tp_dict, f_back=back_frame, f_globals=tp_dict)
+        )
+
     def init_first_stack_frame(self, module_name: str):
         modules: Value = sys.analysis_modules[module_name]
         module = modules.extract_1_elt()
@@ -300,7 +306,7 @@ class State:
             stack.write_var(arguments.kwarg.arg, "local", Value.make_any())
 
 
-def deepcopy_state(state: State, program_point) -> State:
+def deepcopy_state(state: State, program_point, analysis) -> State:
 
     # main_modules = sys.analysis_modules["__main__"]
     # main_module = main_modules.value_2_list()[0]
@@ -309,6 +315,10 @@ def deepcopy_state(state: State, program_point) -> State:
     # curr_globals = curr_state.stack.frames[-1].f_globals
 
     memo = {}
+    for name in sys.analysis_modules:
+        modules = sys.analysis_modules[name]
+        sys.analysis_modules[name] = deepcopy(modules, memo)
+
     # sys.analysis_modules = deepcopy(sys.analysis_modules, memo)
     new_state = deepcopy(state, memo)
 
@@ -316,12 +326,12 @@ def deepcopy_state(state: State, program_point) -> State:
     # but it lost track of sys.modules
     # for example, import x. doing transfer on module x
     # then go back. prev f_globals
-    for frame in new_state.stack.frames:
-        f_globals = frame.f_globals
-        module_name = getattr(f_globals, MODULE_NAME_FLAG)
-        module_values = sys.analysis_modules[module_name]
-        for module in module_values:
-            module.tp_dict = f_globals
+    # for frame in new_state.stack.frames:
+    #     f_globals = frame.f_globals
+    #     module_name = getattr(f_globals, MODULE_NAME_FLAG)
+    #     module_values = sys.analysis_modules[module_name]
+    #     for module in module_values:
+    #         module.tp_dict = f_globals
 
     # main_modules = sys.analysis_modules["__main__"]
     # main_module = main_modules.value_2_list()[0]
@@ -334,8 +344,15 @@ def deepcopy_state(state: State, program_point) -> State:
 
     sys.stack = new_state.stack
     sys.heap = new_state.heap
+
+    # sync state
     sys.state = new_state
+    # sync program point
     sys.program_point = program_point
+    # sync work list
+    sys.work_list = analysis.work_list
+    # sync analysis itself
+    sys.analysis = analysis
     return new_state
 
 
