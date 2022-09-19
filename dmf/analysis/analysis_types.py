@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import sys
+from copy import deepcopy
 from types import FunctionType
 from typing import Tuple
 
@@ -925,12 +926,19 @@ class AnalysisModule(Analysis):
         self.tp_code: Tuple = tp_code
         self.tp_address = (self.tp_code[0],)
 
+    def __deepcopy__(self, memo):
+        new_tp_dict = deepcopy(self.tp_dict, memo)
+        self.tp_dict = new_tp_dict
+        return self
+
     def __le__(self, other: AnalysisModule):
-        return self.tp_dict <= other.tp_dict
+        return True
+        # return self.tp_dict <= other.tp_dict
 
     def __iadd__(self, other: AnalysisModule):
-        self.tp_dict += other.tp_dict
         return self
+        # self.tp_dict += other.tp_dict
+        # return self
 
     def custom_getattr(self, name):
         if name not in self.tp_dict:

@@ -74,6 +74,9 @@ class Typeshed(metaclass=UniqueTypeshedObject):
     def __iadd__(self, other):
         return self
 
+    def __repr__(self):
+        return self.tp_qualname
+
     def __deepcopy__(self, memo):
         if id(self) not in memo:
             memo[id(self)] = self

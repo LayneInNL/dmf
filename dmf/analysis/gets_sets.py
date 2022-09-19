@@ -141,14 +141,12 @@ def _setattr(obj, name, value) -> Value:
         return GenericSetAttr(obj, name, value)
     elif isinstance(obj, AnalysisClass):
         return type_setattro(obj, name, value)
+    elif isinstance(obj, AnalysisFunction):
+        return GenericSetAttr(obj, name, value)
     raise NotImplementedError(f"setattr({obj},{name},{value})")
     # # work on class
     # if isinstance(obj, ClassLevel):
     #     return type_setattro(obj, name, value)
-    # elif isinstance(obj, Instance):
-    #     return GenericSetAttr(obj, name, value)
-    # elif isinstance(obj, AnalysisFunction):
-    #     return GenericSetAttr(obj, name, value)
     # else:
     #     raise NotImplementedError(f"setattr({obj},{name},{value})")
     # else:

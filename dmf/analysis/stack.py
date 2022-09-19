@@ -171,6 +171,10 @@ class Frame:
         return self.f_globals
 
     def delete_var(self, name: str):
+        if self.f_locals is self.f_globals:
+            # global namespace, do nothing
+            return
+
         # delete names in current scope
         if name in self.f_locals:
             var: Var = self.f_locals.read_var_type(name)
@@ -212,9 +216,6 @@ class Stack:
         return top
 
     def top_frame(self) -> Frame:
-        if not self.frames:
-            print("heere")
-            a = 1
         return self.frames[-1]
 
     def top_namespace_contains(self, name):

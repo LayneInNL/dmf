@@ -25,7 +25,7 @@ class UnionNamespace(SymbolTable):
     def __deepcopy__(self, memo):
         for var in self:
             value = self[var]
-            new_value = deepcopy(value)
+            new_value = deepcopy(value, memo)
             self[var] = new_value
         return self
 

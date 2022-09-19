@@ -612,7 +612,7 @@ class CFGVisitor(ast.NodeVisitor):
 
         # __init__ return node
         init_return_node = self.add_edge(init_call_node.bid, self.new_block().bid)
-        init_var = TempVariableName.generate_special_name_node()
+        init_var = TempVariableName.generate_name_node()
         add_stmt(init_return_node, init_var)
 
         # __init__ dummy return node(return node)
@@ -1151,7 +1151,7 @@ class CFGVisitor(ast.NodeVisitor):
     def visit_Lambda(self, node: ast.Lambda) -> VisitedExprRes:
         tmp_var_node = TempVariableName.generate_name_node()
         tmp_function_def = ast.FunctionDef(
-            name=tmp_var_node,
+            name=tmp_var_node.id,
             args=node.args,
             body=[ast.Return(node.body)],
             decorator_list=[],
