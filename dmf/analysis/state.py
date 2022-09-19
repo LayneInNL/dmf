@@ -54,11 +54,9 @@ class State:
         self,
         stack: Stack,
         heap: Heap,
-        init_module_name: str,
     ):
         self.stack: Stack = stack
         self.heap: Heap = heap
-        self.init_first_stack_frame(init_module_name)
 
     def __repr__(self):
         return f"{self.stack}\n{self.heap}"
@@ -79,17 +77,12 @@ class State:
         heaper = set()
 
     def exec_a_module(self, tp_dict):
-        back_frame = self.stack.frames[-1]
+        if self.stack.frames:
+            back_frame = self.stack.frames[-1]
+        else:
+            back_frame = None
         self.stack.frames.append(
             Frame(f_locals=tp_dict, f_back=back_frame, f_globals=tp_dict)
-        )
-
-    def init_first_stack_frame(self, module_name: str):
-        modules: Value = sys.analysis_modules[module_name]
-        module = modules.extract_1_elt()
-        global_ns = module.tp_dict
-        self.stack.frames.append(
-            Frame(f_locals=global_ns, f_back=None, f_globals=global_ns)
         )
 
     def switch_global_namespace(self, new_module_name):

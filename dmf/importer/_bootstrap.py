@@ -737,9 +737,10 @@ def _load_unlocked(spec):
             module_namespace = real_analysis_module.tp_dict
             module_start_state = deepcopy(sys.state)
             # add a new frame for this module
-            module_start_state.exec_a_module(module_namespace)
+            # module_start_state.exec_a_module(module_namespace)
             # start program point
             start_program_point = (entry_lab, ())
+            sys.analysis.module_entry_info[start_program_point] = module_namespace
             # add flows related to this module
             module_flows = sys.analysis.generate_flow(start_program_point)
             sys.prepend_flows.extend(module_flows)

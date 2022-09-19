@@ -62,5 +62,5 @@ if __name__ == "__main__":
         tp_name="__main__", tp_package="", tp_code=(entry_label, exit_label)
     )
     sys.analysis_modules["__main__"] = type_2_value(main_module)
-    analysis = Analysis("__main__")
+    analysis = Analysis()
     analysis.compute_fixed_point()

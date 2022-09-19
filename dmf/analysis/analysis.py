@@ -17,6 +17,7 @@ from __future__ import annotations
 import ast
 import sys
 from collections import defaultdict, deque, namedtuple
+from copy import deepcopy
 from typing import Dict, Tuple, Deque, List
 
 import astor
@@ -75,8 +76,8 @@ from dmf.analysis.state import (
 from dmf.analysis.typeshed_types import (
     TypeshedFunction,
     TypeshedClass,
-    TypeshedInstance,
 )
+from dmf.analysis.union_namespace import UnionNamespace
 from dmf.analysis.value import Value, type_2_value
 from dmf.log.logger import logger
 
@@ -98,7 +99,7 @@ AdditionalEntryInfo = namedtuple(
 
 
 class Analysis(AnalysisBase):
-    def __init__(self, qualified_module_name: str):
+    def __init__(self):
         super().__init__()
         # work list
         self.work_list: Deque[Tuple[ProgramPoint, ProgramPoint]] = deque()
@@ -106,17 +107,18 @@ class Analysis(AnalysisBase):
         self.extremal_value: State = State(
             Stack(),
             Heap(),
-            qualified_module_name,
         )
-        curr_modules: Value = sys.analysis_modules[qualified_module_name]
-        curr_module = curr_modules.extract_1_elt()
-        start_lab, final_lab = curr_module.tp_code
+        # curr_modules: Value = sys.analysis_modules[qualified_module_name]
+        # curr_module = curr_modules.extract_1_elt()
+        # start_lab, final_lab = curr_module.tp_code
         # start point
-        self.extremal_point: ProgramPoint = (start_lab, ())
+        self.extremal_point: ProgramPoint = (1, ())
         # end point
-        self.final_point: ProgramPoint = (final_lab, ())
+        # self.final_point: ProgramPoint = (final_lab, ())
 
         self.entry_program_point_info: Dict[ProgramPoint, AdditionalEntryInfo] = {}
+        # record module name so that the analysis can execute exec
+        self.module_entry_info: Dict[ProgramPoint, UnionNamespace] = {}
         self.analysis_list: defaultdict[ProgramPoint, State | BOTTOM] = defaultdict(
             lambda: BOTTOM
         )
@@ -132,6 +134,10 @@ class Analysis(AnalysisBase):
         self.extremal_value = deepcopy_state(
             self.extremal_value, self.extremal_point, self
         )
+        main_modules = sys.analysis_modules["__main__"]
+        main_module = main_modules.extract_1_elt()
+        main_module_dict = main_module.tp_dict
+        self.module_entry_info[self.extremal_point] = main_module_dict
         self.analysis_list[self.extremal_point] = self.extremal_value
 
     def _push_state_to(self, state: State, program_point: ProgramPoint):
@@ -161,7 +167,7 @@ class Analysis(AnalysisBase):
             self._push_state_to(transferred, program_point2)
 
     def present(self):
-        for program_point in list(self.analysis_list) + [self.final_point]:
+        for program_point in list(self.analysis_list):
             logger.info(
                 "Context at program point {}: {}".format(
                     program_point, self.analysis_list[program_point]
@@ -1415,9 +1421,12 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Pass,
     ) -> State:
+        if program_point[0] in self.module_entry_labels:
+            module_dict = self.module_entry_info[program_point]
+            new_state.exec_a_module(module_dict)
         # the exit label of a module must be ast.Pass
         # if it is encountered, pop last frame
-        if program_point[0] in self.module_exit_labels:
+        elif program_point[0] in self.module_exit_labels:
             new_state.stack.pop_frame()
         return new_state
 
