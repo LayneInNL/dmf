@@ -145,6 +145,9 @@ class TypeshedFunction(Typeshed):
     def add_one_function(self, function: ast.FunctionDef):
         self.functions.append(function)
 
+    def __repr__(self):
+        return f"typeshed function {self.tp_qualname}"
+
 
 class TypeshedDescriptorGetter(Typeshed):
     def __init__(self, tp_name, tp_module, tp_qualname):
@@ -180,7 +183,7 @@ class TypeshedInstance(Typeshed):
         self.tp_dict: Namespace = Namespace()
 
     def __repr__(self):
-        return f"{self.tp_qualname}"
+        return f"typeshed object {self.tp_qualname}"
 
 
 def parse_typeshed_module(module: str):

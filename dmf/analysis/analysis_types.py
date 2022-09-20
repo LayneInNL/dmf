@@ -51,6 +51,7 @@ from dmf.analysis.typeshed_types import (
     TypeshedImportedName,
     TypeshedInstance,
 )
+from dmf.analysis.typing_names import all_typing_names, all_builtin_names
 from dmf.analysis.union_namespace import UnionNamespace
 from dmf.analysis.value import Value, type_2_value
 from dmf.log.logger import logger
@@ -84,6 +85,10 @@ Int_Instance = Int_Type()
 Float_Types: Value = builtin_module_dict.read_value("float")
 Float_Type = extract_1value(Float_Types)
 Float_Instance = Float_Type()
+
+Complex_Types: Value = builtin_module_dict.read_value("complex")
+Complex_Type = extract_1value(Complex_Types)
+Complex_Instance = Complex_Type()
 
 Str_Types: Value = builtin_module_dict.read_value("str")
 Str_Type = extract_1value(Str_Types)
@@ -1193,104 +1198,113 @@ class TypeExprVisitor(ast.NodeVisitor):
         return value
 
     def generic_visit(self, node: ast.AST):
-        return Value.make_any()
+        # return Value.make_any()
         raise NotImplementedError(astor.to_source(node))
 
-    # def visit_BinOp(self, node: ast.BinOp):
-    #     value = Value()
-    #     if not isinstance(node.op, ast.BitOr):
-    #         raise NotImplementedError
-    #     lhs_value = self.visit(node.left)
-    #     value.inject(lhs_value)
-    #     rhs_value = self.visit(node.right)
-    #     value.inject(rhs_value)
-    #     return value
-    #
-    # def visit_Call(self, node: ast.Call):
-    #     return Value.make_any()
-    #
-    # def visit_Num(self, node: ast.Num):
-    #     if isinstance(node.n, int):
-    #         value = type_2_value(Int_Instance)
-    #         return value
-    #     elif isinstance(node.n, float):
-    #         value = type_2_value(Float_Instance)
-    #         return value
-    #     else:
-    #         raise NotImplementedError(node)
-    #
-    # def visit_Str(self, node: ast.Str):
-    #     value = type_2_value(Str_Instance)
-    #     return value
-    #
-    # def visit_Bytes(self, node: ast.Bytes):
-    #     value = type_2_value(Bytes_Instance)
-    #     return value
-    #
-    # def visit_NameConstant(self, node: ast.NameConstant):
-    #     if node.value is not None:
-    #         value = type_2_value(Bool_Instance)
-    #         return value
-    #     else:
-    #         value = type_2_value(None_Instance)
-    #         return value
-    #
-    # def visit_Attribute(self, node: ast.Attribute):
-    #     value = Value()
-    #
-    #     # compute receiver value
-    #     receiver_value = self.visit(node.value)
-    #     for one_receiver in receiver_value:
-    #         if node.attr in one_receiver.tp_dict:
-    #             attr_value = one_receiver.tp_dict.read_value(node.attr)
-    #             value.inject(attr_value)
-    #         else:
-    #             raise AttributeError(node)
-    #     refined_value = refine_value(value)
-    #     return refined_value
-    #
-    # def visit_Subscript(self, node: ast.Subscript):
-    #     if not isinstance(node.value, ast.Name):
-    #         raise NotImplementedError(node)
-    #     if node.value.id == "Literal":
-    #         return self.visit(node.slice)
-    #     return self.visit(ast.Name(id="Any"))
-    #
-    # def visit_Name(self, node: ast.Name):
-    #     id = node.id
-    #     if id in ("Any", "Union", "Callable", "TypeVar", "Generic"):
-    #         return Value.make_any()
-    #
-    #     if id in builtin_module_dict:
-    #         value = Value()
-    #         blt_value = builtin_module_dict.read_value(id)
-    #         for one_value in blt_value:
-    #             res = TypeExprVisitor(one_value).refine()
-    #             value.inject(res)
-    #         return value
-    #     else:
-    #         # check if it's in module
-    #         value = Value()
-    #         # get typeshed module
-    #         modules: Value = parse_typeshed_module(self.typeshed.tp_module)
-    #         for module in modules:
-    #             if id in module.tp_dict:
-    #                 name_value = module.tp_dict.read_value(id)
-    #                 value.inject(name_value)
-    #             else:
-    #                 raise AttributeError(self.typeshed.tp_module, id)
-    #         refined_value = refine_value(value)
-    #         return refined_value
-    #
-    # def visit_Index(self, node: ast.Index):
-    #     return self.visit(node.value)
-    #
-    # def visit_Tuple(self, node: ast.Tuple):
-    #     value = Value()
-    #     for elt in node.elts:
-    #         one_value = self.visit(elt)
-    #         value.inject(one_value)
-    #     return value
+    # X | Y
+    def visit_BinOp(self, node: ast.BinOp):
+        if not isinstance(node.op, ast.BitOr):
+            raise NotImplementedError(node)
+        value = Value()
+        lhs_value = self.visit(node.left)
+        value.inject(lhs_value)
+        rhs_value = self.visit(node.right)
+        value.inject(rhs_value)
+        return value
+
+    # we maintain singleton in typeshed, so return Any
+    def visit_Call(self, node: ast.Call):
+        return Value.make_any()
+
+    def visit_Num(self, node: ast.Num):
+        value = Value()
+        if isinstance(node.n, int):
+            value.inject(Int_Type())
+        elif isinstance(node.n, float):
+            value.inject(Float_Type())
+        else:
+            value.inject(Complex_Type())
+        return value
+
+    def visit_Str(self, node: ast.Str):
+        value = Value()
+        value.inject(Str_Type())
+        return value
+
+    def visit_Bytes(self, node: ast.Bytes):
+        value = Value()
+        value.inject(Bytes_Type())
+        return value
+
+    def visit_NameConstant(self, node: ast.NameConstant):
+        value = Value()
+        if node.value is not None:
+            value.inject(Bool_Type())
+        else:
+            value.inject(None_Instance)
+        return value
+
+    # types.ModuleType
+    def visit_Attribute(self, node: ast.Attribute):
+        value = Value()
+
+        # compute receiver value
+        receiver_value = self.visit(node.value)
+        for one_receiver in receiver_value:
+            if node.attr in one_receiver.tp_dict:
+                attr_value = one_receiver.tp_dict.read_value(node.attr)
+                value.inject(attr_value)
+            else:
+                raise AttributeError(node)
+        refined_value = refine_value(value)
+        return refined_value
+
+    def visit_Subscript(self, node: ast.Subscript):
+        if not isinstance(node.value, ast.Name):
+            raise NotImplementedError(node)
+        return self.visit(node.value)
+
+    def visit_Name(self, node: ast.Name):
+        id = node.id
+        # if id is an identifier in
+        if id in all_typing_names:
+            return Value.make_any()
+
+        value = Value()
+        if id in all_builtin_names:
+            builtin_visitor = TypeExprVisitor(
+                TypeshedAssign(
+                    tp_name=id,
+                    tp_module="builtins",
+                    tp_qualname=f"builtins.{id}",
+                    tp_code=ast.Name(id=id),
+                )
+            )
+            res = builtin_visitor.refine()
+            value.inject(res)
+            return value
+
+        # check if it's in module
+        # get typeshed module
+        modules: Value = parse_typeshed_module(self.typeshed.tp_module)
+        for module in modules:
+            if id in module.tp_dict:
+                name_value = module.tp_dict.read_value(id)
+                value.inject(name_value)
+            else:
+                raise AttributeError(self.typeshed.tp_module, id)
+        refined_value = refine_value(value)
+        return refined_value
+
+    def visit_Index(self, node: ast.Index):
+        return self.visit(node.value)
+
+    def visit_Tuple(self, node: ast.Tuple):
+        value = Value()
+        for elt in node.elts:
+            one_value = self.visit(elt)
+            value.inject(one_value)
+        return value
 
 
 # further parse types
@@ -1315,23 +1329,17 @@ def _function_refine_self_to_value(self: TypeshedFunction, *args, **kwargs):
     value = Value()
     for function in self.functions:
         _val = visitor.visit(function.returns)
-        value.inject(_val)
+        for one_val in _val:
+            if isinstance(one_val, TypeshedClass):
+                instance_val = one_val()
+                value.inject(instance_val)
+            else:
+                value.inject(one_val)
     return value
 
 
 TypeshedFunction.refine_self_to_value = _function_refine_self_to_value
-
-# refine property to its type
-def _property_refine_self_to_value(self: TypeshedDescriptorGetter, *args, **kwargs):
-    visitor = TypeExprVisitor(self)
-    value = Value()
-    for function in self.functions:
-        _val = visitor.visit(function.returns)
-        value.inject(_val)
-    return value
-
-
-TypeshedDescriptorGetter.refine_self_to_value = _property_refine_self_to_value
+TypeshedDescriptorGetter.refine_self_to_value = _function_refine_self_to_value
 
 
 def _assign_refine_self_to_value(self: TypeshedAssign, *args, **kwargs):
@@ -1351,4 +1359,3 @@ def _object_call(self, tp_address, tp_class, *args, **kwargs):
 
 
 Object_Type.__call__ = _object_call
-print(artificial_namespace)

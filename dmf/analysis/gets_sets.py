@@ -106,7 +106,7 @@ def _find_name_in_mro(obj_type, name, mros=None) -> Value:
 def analysis_getattrs(objs: Value, name: str, default=None) -> Value:
     # if objs is Any, just return two Anys
     if objs.is_Any():
-        return Value(any=True)
+        return Value.make_any()
 
     # direct results
     direct_res = Value()

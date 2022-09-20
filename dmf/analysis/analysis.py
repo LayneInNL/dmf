@@ -772,12 +772,7 @@ class Analysis(AnalysisBase):
                 typeshed_instance = type()
                 dummy_value.inject(typeshed_instance)
             elif isinstance(type, TypeshedFunction):
-                functions = type.functions
-                one_value = Value()
-                visitor = TypeExprVisitor(type)
-                for function in functions:
-                    function_return_return = visitor.visit(function.returns)
-                    one_value.inject(function_return_return)
+                one_value = type.refine_self_to_value()
                 dummy_value.inject(one_value)
             else:
                 raise NotImplementedError(type)
