@@ -34,10 +34,9 @@ from dmf.analysis.exceptions import IteratingError
 from dmf.analysis.implicit_names import (
     MODULE_PACKAGE_FLAG,
     MODULE_NAME_FLAG,
-    typeshed_init,
 )
 from dmf.analysis.namespace import Namespace
-from dmf.analysis.special_types import MRO_Any
+from dmf.analysis.special_types import Any
 from dmf.analysis.typeshed_types import (
     TypeshedModule,
     TypeshedFunction,
@@ -201,7 +200,7 @@ class SuperArtificialClass(ArtificialClass):
                     super_mros.append(one_mro)
                     break
             else:
-                super_mros.append([MRO_Any])
+                super_mros.append([Any])
 
         return SuperAnalysisInstance(tp_address, tp_class, type2, super_mros)
 
@@ -977,7 +976,7 @@ class AnalysisFunction(Analysis):
         self.tp_class = Function_Type
         self.tp_code: Tuple[int, int] = tp_code
         self.tp_module: str = tp_module
-        self.tp_dict: Namespace = Namespace()
+        self.tp_dict: UnionNamespace = UnionNamespace()
         self.tp_defaults = tp_defaults
         self.tp_kwdefaults = tp_kwdefaults
         self.tp_address = tp_address

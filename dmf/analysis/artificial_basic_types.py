@@ -15,7 +15,7 @@ from types import FunctionType
 from typing import List
 
 from dmf.analysis.namespace import Namespace
-from dmf.analysis.special_types import Bases_Any, MRO_Any
+from dmf.analysis.special_types import Any
 from dmf.analysis.value import type_2_value, Value
 from dmf.log.logger import logger
 
@@ -153,8 +153,8 @@ def c3(cls_obj):
 def static_c3(cls_obj) -> List[List]:
     if cls_obj is Object_Type:
         return [[cls_obj]]
-    elif cls_obj is Bases_Any:
-        return [[MRO_Any]]
+    elif cls_obj is Any:
+        return [[Any]]
     else:
         mros = []
         # cls_obj is like [[1,2,3]]

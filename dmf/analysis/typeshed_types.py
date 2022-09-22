@@ -18,29 +18,9 @@ from typing import List
 import astor
 
 from dmf.analysis.namespace import Namespace
-from dmf.analysis.special_types import Bases_Any, Any, MRO_Any
+from dmf.analysis.special_types import Any
 from dmf.analysis.typeshed import get_stub_file
 from dmf.analysis.value import type_2_value, Value
-
-
-class _Typeshed_Type_Type:
-    def __init__(self):
-        self.tp_class = self
-        self.tp_dict = Namespace()
-
-    def __le__(self, other):
-        return True
-
-    def __iadd__(self, other):
-        return self
-
-    def __deepcopy__(self, memo):
-        if id(self) not in memo:
-            memo[id(self)] = self
-        return memo[id(self)]
-
-
-Typeshed_Type_Type = _Typeshed_Type_Type()
 
 
 class UniqueTypeshedObject(type):
@@ -87,6 +67,10 @@ class Typeshed(metaclass=UniqueTypeshedObject):
         value.inject(self)
         return value
 
+    # used to extract type information
+    def extract_type(self):
+        raise NotImplementedError
+
 
 class TypeshedModule(Typeshed):
     def __init__(
@@ -119,8 +103,8 @@ class TypeshedClass(Typeshed):
         super().__init__(tp_name, tp_module, tp_qualname)
         self.tp_dict = tp_dict
         self.tp_class = Any
-        self.tp_bases = [[Bases_Any]]
-        self.tp_mro = [[self, MRO_Any]]
+        self.tp_bases = [[Any]]
+        self.tp_mro = [[self, Any]]
 
     def __repr__(self):
         return self.tp_qualname
@@ -135,6 +119,9 @@ class TypeshedClass(Typeshed):
         )
         value.inject(an_object)
         return value
+
+    def extract_type(self):
+        return self.tp_class
 
 
 class TypeshedFunction(Typeshed):

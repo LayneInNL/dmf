@@ -31,35 +31,11 @@ class SingletonInstanceWithDeepcopy:
         return memo[id(self)]
 
 
-class _MROAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
-    def __init__(self):
-        self.tp_uuid = id(self)
-
-    def __repr__(self):
-        return "MRO_Any"
-
-
-# meaning that __mro__ is incomplete
-MRO_Any = _MROAny()
-
-
-class _BasesAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
-    def __init__(self):
-        self.tp_uuid = id(self)
-
-    def __repr__(self):
-        return "Bases_Any"
-
-
-# meaning that __bases__ is incomplete
-Bases_Any = _BasesAny()
-
-
 class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
     def __init__(self):
         self.tp_uuid = -1024
         self.tp_class = self
-        self.tp_bases = [[Bases_Any]]
+        self.tp_bases = [[self]]
 
     def __repr__(self):
         return "Any"

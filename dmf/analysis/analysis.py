@@ -43,10 +43,10 @@ from dmf.analysis.builtin_functions import import_a_module
 from dmf.analysis.context_sensitivity import merge, record
 from dmf.analysis.exceptions import ParsingDefaultsError, ParsingKwDefaultsError
 from dmf.analysis.gets_sets import (
-    analysis_getattrs,
+    getattrs,
     analysis_getattr,
     setattrs,
-    _setattr,
+    analysis_setattr,
 )
 from dmf.analysis.implicit_names import (
     POS_ARG_LEN,
@@ -550,7 +550,7 @@ class Analysis(AnalysisBase):
         elif isinstance(expr, ast.Attribute):
             # compute receiver value
             lhs_value = new_state.compute_value_of_expr(expr.value)
-            descriptor_result = analysis_getattrs(lhs_value, expr.attr)
+            descriptor_result = getattrs(lhs_value, expr.attr)
 
             # add flows of possible descriptors
             for descriptor in descriptor_result:
@@ -863,7 +863,7 @@ class Analysis(AnalysisBase):
             # del x.y
             receiver_value = new_state.compute_value_of_expr(target.value)
             for receiver_type in receiver_value:
-                descriptor_result = _setattr(receiver_type, target.attr, None)
+                descriptor_result = analysis_setattr(receiver_type, target.attr, None)
                 for descriptor in descriptor_result:
                     if isinstance(descriptor, AnalysisDescriptor):
                         args = descriptor.tp_args
@@ -897,7 +897,9 @@ class Analysis(AnalysisBase):
             receiver_value = new_state.compute_value_of_expr(attribute.value)
             rhs_value = new_state.compute_value_of_expr(assign_stmt.value)
             for receiver_type in receiver_value:
-                descriptor_result = _setattr(receiver_type, attribute.attr, rhs_value)
+                descriptor_result = analysis_setattr(
+                    receiver_type, attribute.attr, rhs_value
+                )
                 for descriptor in descriptor_result:
                     if isinstance(descriptor, AnalysisDescriptor):
                         args = descriptor.tp_args
@@ -963,7 +965,7 @@ class Analysis(AnalysisBase):
             raise NotImplementedError(call_expr)
         elif isinstance(call_expr, ast.Attribute):
             receiver_value = new_state.compute_value_of_expr(call_expr.value)
-            descriptor_result = analysis_getattrs(receiver_value, call_expr.attr)
+            descriptor_result = getattrs(receiver_value, call_expr.attr)
             for descriptor in descriptor_result:
                 if isinstance(descriptor, AnalysisDescriptor):
                     args = descriptor.tp_args

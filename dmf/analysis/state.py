@@ -31,8 +31,8 @@ from dmf.analysis.analysis_types import (
 from dmf.analysis.exceptions import ParsingDefaultsError, ParsingKwDefaultsError
 from dmf.analysis.gets_sets import analysis_getattr
 from dmf.analysis.heap import Heap
-from dmf.analysis.implicit_names import POS_ARG_LEN, MODULE_NAME_FLAG
-from dmf.analysis.special_types import Bases_Any
+from dmf.analysis.implicit_names import POS_ARG_LEN
+from dmf.analysis.special_types import Any
 from dmf.analysis.stack import Stack, Frame
 from dmf.analysis.typeshed_types import Typeshed
 from dmf.analysis.value import Value, type_2_value
@@ -223,7 +223,7 @@ class State:
         for base_list in base_types:
             for base in base_list:
                 if isinstance(base, Typeshed):
-                    return [[Bases_Any]]
+                    return [[Any]]
         return base_types
 
     def parse_positional_args(self, start_pos: int, arguments: ast.arguments):
