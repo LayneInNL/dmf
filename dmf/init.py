@@ -18,8 +18,6 @@ import sys
 
 from dmf.flows import construct_CFG
 
-# stack of state
-sys.stack = None
 # heap of state
 sys.heap = None
 # program_point

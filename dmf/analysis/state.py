@@ -327,15 +327,12 @@ def deepcopy_state(state: State, program_point, analysis) -> State:
     #     for module in module_values:
     #         module.tp_dict = f_globals
 
-    sys.stack = new_state.stack
     sys.heap = new_state.heap
 
     # sync state
     sys.state = new_state
     # sync program point
     sys.program_point = program_point
-    # sync work list
-    sys.work_list = analysis.work_list
     # sync analysis itself
     sys.analysis = analysis
     return new_state

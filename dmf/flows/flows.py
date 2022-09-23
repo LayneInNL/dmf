@@ -38,11 +38,6 @@ class TempVariableName:
         cls.counter += 1
         return ast.Name(id=f"_var{cls.counter}")
 
-    @classmethod
-    def generate_special_name_node(cls) -> ast.Name:
-        cls.counter += 1
-        return ast.Name(id=f"_specialvar{cls.counter}")
-
 
 class BlockId:
     counter: int = 0
@@ -880,32 +875,32 @@ class CFGVisitor(ast.NodeVisitor):
             node.body = curr_body
             self.visit(node)
         else:
-            manager_var = ast.Name(id=TempVariableName.generate())
+            manager_var = TempVariableName.generate_name_node()
             manager_assign = ast.Assign(
                 targets=[manager_var], value=node.items[0].context_expr
             )
-            manager_type_var = ast.Name(id=TempVariableName.generate())
+            manager_type_var = TempVariableName.generate_name_node()
             manager_type_value = ast.Call(
                 func=ast.Name(id="type"), args=[manager_var], keywords=[]
             )
             manager_type_assign = ast.Assign(
                 targets=[manager_type_var], value=manager_type_value
             )
-            enter_var = ast.Name(id=TempVariableName.generate())
+            enter_var = TempVariableName.generate_name_node()
             enter_value = ast.Attribute(
                 value=manager_type_var,
                 attr="__enter__",
                 ctx=ast.Load(),
             )
             enter_assign = ast.Assign(targets=[enter_var], value=enter_value)
-            exit_var = ast.Name(id=TempVariableName.generate())
+            exit_var = TempVariableName.generate_name_node()
             exit_value = ast.Attribute(
                 value=manager_type_var,
                 attr="__exit__",
                 ctx=ast.Load(),
             )
             exit_assign = ast.Assign(targets=[exit_var], value=exit_value)
-            value_var = ast.Name(id=TempVariableName.generate())
+            value_var = TempVariableName.generate_name_node()
             value_value = ast.Call(func=enter_var, args=[manager_var], keywords=[])
             value_assign = ast.Assign(targets=[value_var], value=value_value)
             preceded = [

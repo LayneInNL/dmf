@@ -1098,7 +1098,6 @@ class Analysis(AnalysisBase):
         if instance_info:
             new_stack.write_var(str(0), Namespace_Local, instance_info)
         if init_info:
-            # setattr(new_stack.frames[-1].f_locals, INIT_FLAG, None)
             new_stack.write_var(
                 RETURN_FLAG, Namespace_Local, type_2_value(instance_info)
             )
@@ -1310,6 +1309,11 @@ class Analysis(AnalysisBase):
         cls_name: str = stmt.name
         module: str = getattr(new_stack.frames[-1].f_globals, MODULE_NAME_FLAG)
 
+        # short circuit
+        if stmt.keywords:
+            new_stack.write_var(cls_name, Namespace_Local, Value.make_any())
+            return new_state
+
         value: Value = Value()
         bases = new_state.compute_bases(stmt)
         # call_lab is the allocation label of this class
@@ -1482,6 +1486,3 @@ class Analysis(AnalysisBase):
         stmt: ast.Continue,
     ) -> State:
         return new_state
-
-
-sys.Analysis = Analysis

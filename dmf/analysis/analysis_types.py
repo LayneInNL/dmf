@@ -881,7 +881,7 @@ class AnalysisInstance(Analysis):
         return f"{self.tp_address} object"
 
     def extract_type(self):
-        return self.tp_class.extract_type()
+        return f"class {self.tp_class.tp_qualname}"
 
 
 class AnalysisClass(Analysis):
@@ -902,6 +902,7 @@ class AnalysisClass(Analysis):
         self.tp_address = tp_address
         # class name
         self.tp_name = tp_name
+        self.tp_qualname = tp_name
 
     def __le__(self, other: AnalysisClass):
         return self.tp_dict <= other.tp_dict
