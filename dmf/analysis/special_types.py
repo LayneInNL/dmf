@@ -62,6 +62,9 @@ class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
     def __iter__(self):
         return iter([self])
 
+    def extract_type(self):
+        return "Any"
+
 
 # mimic typing.Any
 Any = _TypeAny()

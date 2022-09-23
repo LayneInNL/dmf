@@ -170,7 +170,6 @@ class CFG:
                 if id3 == block.bid:
                     additional += "Dummy return of delete magic methods"
 
-            self.graph.node(str(block.bid), label=block.stmt_to_code() + additional)
             for (
                 id1,
                 id2,
@@ -202,6 +201,8 @@ class CFG:
                     additional += "Return"
                 if id9 == block.bid:
                     additional += "Dummy return"
+
+            self.graph.node(str(block.bid), label=block.stmt_to_code() + additional)
             for next_bid in block.next:
                 self._traverse(self.blocks[next_bid], visited)
                 self.graph.edge(

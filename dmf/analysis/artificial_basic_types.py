@@ -45,12 +45,15 @@ class Artificial(metaclass=UniqueArtificialObject):
             memo[id(self)] = self
         return memo[id(self)]
 
+    def extract_type(self):
+        raise NotImplementedError
+
 
 # mimic man-made functions such as len()
 class ArtificialFunction(Artificial):
     def __init__(self, tp_function: FunctionType, tp_qualname: str):
         # use memory address to denote uniqueness
-        self.tp_uuid: str = f"artificial {tp_qualname}"
+        self.tp_uuid: str = f"artificial.function.{tp_qualname}"
         # human-readable function name
         self.tp_qualname: str = tp_qualname
         # function itself
@@ -72,13 +75,22 @@ class ArtificialFunction(Artificial):
     def __repr__(self):
         return self.tp_uuid
 
+    def extract_type(self):
+        return f"function {self.tp_qualname}"
+
 
 # mimic methods such as list.append
 class ArtificialMethod(Artificial):
     def __init__(self, tp_function: ArtificialFunction, tp_instance):
-        self.tp_uuid: str = f"artificial {tp_function.tp_uuid}-{tp_instance.tp_uuid}"
+        self.tp_uuid: str = (
+            f"artificial.method.{tp_function.tp_uuid}.{tp_instance.tp_uuid}"
+        )
+        self.tp_qualname = f"{tp_function.tp_uuid}.{tp_instance.tp_uuid}"
         self.tp_function: ArtificialFunction = tp_function
         self.tp_instance = tp_instance
+
+    def extract_type(self):
+        return f"method {self.tp_qualname}"
 
     def __call__(self, *args, **kwargs):
         value = Value()
@@ -99,7 +111,7 @@ class ArtificialMethod(Artificial):
 class ArtificialClass(Artificial):
     def __init__(self, tp_qualname: str):
         # fully qualified name
-        self.tp_uuid: str = f"artificial class {tp_qualname}"
+        self.tp_uuid: str = f"artificial.class.{tp_qualname}"
         # fully qualified name
         self.tp_qualname: str = tp_qualname
         # instance dict
@@ -110,6 +122,9 @@ class ArtificialClass(Artificial):
 
     def __call__(self, *args, **kwargs):
         raise NotImplementedError
+
+    def extract_type(self):
+        return f"class builtins.type"
 
 
 # mimic builtins.type
@@ -191,7 +206,7 @@ Object_Type.tp_mro = c3(Object_Type)
 
 # redefine __init__ to create other ArtificialClasses
 def __init__(self, tp_qualname: str):
-    self.tp_uuid: str = f"arti-class-{tp_qualname}"
+    self.tp_uuid: str = f"artificial.class.{tp_qualname}"
     self.tp_qualname: str = tp_qualname
     self.tp_dict: Namespace = Namespace()
     self.tp_class = Type_Type

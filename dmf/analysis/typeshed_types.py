@@ -88,6 +88,9 @@ class TypeshedModule(Typeshed):
     def __repr__(self):
         return f"typeshed module object {self.tp_name}"
 
+    def extract_type(self):
+        return f"module {self.tp_qualname}"
+
 
 class TypeshedAssign(Typeshed):
     def __init__(
@@ -121,7 +124,7 @@ class TypeshedClass(Typeshed):
         return value
 
     def extract_type(self):
-        return self.tp_class
+        return f"Any"
 
 
 class TypeshedFunction(Typeshed):
@@ -135,6 +138,9 @@ class TypeshedFunction(Typeshed):
     def __repr__(self):
         return f"typeshed function {self.tp_qualname}"
 
+    def extract_type(self):
+        return f"function {self.tp_qualname}"
+
 
 class TypeshedDescriptorGetter(Typeshed):
     def __init__(self, tp_name, tp_module, tp_qualname):
@@ -143,6 +149,9 @@ class TypeshedDescriptorGetter(Typeshed):
 
     def add_one_function(self, function: ast.FunctionDef):
         self.functions.append(function)
+
+    # def extract_type(self):
+    #     return self.tp_qualname
 
 
 class TypeshedImportedModule(Typeshed):
@@ -166,11 +175,14 @@ class TypeshedInstance(Typeshed):
         tp_name = tp_name
         tp_qualname = tp_qualname
         super().__init__(tp_name, tp_module, tp_qualname)
-        self.tp_class = tp_class
+        self.tp_class: TypeshedClass = tp_class
         self.tp_dict: Namespace = Namespace()
 
     def __repr__(self):
         return f"typeshed object {self.tp_qualname}"
+
+    def extract_type(self):
+        return f"class {self.tp_class.tp_qualname}"
 
 
 def parse_typeshed_module(module: str):
@@ -309,7 +321,7 @@ class ModuleVisitor(ast.NodeVisitor):
                 typeshed_importedmodule = TypeshedImportedModule(
                     tp_name=name,
                     tp_module=self.module_name,
-                    tp_qualname=f"{self.qualname}-{alias.name}",
+                    tp_qualname=f"{self.qualname}.{alias.name}",
                     tp_imported_module=name,
                 )
                 value = type_2_value(typeshed_importedmodule)
@@ -335,7 +347,7 @@ class ModuleVisitor(ast.NodeVisitor):
                 typeshed_importedname = TypeshedImportedName(
                     tp_name=alias.asname,
                     tp_module=self.module_name,
-                    tp_qualname=f"{self.qualname}-{alias.asname}",
+                    tp_qualname=f"{self.qualname}.{alias.asname}",
                     tp_imported_module=source_module,
                     tp_imported_name=alias.name,
                 )
@@ -351,7 +363,7 @@ class ModuleVisitor(ast.NodeVisitor):
                 typeshed_importedname = TypeshedImportedName(
                     tp_name=alias.name,
                     tp_module=self.module_name,
-                    tp_qualname=f"{self.qualname}-{alias.name}",
+                    tp_qualname=f"{self.qualname}.{alias.name}",
                     tp_imported_module=source_module,
                     tp_imported_name=alias.name,
                 )

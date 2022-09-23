@@ -17,8 +17,7 @@ from __future__ import annotations
 import ast
 import sys
 from collections import defaultdict, deque, namedtuple
-from copy import deepcopy
-from typing import Dict, Tuple, Deque, List
+from typing import Dict, Tuple, Deque, List, Set
 
 import astor
 
@@ -31,7 +30,6 @@ from dmf.analysis.analysis_types import (
     AnalysisInstance,
     Generator_Type,
     AnalysisDescriptor,
-    TypeExprVisitor,
 )
 from dmf.analysis.analysis_types import (
     Constructor,
@@ -73,6 +71,7 @@ from dmf.analysis.state import (
     Heap,
     merge_states,
 )
+from dmf.analysis.symbol_table import GlobalVar, NonlocalVar
 from dmf.analysis.typeshed_types import (
     TypeshedFunction,
     TypeshedClass,
@@ -108,13 +107,8 @@ class Analysis(AnalysisBase):
             Stack(),
             Heap(),
         )
-        # curr_modules: Value = sys.analysis_modules[qualified_module_name]
-        # curr_module = curr_modules.extract_1_elt()
-        # start_lab, final_lab = curr_module.tp_code
         # start point
         self.extremal_point: ProgramPoint = (1, ())
-        # end point
-        # self.final_point: ProgramPoint = (final_lab, ())
 
         self.entry_program_point_info: Dict[ProgramPoint, AdditionalEntryInfo] = {}
         # record module name so that the analysis can execute exec
@@ -122,12 +116,54 @@ class Analysis(AnalysisBase):
         self.analysis_list: defaultdict[ProgramPoint, State | BOTTOM] = defaultdict(
             lambda: BOTTOM
         )
-        self.analysis_effect_list = {}
+        self.analysis_effect_list: Dict[ProgramPoint, State] = {}
+
+        self.type_info: Dict[
+            ProgramPoint,
+            Dict[str, Set],
+        ] = {}
 
     def compute_fixed_point(self):
         self.initialize()
         self.iterate()
         self.present()
+        self.present_type_info()
+
+    def present_type_info(self):
+        # iterate each effect point
+        for program_point, abstract_state in self.analysis_effect_list.items():
+            if is_bot_state(abstract_state):
+                continue
+            abstract_stack = abstract_state.stack
+
+            if abstract_stack.frames:
+                # get f_locals of the abstract stack
+                f_locals = abstract_stack.frames[-1].f_locals
+            else:
+                self.type_info[program_point] = BOTTOM
+                continue
+
+            type_dict = {}
+            for var in f_locals:
+                # we don't care about nonlocal abd global names. we only compare
+                # the referenced objects
+                if isinstance(var, (NonlocalVar, GlobalVar)):
+                    pass
+                # ignore temp variables as well
+                elif var.is_temp():
+                    pass
+                else:
+                    var_value = f_locals[var]
+                    type_set = set()
+                    for one_value in var_value:
+                        type_info = one_value.extract_type()
+                        type_set.add(type_info)
+                    type_dict[var.name] = type_set
+
+            self.type_info[program_point] = type_dict
+
+        for program_point, type_dict in self.type_info.items():
+            logger.info(f"{program_point}: {type_dict}")
 
     def initialize(self):
         self.work_list.extendleft(self.generate_flow(self.extremal_point))
@@ -1287,6 +1323,7 @@ class Analysis(AnalysisBase):
             tp_dict=f_locals,
             tp_code=(call_lab, return_lab),
             tp_address=tp_address,
+            tp_name=cls_name,
         )
         value.inject(analysis_class)
         new_stack.write_var(cls_name, Namespace_Local, value)
@@ -1332,6 +1369,7 @@ class Analysis(AnalysisBase):
                 tp_address=module_address,
                 # if is_generator is True, this is a generator function.
                 tp_generator=func_cfg.is_generator,
+                tp_name=node.name,
             )
         )
 

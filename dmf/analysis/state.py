@@ -308,12 +308,6 @@ class State:
 
 def deepcopy_state(state: State, program_point, analysis) -> State:
 
-    # main_modules = sys.analysis_modules["__main__"]
-    # main_module = main_modules.value_2_list()[0]
-    # main_globals = main_module.tp_dict
-    # curr_state = state
-    # curr_globals = curr_state.stack.frames[-1].f_globals
-
     memo = {}
     for name in sys.analysis_modules:
         modules = sys.analysis_modules[name]
@@ -332,15 +326,6 @@ def deepcopy_state(state: State, program_point, analysis) -> State:
     #     module_values = sys.analysis_modules[module_name]
     #     for module in module_values:
     #         module.tp_dict = f_globals
-
-    # main_modules = sys.analysis_modules["__main__"]
-    # main_module = main_modules.value_2_list()[0]
-    # main_globals = main_module.tp_dict
-    #
-    # curr_state = new_state
-    # curr_globals = curr_state.stack.frames[-1].f_globals
-
-    # print(main_globals is curr_globals)
 
     sys.stack = new_state.stack
     sys.heap = new_state.heap

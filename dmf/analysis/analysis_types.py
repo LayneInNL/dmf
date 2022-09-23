@@ -137,7 +137,7 @@ artificial_namespace.write_local_value("__name__", type_2_value(Str_Type()))
 # mimic object.__new__
 class Constructor:
     def __init__(self):
-        self.tp_uuid = "arti-builtins.object.__new__"
+        self.tp_uuid = "artificial.function.builtins.object.__new__"
         self.tp_class = Function_Type
 
     def __call__(self, tp_address, tp_class):
@@ -157,6 +157,9 @@ class Constructor:
 
     def __repr__(self):
         return "object.__new__"
+
+    def extract_type(self):
+        return "builtins.object.__new__"
 
 
 def _setup_Object_Type():
@@ -860,12 +863,15 @@ class Analysis:
     def __iadd__(self, other):
         return self
 
+    def extract_type(self):
+        raise NotImplementedError
+
 
 class AnalysisInstance(Analysis):
-    def __init__(self, tp_address, tp_class):
-        self.tp_uuid = tp_address
-        self.tp_address = tp_address
-        self.tp_class = tp_class
+    def __init__(self, tp_address: Tuple, tp_class: AnalysisClass):
+        self.tp_uuid: Tuple = tp_address
+        self.tp_address: Tuple = tp_address
+        self.tp_class: AnalysisClass = tp_class
 
     @property
     def tp_dict(self):
@@ -874,9 +880,14 @@ class AnalysisInstance(Analysis):
     def __repr__(self):
         return f"{self.tp_address} object"
 
+    def extract_type(self):
+        return self.tp_class.extract_type()
+
 
 class AnalysisClass(Analysis):
-    def __init__(self, tp_uuid, tp_bases, tp_module, tp_dict, tp_code, tp_address):
+    def __init__(
+        self, tp_uuid, tp_bases, tp_module, tp_dict, tp_code, tp_address, tp_name
+    ):
         # tp_uuid is flow label
         self.tp_uuid: str = str(tp_uuid)
 
@@ -889,6 +900,8 @@ class AnalysisClass(Analysis):
         self.tp_code = tp_code
 
         self.tp_address = tp_address
+        # class name
+        self.tp_name = tp_name
 
     def __le__(self, other: AnalysisClass):
         return self.tp_dict <= other.tp_dict
@@ -899,6 +912,9 @@ class AnalysisClass(Analysis):
 
     def __repr__(self):
         return f"analysis-class {self.tp_uuid}"
+
+    def extract_type(self):
+        return f"class builtins.type"
 
 
 def _typeshedmodule_custom_getattr(self, name):
@@ -944,6 +960,9 @@ class AnalysisModule(Analysis):
         # self.tp_dict += other.tp_dict
         # return self
 
+    def extract_type(self):
+        return f"module {self.tp_name}"
+
     def custom_getattr(self, name):
         if name not in self.tp_dict:
             raise AttributeError(name)
@@ -970,6 +989,7 @@ class AnalysisFunction(Analysis):
         tp_kwdefaults,
         tp_address,
         tp_generator: bool = False,
+        tp_name: str = None,
     ):
         # tp_uuid is flow label
         self.tp_uuid: str = str(tp_uuid)
@@ -981,6 +1001,7 @@ class AnalysisFunction(Analysis):
         self.tp_kwdefaults = tp_kwdefaults
         self.tp_address = tp_address
         self.tp_generator: bool = tp_generator
+        self.tp_name: str = tp_name
 
     def __le__(self, other: AnalysisFunction):
         return self.tp_dict <= other.tp_dict
@@ -991,6 +1012,9 @@ class AnalysisFunction(Analysis):
 
     def __repr__(self):
         return f"analysis-function {self.tp_uuid}"
+
+    def extract_type(self):
+        return f"function {self.tp_name}"
 
 
 class AnalysisMethod(Analysis):
@@ -1012,6 +1036,9 @@ class AnalysisMethod(Analysis):
     def __repr__(self):
         return f"analysis-method {self.tp_uuid}"
 
+    def extract_type(self):
+        return f"method {self.tp_function.tp_name}"
+
 
 class AnalysisDescriptor(Analysis):
     def __init__(self, tp_function, *args):
@@ -1022,6 +1049,9 @@ class AnalysisDescriptor(Analysis):
 
     def __repr__(self):
         return self.tp_uuid
+
+    def extract_type(self):
+        return f"function {self.tp_function.tp_name}"
 
 
 class ClassmethodAnalysisInstance(AnalysisInstance):

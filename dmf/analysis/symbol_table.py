@@ -15,6 +15,9 @@ class Var:
     def __eq__(self, other: Var):
         return self.name == other.name
 
+    def is_temp(self):
+        return self.name.startswith("_var")
+
 
 class LocalVar(Var):
     def __repr__(self):
