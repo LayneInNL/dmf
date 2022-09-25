@@ -231,6 +231,7 @@ class State:
         stack = self.stack
         f_locals = stack.top_frame().f_locals
         positional_len: int = getattr(f_locals, POS_ARG_LEN)
+
         real_pos_len = positional_len - start_pos + 1
 
         if real_pos_len > len(arguments.args):
@@ -242,13 +243,6 @@ class State:
                 stack.write_var(arg.arg, "local", arg_value)
                 args_flag[idx] = True
                 f_locals.del_local_var(str(idx))
-
-            # idx += 1
-            # # consider vararg
-            # while idx < real_pos_len:
-            #     f_locals.del_local_var(str(idx))
-            #     idx += 1
-
         else:
             for arg_idx, pos_idx in enumerate(range(start_pos, positional_len + 1)):
                 arg = arguments.args[arg_idx]

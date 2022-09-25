@@ -1545,9 +1545,15 @@ class CFGVisitor(ast.NodeVisitor):
 
         # decompose args
         for idx, expr in enumerate(node.args):
-            seq1, node.args[idx], vars1 = self.decompose_expr(expr)
-            seq.extend(seq1)
-            vars.extend(vars1)
+            if isinstance(expr, ast.Starred):
+                starred_seq, starred_vars = self.visit(expr)
+                node.args[idx] = starred_seq[-1]
+                seq.extend(starred_seq[:-1])
+                vars.extend(starred_vars)
+            else:
+                seq1, node.args[idx], vars1 = self.decompose_expr(expr)
+                seq.extend(seq1)
+                vars.extend(vars1)
 
         for idx, keyword in enumerate(node.keywords):
             seq1, keyword.value, vars1 = self.decompose_expr(keyword.value)

@@ -692,7 +692,6 @@ class Analysis(AnalysisBase):
 
         call_stmt: ast.Call = self.get_stmt_by_label(call_lab)
         new_stack, new_heap = new_state.stack, new_state.heap
-        args, keywords = new_state.compute_func_args(call_stmt.args, call_stmt.keywords)
         # new_stack, new_heap = new_state
         inits: Value = new_state.compute_value_of_expr(call_stmt.func)
 
@@ -703,6 +702,9 @@ class Analysis(AnalysisBase):
             if isinstance(init, AnalysisMethod):
                 self._add_analysismethod_interflow(program_point, init, ret_lab)
             elif isinstance(init, ArtificialMethod):
+                args, keywords = new_state.compute_func_args(
+                    call_stmt.args, call_stmt.keywords
+                )
                 one_direct_res = init(*args, **keywords)
                 dummy_value.inject(one_direct_res)
             else:
@@ -758,9 +760,6 @@ class Analysis(AnalysisBase):
     ):
 
         call_stmt: ast.Call = self.get_stmt_by_point(program_point)
-        computed_args, computed_kwargs = new_state.compute_func_args(
-            call_stmt.args, call_stmt.keywords
-        )
 
         call_lab, call_ctx = program_point
         ret_lab, dummy_ret_lab = self.get_func_return_label(call_lab)
@@ -788,9 +787,15 @@ class Analysis(AnalysisBase):
                         )
             # artificial related types
             elif isinstance(type, ArtificialClass):
+                computed_args, computed_kwargs = new_state.compute_func_args(
+                    call_stmt.args, call_stmt.keywords
+                )
                 one_direct_res = type(address, type, *computed_args, **computed_kwargs)
                 dummy_value.inject(one_direct_res)
             elif isinstance(type, (ArtificialFunction, ArtificialMethod)):
+                computed_args, computed_kwargs = new_state.compute_func_args(
+                    call_stmt.args, call_stmt.keywords
+                )
                 res = type(*computed_args, **computed_kwargs)
                 dummy_value.inject(res)
             elif isinstance(type, Constructor):
@@ -1042,23 +1047,28 @@ class Analysis(AnalysisBase):
         # deal with positional args
         # for instance, func(1, "hello") would be ["1": {int}, "2": {str}]
         args: List[ast.expr] = call_stmt.args
-        for idx, arg in enumerate(args, 1):
+        # check *args
+        for arg in args:
             if isinstance(arg, ast.Starred):
-                assert isinstance(arg.value, ast.Name), arg
-                new_stack.write_var(arg.value.id, Namespace_Local, Value.make_any())
+                # set the length of pos args
+                setattr(new_stack.frames[-1].f_locals, POS_ARG_LEN, -1)
+                return new_state
+
+        # check **kwargs
+        keywords: List[ast.keyword] = call_stmt.keywords
+        for keyword in keywords:
+            if keyword.arg is None:
+                setattr(new_stack.frames[-1].f_locals, POS_ARG_LEN, -1)
+                return new_state
+
+        for idx, arg in enumerate(args, 1):
             arg_value = new_state.compute_value_of_expr(arg)
             new_stack.write_var(str(idx), Namespace_Local, arg_value)
 
         # set the length of pos args
         setattr(new_stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
 
-        # deal with keyword args
-        keywords: List[ast.keyword] = call_stmt.keywords
         for keyword in keywords:
-            # (NULL identifier for **kwargs)
-            if keyword.arg is None:
-                assert isinstance(keyword.value, ast.Name), keyword
-                new_stack.write_var(keyword.value.id, Namespace_Local, Value.make_any())
             keyword_value = new_state.compute_value_of_expr(keyword.value)
             new_stack.write_var(keyword.arg, Namespace_Local, keyword_value)
 
@@ -1109,6 +1119,23 @@ class Analysis(AnalysisBase):
             setattr(new_stack.frames[-1].f_locals, GENERATOR_ADDRESS, generator_info[1])
 
         if isinstance(stmt, ast.arguments):
+            f_locals = new_stack.top_frame().f_locals
+            positional_len: int = getattr(f_locals, POS_ARG_LEN)
+            if positional_len == -1:
+                if instance_info:
+                    first_arg = stmt.args[0].arg
+                    new_stack.write_var(first_arg, "local", instance_info)
+                    start_pos = 1
+                else:
+                    start_pos = 0
+                for arg in stmt.args[start_pos:] + stmt.kwonlyargs:
+                    new_stack.write_var(arg.arg, "local", Value.make_any())
+                if stmt.vararg:
+                    new_stack.write_var(stmt.vararg.arg, "local", Value.make_any())
+                if stmt.kwarg:
+                    new_stack.write_var(stmt.kwarg.arg, "local", Value.make_any())
+                return new_state
+
             # Positional and keyword arguments
             try:
                 start_pos = 0 if instance_info else 1
@@ -1405,9 +1432,8 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Return,
     ) -> State:
-        name: str = stmt.value.id
         new_stack: Stack = new_state.stack
-        value: Value = new_stack.read_var(name)
+        value: Value = new_state.compute_value_of_expr(stmt.value)
         new_stack.write_var(RETURN_FLAG, Namespace_Local, value)
         return new_state
 
