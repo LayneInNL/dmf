@@ -400,11 +400,8 @@ class Analysis(AnalysisBase):
         call_lab, call_ctx = program_point
         ret_lab, dummy_ret_lab = self.get_del_magic_return_label(call_lab)
 
-        # del name
-        if isinstance(target, ast.Name):
-            new_state.stack.delete_var(target.id)
         # find out descriptors
-        elif isinstance(target, ast.Attribute):
+        if isinstance(target, ast.Attribute):
             receiver_value = new_state.compute_value_of_expr(target.value)
             descriptor_result = setattrs(receiver_value, target.attr, None)
             for descriptor in descriptor_result:
@@ -918,7 +915,7 @@ class Analysis(AnalysisBase):
             # del a[1]
             receiver_value = new_state.compute_value_of_expr(target.value)
             key_value = new_state.compute_value_of_expr(target.slice)
-            args = [receiver_value, key_value]
+            args = [key_value]
             for idx, arg in enumerate(args, 1):
                 new_state.stack.write_var(str(idx), Namespace_Local, arg)
             setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
@@ -971,6 +968,25 @@ class Analysis(AnalysisBase):
         elif isinstance(call_expr, ast.UnaryOp):
             setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, 0)
             return new_state
+        elif isinstance(call_expr, ast.Attribute):
+            receiver_value = new_state.compute_value_of_expr(call_expr.value)
+            descriptor_result = getattrs(receiver_value, call_expr.attr)
+            for descriptor in descriptor_result:
+                if isinstance(descriptor, AnalysisDescriptor):
+                    args = descriptor.tp_args
+                    for idx, arg in enumerate(args, 1):
+                        new_state.stack.write_var(str(idx), Namespace_Local, arg)
+                    setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
+            return new_state
+        elif isinstance(call_expr, ast.Subscript):
+            # object.__getitem__(self, key)
+            # self_value = new_state.compute_value_of_expr(call_expr.value)
+            key_value = new_state.compute_value_of_expr(call_expr.slice)
+            args = [key_value]
+            for idx, arg in enumerate(args, 1):
+                new_state.stack.write_var(str(idx), Namespace_Local, arg)
+            setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
+            return new_state
         elif isinstance(
             call_expr,
             (
@@ -1004,25 +1020,6 @@ class Analysis(AnalysisBase):
             ),
         ):
             raise NotImplementedError(call_expr)
-        elif isinstance(call_expr, ast.Attribute):
-            receiver_value = new_state.compute_value_of_expr(call_expr.value)
-            descriptor_result = getattrs(receiver_value, call_expr.attr)
-            for descriptor in descriptor_result:
-                if isinstance(descriptor, AnalysisDescriptor):
-                    args = descriptor.tp_args
-                    for idx, arg in enumerate(args, 1):
-                        new_state.stack.write_var(str(idx), Namespace_Local, arg)
-                    setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
-            return new_state
-        elif isinstance(call_expr, ast.Subscript):
-            # object.__getitem__(self, key)
-            # self_value = new_state.compute_value_of_expr(call_expr.value)
-            key_value = new_state.compute_value_of_expr(call_expr.slice)
-            args = [key_value]
-            for idx, arg in enumerate(args, 1):
-                new_state.stack.write_var(str(idx), Namespace_Local, arg)
-            setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
-            return new_state
         else:
             raise NotImplementedError(program_point)
 
