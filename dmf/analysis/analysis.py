@@ -103,10 +103,7 @@ class Analysis(AnalysisBase):
         # work list
         self.work_list: Deque[Tuple[ProgramPoint, ProgramPoint]] = deque()
         # extremal value
-        self.extremal_value: State = State(
-            Stack(),
-            Heap(),
-        )
+        self.extremal_value: State = State(Stack(), Heap())
         # start point
         self.extremal_point: ProgramPoint = (1, ())
 
@@ -127,7 +124,7 @@ class Analysis(AnalysisBase):
         self.initialize()
         self.iterate()
         self.present()
-        self.present_type_info()
+        # self.present_type_info()
 
     def present_type_info(self):
         # iterate each effect point
@@ -194,10 +191,6 @@ class Analysis(AnalysisBase):
         while self.work_list:
             # get the leftmost one
             program_point1, program_point2 = self.work_list.popleft()
-            stmt = self.get_stmt_by_point(program_point1)
-            logger.info(
-                f"Current program point1 {program_point1} {astor.to_source(stmt)}"
-            )
 
             transferred: State | BOTTOM = self.transfer(program_point1)
             self._push_state_to(transferred, program_point2)
@@ -328,7 +321,10 @@ class Analysis(AnalysisBase):
         # used by generator
         tp_address = record(call_lab, call_ctx)
 
-        new_ctx: Tuple = merge(call_lab, type.tp_address, call_ctx)
+        # a pure function has no receiver object. We employ the approach Mixed-CFA described in
+        # JSAI: A Static Analysis Platform for JavaScript
+        # new_ctx: Tuple = merge(call_lab, type.tp_address, call_ctx)
+        new_ctx: Tuple = (call_lab,) + type.tp_address
         self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
             None,
             None,
@@ -820,6 +816,9 @@ class Analysis(AnalysisBase):
         self._push_state_to(new_state, (dummy_ret_lab, call_ctx))
 
     def transfer(self, program_point: ProgramPoint) -> State | BOTTOM:
+        stmt = self.get_stmt_by_point(program_point)
+        logger.info(f"Current program point1 {program_point} {astor.to_source(stmt)}")
+
         # if old_state is BOTTOM, skip this transfer
         old_state: State = self.analysis_list[program_point]
         if is_bot_state(old_state):

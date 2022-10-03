@@ -49,13 +49,14 @@ if __name__ == "__main__":
     if not main_path or not project_path:
         exit()
 
-    sys.first_party = os.path.basename(os.path.normpath(project_path))
-    logger.info(f"first party: {sys.first_party}")
-    sys.analysis_path.append(project_path)
-
-    # get main module absolute path
-    main_abs_file_path = os.path.abspath(main_path)
+    # project root directory
     project_abs_path = os.path.abspath(project_path)
+    sys.analysis_path.append(project_path)
+    sys.first_party = os.path.basename(project_abs_path)
+    logger.info(f"first party: {sys.first_party}")
+
+    # main file location
+    main_abs_file_path = os.path.abspath(main_path)
     cfg = sys.synthesis_cfg(main_abs_file_path)
     entry_label, exit_label = sys.merge_cfg_info(cfg)
     main_module = AnalysisModule(
