@@ -39,26 +39,5 @@ class Heap:
             self.singletons[item] = default_value
         return self.singletons[item]
 
-    def __le__(self, other: Heap):
-        for heap_address in self.singletons:
-            if heap_address not in other.singletons:
-                return False
-            else:
-                self_namespace: SizedHeapNamespace = self.singletons[heap_address]
-                other_namespace: SizedHeapNamespace = other.singletons[heap_address]
-                if not self_namespace <= other_namespace:
-                    return False
-        return True
-
-    def __iadd__(self, other: Heap):
-        for heap_address in other.singletons:
-            if heap_address not in self.singletons:
-                self.singletons[heap_address] = other.singletons[heap_address]
-            else:
-                self_namespace = self.singletons[heap_address]
-                other_namespace = other.singletons[heap_address]
-                self_namespace += other_namespace
-        return self
-
     def __repr__(self):
         return "heaps: {}".format(self.singletons)

@@ -93,15 +93,6 @@ def getattrs(objs: Value, name: str) -> Value:
     return direct_res
 
 
-def setattrs(objs, name, value) -> Value:
-    descr_sets = Value()
-    for obj in objs:
-        curr_descr_sets = analysis_setattr(obj, name, value)
-        descr_sets += curr_descr_sets
-
-    return descr_sets
-
-
 def analysis_getattr(obj, name) -> Value:
     if obj is Any:
         return Value.make_any()
@@ -124,23 +115,26 @@ def analysis_getattr(obj, name) -> Value:
         raise NotImplementedError(obj)
 
 
+def setattrs(objs, name, value) -> Value:
+    descr_sets = Value()
+    for obj in objs:
+        curr_descr_sets = analysis_setattr(obj, name, value)
+        descr_sets += curr_descr_sets
+
+    return descr_sets
+
+
 def analysis_setattr(obj, name, value) -> Value:
-    if isinstance(obj, AnalysisInstance):
+    result_value = Value()
+    if obj is Any:
+        return result_value
+    elif isinstance(obj, AnalysisInstance):
         return GenericSetAttr(obj, name, value)
     elif isinstance(obj, AnalysisClass):
         return type_setattro(obj, name, value)
     elif isinstance(obj, AnalysisFunction):
         return GenericSetAttr(obj, name, value)
     raise NotImplementedError(f"setattr({obj},{name},{value})")
-    # # work on class
-    # if isinstance(obj, ClassLevel):
-    #     return type_setattro(obj, name, value)
-    # else:
-    #     raise NotImplementedError(f"setattr({obj},{name},{value})")
-    # else:
-    #     return Value(any=True)
-
-    return value
 
 
 def GenericGetAttr(obj, name):

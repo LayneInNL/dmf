@@ -289,7 +289,7 @@ class State:
             stack.write_var(arguments.kwarg.arg, "local", Value.make_any())
 
 
-def deepcopy_state(state: State, program_point, analysis) -> State:
+def deepcopy_state(state: State, program_point) -> State:
 
     memo = {}
     for name in sys.analysis_modules:
@@ -303,8 +303,6 @@ def deepcopy_state(state: State, program_point, analysis) -> State:
     sys.state = new_state
     # sync program point
     sys.program_point = program_point
-    # sync analysis itself
-    sys.analysis = analysis
     return new_state
 
 
