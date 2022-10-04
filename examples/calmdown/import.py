@@ -11,16 +11,6 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-# from import_dir.importfrom import z
-# import import_dir.imported
-#
-# a = import_dir.imported.y
-# from import_dir import importfrom
-#
-# res = importfrom.z
+import import_dir.imported
 
-import io
-
-res = io.open
-
-import import_dir
+a = import_dir.imported.y

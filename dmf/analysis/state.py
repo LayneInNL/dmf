@@ -30,7 +30,6 @@ from dmf.analysis.analysis_types import (
 )
 from dmf.analysis.exceptions import ParsingDefaultsError, ParsingKwDefaultsError
 from dmf.analysis.gets_sets import analysis_getattr
-from dmf.analysis.heap import Heap
 from dmf.analysis.implicit_names import POS_ARG_LEN
 from dmf.analysis.special_types import Any
 from dmf.analysis.stack import Stack, Frame
@@ -55,28 +54,18 @@ class State:
     def __init__(
         self,
         stack: Stack,
-        heap: Heap,
     ):
         self.stack: Stack = stack
-        self.heap: Heap = heap
 
     def __repr__(self):
-        return f"{self.stack}\n{self.heap}"
+        return f"{self.stack}"
 
     def __le__(self, other):
-        return self.stack <= other.stack and self.heap <= other.heap
+        return self.stack <= other.stack
 
     def __iadd__(self, other: State):
         self.stack += other.stack
-        self.heap += other.heap
         return self
-
-    def collect_garbage(self):
-        # heapee to store all used heap address
-        # for instance, lab1 -> {name, lab2}. lab2 is a heapee
-        heapee = set()
-        # heaper to store all heap address headers
-        heaper = set()
 
     def exec_a_module(self, tp_dict):
         if self.stack.frames:
@@ -310,19 +299,6 @@ def deepcopy_state(state: State, program_point, analysis) -> State:
     # sys.analysis_modules = deepcopy(sys.analysis_modules, memo)
     new_state = deepcopy(state, memo)
 
-    # one bug here is if using import xxx, current module namespace will be updated
-    # but it lost track of sys.modules
-    # for example, import x. doing transfer on module x
-    # then go back. prev f_globals
-    # for frame in new_state.stack.frames:
-    #     f_globals = frame.f_globals
-    #     module_name = getattr(f_globals, MODULE_NAME_FLAG)
-    #     module_values = sys.analysis_modules[module_name]
-    #     for module in module_values:
-    #         module.tp_dict = f_globals
-
-    sys.heap = new_state.heap
-
     # sync state
     sys.state = new_state
     # sync program point
@@ -344,7 +320,7 @@ def compare_states(lhs: State | BOTTOM, rhs: State | BOTTOM) -> bool:
     if is_bot_state(rhs):
         return False
 
-    res = lhs.stack <= rhs.stack and lhs.heap <= rhs.heap
+    res = lhs.stack <= rhs.stack
     return res
 
 

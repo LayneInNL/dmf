@@ -17,7 +17,7 @@ from __future__ import annotations
 import ast
 import sys
 from collections import defaultdict, deque, namedtuple
-from typing import Dict, Tuple, Deque, List, Set
+from typing import Dict, Tuple, Deque, List
 
 import astor
 
@@ -46,6 +46,7 @@ from dmf.analysis.gets_sets import (
     setattrs,
     analysis_setattr,
 )
+from dmf.analysis.heap import Heap
 from dmf.analysis.implicit_names import (
     POS_ARG_LEN,
     INIT_FLAG,
@@ -68,10 +69,8 @@ from dmf.analysis.state import (
     is_bot_state,
     deepcopy_state,
     Stack,
-    Heap,
     merge_states,
 )
-from dmf.analysis.symbol_table import GlobalVar, NonlocalVar
 from dmf.analysis.typeshed_types import (
     TypeshedFunction,
     TypeshedClass,
@@ -103,7 +102,8 @@ class Analysis(AnalysisBase):
         # work list
         self.work_list: Deque[Tuple[ProgramPoint, ProgramPoint]] = deque()
         # extremal value
-        self.extremal_value: State = State(Stack(), Heap())
+        self.extremal_value: State = State(Stack())
+        self.heap = Heap()
         # start point
         self.extremal_point: ProgramPoint = (1, ())
 
@@ -115,58 +115,17 @@ class Analysis(AnalysisBase):
         )
         self.analysis_effect_list: Dict[ProgramPoint, State] = {}
 
-        self.type_info: Dict[
-            ProgramPoint,
-            Dict[str, Set],
-        ] = {}
-
     def compute_fixed_point(self):
         self.initialize()
         self.iterate()
         self.present()
-        # self.present_type_info()
-
-    def present_type_info(self):
-        # iterate each effect point
-        for program_point, abstract_state in self.analysis_effect_list.items():
-            if is_bot_state(abstract_state):
-                continue
-            abstract_stack = abstract_state.stack
-
-            if abstract_stack.frames:
-                # get f_locals of the abstract stack
-                f_locals = abstract_stack.frames[-1].f_locals
-            else:
-                self.type_info[program_point] = BOTTOM
-                continue
-
-            type_dict = {}
-            for var in f_locals:
-                # we don't care about nonlocal abd global names. we only compare
-                # the referenced objects
-                if isinstance(var, (NonlocalVar, GlobalVar)):
-                    pass
-                # ignore temp variables as well
-                elif var.is_temp():
-                    pass
-                else:
-                    var_value = f_locals[var]
-                    type_set = set()
-                    for one_value in var_value:
-                        type_info = one_value.extract_type()
-                        type_set.add(type_info)
-                    type_dict[var.name] = type_set
-
-            self.type_info[program_point] = type_dict
-
-        for program_point, type_dict in self.type_info.items():
-            logger.info(f"{program_point}: {type_dict}")
 
     def initialize(self):
         self.work_list.extendleft(self.generate_flow(self.extremal_point))
         self.extremal_value = deepcopy_state(
             self.extremal_value, self.extremal_point, self
         )
+        sys.heap = self.heap
         main_modules = sys.analysis_modules["__main__"]
         main_module = main_modules.extract_1_elt()
         main_module_dict = main_module.tp_dict
@@ -210,7 +169,7 @@ class Analysis(AnalysisBase):
                     )
                 )
             except:
-                pass
+                logger.critical(f"Program point {program_point}")
 
     # based on current program point, update self.IF
     def detect_flow(self, program_point: ProgramPoint) -> None:
@@ -684,8 +643,7 @@ class Analysis(AnalysisBase):
         ret_lab, dummy_ret_lab = self.get_special_init_return_label(call_lab)
 
         call_stmt: ast.Call = self.get_stmt_by_label(call_lab)
-        new_stack, new_heap = new_state.stack, new_state.heap
-        # new_stack, new_heap = new_state
+        new_stack = new_state.stack
         inits: Value = new_state.compute_value_of_expr(call_stmt.func)
 
         # special init
@@ -856,7 +814,7 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Assign,
     ) -> State:
-        new_stack, new_heap = new_state.stack, new_state.heap
+        new_stack = new_state.stack
         rhs_value: Value = new_state.compute_value_of_expr(stmt.value)
         target: ast.expr = stmt.targets[0]
         if isinstance(target, ast.Name):
@@ -1025,7 +983,7 @@ class Analysis(AnalysisBase):
     def _transfer_call_classdef(
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
-        new_stack, new_heap = new_state.stack, new_state.heap
+        new_stack = new_state.stack
         new_stack.add_new_frame()
         return new_state
 
@@ -1035,7 +993,7 @@ class Analysis(AnalysisBase):
         # Normal call has form: func_name(args, keywords)
         call_stmt: ast.Call = self.get_stmt_by_point(program_point)
         assert isinstance(call_stmt, ast.Call), call_stmt
-        new_stack, _ = new_state.stack, new_state.heap
+        new_stack = new_state.stack
 
         # new namespace to simulate function call
         new_stack.add_new_frame()
@@ -1085,7 +1043,7 @@ class Analysis(AnalysisBase):
 
         stmt = self.get_stmt_by_point(program_point)
 
-        new_stack, new_heap = new_state.stack, new_state.heap
+        new_stack = new_state.stack
 
         # add a special return flag to denote return values
         new_stack.write_var(RETURN_FLAG, "local", Value())
@@ -1152,7 +1110,7 @@ class Analysis(AnalysisBase):
     def transfer_exit(
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
-        new_stack, new_heap = new_state.stack, new_state.heap
+        new_stack = new_state.stack
         return_value = new_stack.read_var(RETURN_FLAG)
         # if no explicit return, add None
         if len(return_value) == 0:
@@ -1197,8 +1155,7 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Assign,
     ):
-        # new_stack, new_heap = new_state
-        new_stack, new_heap = new_state.stack, new_state.heap
+        new_stack = new_state.stack
         new_stack.pop_frame()
         return new_state
 
@@ -1209,7 +1166,7 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Name,
     ):
-        new_stack, new_heap = new_state.stack, new_state.heap
+        new_stack = new_state.stack
         return_value: Value = new_stack.read_var(RETURN_FLAG)
 
         # check if it's a generator
@@ -1304,6 +1261,7 @@ class Analysis(AnalysisBase):
                         curr_flows = self.generate_flow(program_point)
                         sys.prepend_flows.extend(curr_flows)
                         return BOTTOM
+
                     if asname is None:
                         new_stack.write_var(name, Namespace_Local, direct_res)
                     else:
@@ -1441,8 +1399,7 @@ class Analysis(AnalysisBase):
         stmt: ast.Global,
     ) -> State:
         name = stmt.names[0]
-        new_stack, new_heap = new_state.stack, new_state.heap
-        # new_stack, _ = new_state
+        new_stack = new_state.stack
         new_stack.write_var(name, Namespace_Global, None)
 
         return new_state
@@ -1455,7 +1412,7 @@ class Analysis(AnalysisBase):
         stmt: ast.Nonlocal,
     ) -> State:
         name = stmt.names[0]
-        new_stack, new_heap = new_state.stack, new_state.heap
+        new_stack = new_state.stack
         # new_stack, _ = new_state
         new_stack.write_var(name, Namespace_Nonlocal, None)
 
@@ -1468,7 +1425,7 @@ class Analysis(AnalysisBase):
         new_state: State,
         stmt: ast.Delete,
     ) -> State:
-        new_stack, new_heap = new_state.stack, new_state.heap
+        new_stack = new_state.stack
         assert len(stmt.targets) == 1, stmt
         assert isinstance(stmt.targets[0], ast.Name), stmt
         name = stmt.targets[0].id
