@@ -14,9 +14,6 @@
 
 from __future__ import annotations
 
-import sys
-from typing import Union
-
 from dmf.analysis.special_types import Any
 
 
@@ -28,30 +25,28 @@ class Value:
             return
         elif len(self.types) > self.threshold:
             self.types = Any
-        else:
-            pass
 
     @classmethod
     def make_any(cls) -> Value:
         return cls(any=True)
 
     def __init__(self, *, any=False):
-        self.types: Union[Any, dict]
+        self.types: Any | dict
         if any:
             self.types = Any
         else:
             self.types = {}
 
     def __len__(self):
-        if self.is_Any():
+        if self.types is Any:
             return self.threshold + 1
         else:
             return len(self.types)
 
     def __le__(self, other: Value) -> bool:
-        if other.is_Any():
+        if other.types is Any:
             return True
-        if self.is_Any():
+        if self.types is Any:
             return False
         for k in self.types:
             if k not in other.types:
@@ -65,20 +60,20 @@ class Value:
             return self
         elif other.types is Any:
             self.types = Any
+            return self
         else:
             for k in other.types:
                 if k not in self.types:
                     self.types[k] = other.types[k]
                 else:
                     self.types[k] += other.types[k]
-
-        self.threshold_check()
-        return self
+            self.threshold_check()
+            return self
 
     def __repr__(self):
         # return self.types.__repr__()
         if self.types is Any:
-            return "Any"
+            return repr(Any)
         else:
             formatted = list(self.types.values())
             return repr(formatted)
@@ -93,11 +88,17 @@ class Value:
             self.inject_type(other)
 
     def inject_type(self, type):
-        # insert Any
+        # itself is Any, do nothing
+        if self.types is Any:
+            return
+
+        # want to insert Any
         if type is Any:
             self.types = Any
-        elif self.types is Any:
-            return None
+            return
+
+        if type.tp_uuid in self.types:
+            self.types[type.tp_uuid] += type
         else:
             self.types[type.tp_uuid] = type
 
@@ -105,20 +106,19 @@ class Value:
 
     def inject_value(self, value: Value):
         if self.types is Any:
-            return None
-        elif value.types is Any:
+            return
+
+        if value.types is Any:
             self.types = Any
-        else:
-            for label, type in value.types.items():
-                if label not in self.types:
-                    self.types[label] = type
-                else:
-                    self.types[label] += type
+            return
+
+        for label, type in value.types.items():
+            if label not in self.types:
+                self.types[label] = type
+            else:
+                self.types[label] += type
 
         self.threshold_check()
-
-    def values(self):
-        return self.types.values()
 
     def value_2_list(self):
         return list(self.types.values())
@@ -127,21 +127,8 @@ class Value:
         assert len(self) == 1
         return self.value_2_list()[0]
 
-    def is_Any(self) -> bool:
-        return self.types is Any
-
-    def transform_to_Any(self):
-        self.types = Any
-
-
-sys.Value = Value
-
 
 def type_2_value(type) -> Value:
-    if not isinstance(type, Value):
-        value = Value()
-        assert hasattr(type, "tp_uuid"), type
-        value.inject(type)
-        return value
-    else:
-        return type
+    value = Value()
+    value.inject(type)
+    return value

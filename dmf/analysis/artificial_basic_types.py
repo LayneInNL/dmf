@@ -20,20 +20,7 @@ from dmf.analysis.value import type_2_value, Value
 from dmf.log.logger import logger
 
 
-class UniqueArtificialObject(type):
-    ...
-    # artificial_object_dict = {}
-    #
-    # def __call__(cls, tp_qualname, *args, **kwargs):
-    #     if tp_qualname in cls.artificial_object_dict:
-    #         return cls.artificial_object_dict[tp_qualname]
-    #
-    #     typeshed_object = super().__call__(tp_qualname, *args, **kwargs)
-    #     cls.artificial_object_dict[tp_qualname] = typeshed_object
-    #     return typeshed_object
-
-
-class Artificial(metaclass=UniqueArtificialObject):
+class Artificial:
     def __le__(self, other):
         return True
 
@@ -44,9 +31,6 @@ class Artificial(metaclass=UniqueArtificialObject):
         if id(self) not in memo:
             memo[id(self)] = self
         return memo[id(self)]
-
-    def extract_type(self):
-        raise NotImplementedError
 
 
 # mimic man-made functions such as len()
@@ -75,9 +59,6 @@ class ArtificialFunction(Artificial):
     def __repr__(self):
         return self.tp_uuid
 
-    def extract_type(self):
-        return f"function {self.tp_qualname}"
-
 
 # mimic methods such as list.append
 class ArtificialMethod(Artificial):
@@ -88,9 +69,6 @@ class ArtificialMethod(Artificial):
         self.tp_qualname = f"{tp_function.tp_uuid}.{tp_instance.tp_uuid}"
         self.tp_function: ArtificialFunction = tp_function
         self.tp_instance = tp_instance
-
-    def extract_type(self):
-        return f"method {self.tp_qualname}"
 
     def __call__(self, *args, **kwargs):
         value = Value()
@@ -119,9 +97,6 @@ class ArtificialClass(Artificial):
 
     def __repr__(self):
         return self.tp_uuid
-
-    def __call__(self, *args, **kwargs):
-        raise NotImplementedError
 
     def extract_type(self):
         return f"class builtins.type"
@@ -160,16 +135,24 @@ Object_Type.tp_class = Type_Type
 Type_Type.tp_bases = [[Object_Type]]
 
 
+class IncompleteMRO(Exception):
+    pass
+
+
 def c3(cls_obj):
-    mros = static_c3(cls_obj)
-    return mros
+    try:
+        mros = static_c3(cls_obj)
+    except IncompleteMRO:
+        return [[Any]]
+    else:
+        return mros
 
 
 def static_c3(cls_obj) -> List[List]:
     if cls_obj is Object_Type:
         return [[cls_obj]]
     elif cls_obj is Any:
-        return [[Any]]
+        raise IncompleteMRO
     else:
         mros = []
         # cls_obj is like [[1,2,3]]
@@ -211,7 +194,7 @@ def __init__(self, tp_qualname: str):
     self.tp_dict: Namespace = Namespace()
     self.tp_class = Type_Type
     self.tp_bases = [[Object_Type]]
-    self.tp_mro = c3(self)
+    self.tp_mro = [[self, Object_Type]]
 
 
 ArtificialClass.__init__ = __init__

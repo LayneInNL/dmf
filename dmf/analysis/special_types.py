@@ -13,29 +13,16 @@
 #  limitations under the License.
 
 
-class SingletonInstance(type):
-    _instances = {}
-
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(SingletonInstance, cls).__call__(
-                *args, **kwargs
-            )
-        return cls._instances[cls]
-
-
-class SingletonInstanceWithDeepcopy:
-    def __deepcopy__(self, memo):
-        if id(self) not in memo:
-            memo[id(self)] = self
-        return memo[id(self)]
-
-
-class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
+class _TypeAny:
     def __init__(self):
         self.tp_uuid = -1024
         self.tp_class = self
         self.tp_bases = [[self]]
+
+    def __deepcopy__(self, memo):
+        if id(self) not in memo:
+            memo[id(self)] = self
+        return memo[id(self)]
 
     def __repr__(self):
         return "Any"
@@ -61,9 +48,6 @@ class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
 
     def __iter__(self):
         return iter([self])
-
-    def extract_type(self):
-        return "Any"
 
 
 # mimic typing.Any

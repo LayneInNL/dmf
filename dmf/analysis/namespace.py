@@ -20,6 +20,20 @@ from dmf.analysis.value import Value
 
 
 class Namespace(SymbolTable):
+    def __contains__(self, item):
+        if isinstance(item, str):
+            raise NotImplementedError
+        return super().__contains__(item)
+
+    def contains(self, name: str):
+        if (
+            LocalVar(name) in self
+            or NonlocalVar(name) in self
+            or GlobalVar(name) in self
+        ):
+            return True
+        return False
+
     def __repr__(self):
         filtered_dict = {
             key: value for key, value in self.items() if not key.name.startswith("_var")
@@ -41,22 +55,23 @@ class Namespace(SymbolTable):
             self[var] += other[var]
         return self
 
-    def __contains__(self, name: str):
-        for var in self:
-            if name == var.name:
-                return True
-        return False
-
     def read_var_type(self, name: str) -> Var:
-        for var, _ in self.items():
-            if name == var.name:
-                return var
+        if LocalVar(name) in self:
+            return LocalVar(name)
+        if NonlocalVar(name) in self:
+            return NonlocalVar(name)
+        if GlobalVar(name) in self:
+            return GlobalVar(name)
+
         raise AttributeError(name)
 
     def read_value(self, name: str) -> Value:
-        for var, val in self.items():
-            if name == var.name:
-                return val
+        if LocalVar(name) in self:
+            return self[LocalVar(name)]
+        if NonlocalVar(name) in self:
+            return self[NonlocalVar(name)]
+        if GlobalVar(name) in self:
+            return self[GlobalVar(name)]
         raise AttributeError(name)
 
     def write_local_value(self, name: str, value: Value):

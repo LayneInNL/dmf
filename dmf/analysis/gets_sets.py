@@ -66,7 +66,7 @@ def _find_name_in_mro(obj_type, name, mros=None) -> Value:
             else:
                 # tp_dict could belong to AnalysisClass, ArtificialClass and
                 # TypeshedClass
-                if name not in cls.tp_dict:
+                if not cls.tp_dict.contains(name):
                     if hasattr(cls, "tp_fallback"):
                         fallback_clses = cls.tp_fallback
                         for one_fallback in fallback_clses:
@@ -134,6 +134,8 @@ def analysis_setattr(obj, name, value) -> Value:
         return type_setattro(obj, name, value)
     elif isinstance(obj, AnalysisFunction):
         return GenericSetAttr(obj, name, value)
+    elif isinstance(obj, Typeshed):
+        return result_value
     raise NotImplementedError(f"setattr({obj},{name},{value})")
 
 
@@ -263,7 +265,7 @@ def type_getattro(type, name) -> Value:
                 else:
                     return_value.inject(class_variable_type_get)
 
-    if name in type.tp_dict:
+    if type.tp_dict.contains(name):
         one_res = type.tp_dict.read_value(name)
         return_value.inject(one_res)
 

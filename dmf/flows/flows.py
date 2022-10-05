@@ -1110,6 +1110,14 @@ class CFGVisitor(ast.NodeVisitor):
     #   if b:
     #     tmp=c
     def visit_BoolOp(self, node: ast.BoolOp) -> VisitedExprRes:
+        seq = []
+        vars = []
+        for idx, value in enumerate(node.values):
+            seq1, node.values[idx], vars1 = self.decompose_expr(value)
+            seq.extend(seq1)
+            vars.extend(vars1)
+
+        # final receiver
         tmp_var_node = TempVariableName.generate_name_node()
         assign_list = [
             ast.Assign(targets=[tmp_var_node], value=value) for value in node.values
@@ -1125,8 +1133,8 @@ class CFGVisitor(ast.NodeVisitor):
             )
             current_sequence = [assign, tmp_if]
 
-        resulted_sequence = current_sequence + [tmp_var_node]
-        resulted_vars = [ast.Delete(targets=[tmp_var_node])]
+        resulted_sequence = seq + current_sequence + [tmp_var_node]
+        resulted_vars = vars + [ast.Delete(targets=[tmp_var_node])]
         return resulted_sequence, resulted_vars
 
     def visit_BinOp(self, node: ast.BinOp) -> VisitedExprRes:
@@ -1476,61 +1484,6 @@ class CFGVisitor(ast.NodeVisitor):
         resulted_vars = vars
         return resulted_sequence, resulted_vars
 
-    def _visit_Call_Special(self, node: ast.Call) -> VisitedExprRes:
-        if not isinstance(node.func, ast.Name):
-            return [node], []
-        if node.func.id not in (
-            list.__name__,
-            tuple.__name__,
-            set.__dict__,
-            frozenset.__name__,
-            # dict.__name__,
-        ):
-            return [node], []
-        if not (node.args or node.keywords):
-            return [node], []
-
-        # list([iterable])
-        def _destruct_container(name, method) -> VisitedExprRes:
-            seq = []
-            tmp_var = TempVariableName.generate_name_node()
-            # tmp = list()
-            tmp_assign = ast.Assign(
-                targets=[tmp_var],
-                value=ast.Call(func=ast.Name(id=name), args=[], keywords=[]),
-            )
-            seq.append(tmp_assign)
-            tmp_var2 = TempVariableName.generate_name_node()
-            if node.args:
-                iterable = node.args[0]
-                tmp_for = ast.For(
-                    target=tmp_var2,
-                    iter=iterable,
-                    body=[
-                        ast.Call(
-                            func=ast.Attribute(value=tmp_var, attr=method),
-                            args=[tmp_var2],
-                            keywords=[],
-                        )
-                    ],
-                    orelse=[],
-                )
-                seq.append(tmp_for)
-
-            resulted_vars = [ast.Delete(targets=[target]) for target in [tmp_var2]]
-            return seq + [tmp_var], resulted_vars
-
-        if node.func.id == list.__name__:
-            return _destruct_container(list.__name__, list.append.__name__)
-        elif node.func.id == tuple.__name__:
-            return _destruct_container(tuple.__name__, "fake_append")
-        elif node.func.id == set.__name__:
-            return _destruct_container(set.__name__, set.add.__name__)
-        elif node.func.id == frozenset.__name__:
-            return _destruct_container(frozenset.__name__, "fake_add")
-        else:
-            raise NotImplementedError(astor.to_source(node))
-
     def visit_Call(self, node: ast.Call) -> VisitedExprRes:
         if isinstance(node.func, ast.Lambda):
             raise NotImplementedError(node.func)
@@ -1560,9 +1513,7 @@ class CFGVisitor(ast.NodeVisitor):
             seq.extend(seq1)
             vars.extend(vars1)
 
-        seq1, vars1 = self._visit_Call_Special(node)
-        seq.extend(seq1)
-        vars.extend(vars1)
+        seq.append(node)
         return seq, vars
 
     def visit_Num(self, node: ast.Num) -> VisitedExprRes:

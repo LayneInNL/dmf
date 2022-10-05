@@ -333,15 +333,13 @@ _setup_Range_Type()
 
 class ListArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args, **kwargs):
-        # tp_dict = sys.heap.write_instance_to_heap(tp_address)
-        return ListAnalysisInstance(tp_address, tp_class)
+        return ListAnalysisInstance(tp_address, tp_class, *args, **kwargs)
 
 
 List_Type = ListArtificialClass("builtins.list")
 Typeshed_List_Type: Value = builtin_module_dict.read_value("list")
 List_Type.tp_fallback = Typeshed_List_Type
 artificial_namespace.write_local_value("list", type_2_value(List_Type))
-# builtin_module_dict.write_local_value("list", type_2_value(List_Type))
 
 
 def _setup_List_Type():
@@ -440,7 +438,7 @@ _setup_List_Type()
 
 class TupleArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args, **kwargs):
-        return TupleAnalysisInstance(tp_address, tp_class)
+        return TupleAnalysisInstance(tp_address, tp_class, *args, **kwargs)
 
 
 Tuple_Type = TupleArtificialClass("builtins.tuple")
@@ -496,7 +494,7 @@ _setup_Tuple_Type()
 
 class SetArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args, **kwargs):
-        return SetAnalysisInstance(tp_address, tp_class)
+        return SetAnalysisInstance(tp_address, tp_class, *args, **kwargs)
 
 
 Set_Type = SetArtificialClass("builtins.set")
@@ -508,7 +506,7 @@ artificial_namespace.write_local_value("set", type_2_value(Set_Type))
 
 class FrozensetArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args, **kwargs):
-        return FrozenSetAnalysisInstance(tp_address, tp_class)
+        return FrozenSetAnalysisInstance(tp_address, tp_class, *args, **kwargs)
 
 
 Frozenset_Type = FrozensetArtificialClass("builtins.frozenset")
@@ -670,7 +668,7 @@ _setup_FrozenSet_Type()
 
 class DictArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args, **kwargs):
-        return DictAnalysisInstance(tp_address, tp_class)
+        return DictAnalysisInstance(tp_address, tp_class, *args, **kwargs)
 
 
 Dict_Type = DictArtificialClass("builtins.dict")
@@ -741,14 +739,6 @@ def _setup_Dict_Type():
 
     def items(self):
         return Value.make_any()
-        # value = Value()
-        # for one_self in self:
-        #     program_point = sys.program_point
-        #     heap_address = record(program_point[0], program_point[1])
-        #     tp_address = f"{one_self.tp_address}-{heap_address}"
-        #     one_iterator = Iterator_Type(tp_address, Iterator_Type, Value.make_any())
-        #     value.inject(one_iterator)
-        # return value
 
     def values(self):
         value = Value()
@@ -773,15 +763,7 @@ def _setup_Dict_Type():
         return type_2_value(None_Instance)
 
     def fromkeys(self, iterable, value=None):
-        program_point = sys.program_point
-        heap_address = record(program_point[0], program_point[1])
-        tp_address = f"{heap_address}"
-
-        if value is None:
-            value = type_2_value(None_Instance)
-
-        one_dict = Dict_Type(tp_address, Dict_Type, iterable, value)
-        return type_2_value(one_dict)
+        return Value.make_any()
 
     def clear(self):
         for one_self in self:
@@ -919,7 +901,7 @@ class AnalysisClass(Analysis):
 
 
 def _typeshedmodule_custom_getattr(self, name):
-    if name not in self.tp_dict:
+    if not self.tp_dict.contains(name):
         return Value.make_any()
     else:
         value = Value()
@@ -1110,39 +1092,55 @@ class RangeAnalysisInstance(AnalysisInstance):
 
 
 class ListAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class):
+    def __init__(self, tp_address, tp_class, *args, **kwargs):
         super().__init__(tp_address, tp_class)
         self.tp_container = "list-internal"
-        self.tp_dict.write_local_value(self.tp_container, Value())
+        if args or kwargs:
+            self.tp_dict.write_local_value(self.tp_container, Value.make_any())
+        else:
+            self.tp_dict.write_local_value(self.tp_container, Value())
 
 
 class TupleAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class):
+    def __init__(self, tp_address, tp_class, *args, **kwargs):
         super().__init__(tp_address, tp_class)
         self.tp_container = "tuple-internal"
-        self.tp_dict.write_local_value(self.tp_container, Value())
+        if args or kwargs:
+            self.tp_dict.write_local_value(self.tp_container, Value.make_any())
+        else:
+            self.tp_dict.write_local_value(self.tp_container, Value())
 
 
 class SetAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class):
+    def __init__(self, tp_address, tp_class, *args, **kwargs):
         super().__init__(tp_address, tp_class)
         self.tp_container = "set-internal"
-        self.tp_dict.write_local_value(self.tp_container, Value())
+        if args or kwargs:
+            self.tp_dict.write_local_value(self.tp_container, Value.make_any())
+        else:
+            self.tp_dict.write_local_value(self.tp_container, Value())
 
 
 class FrozenSetAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class):
+    def __init__(self, tp_address, tp_class, *args, **kwargs):
         super().__init__(tp_address, tp_class)
         self.tp_container = "frozenset-internal"
-        self.tp_dict.write_local_value(self.tp_container, Value())
+        if args or kwargs:
+            self.tp_dict.write_local_value(self.tp_container, Value.make_any())
+        else:
+            self.tp_dict.write_local_value(self.tp_container, Value())
 
 
 class DictAnalysisInstance(AnalysisInstance):
-    def __init__(self, tp_address, tp_class):
+    def __init__(self, tp_address, tp_class, *args, **kwargs):
         super().__init__(tp_address, tp_class)
         self.tp_container = ("key-internal", "value-internal")
-        self.tp_dict.write_local_value(self.tp_container[0], Value())
-        self.tp_dict.write_local_value(self.tp_container[1], Value())
+        if args or kwargs:
+            self.tp_dict.write_local_value(self.tp_container[0], Value.make_any())
+            self.tp_dict.write_local_value(self.tp_container[1], Value.make_any())
+        else:
+            self.tp_dict.write_local_value(self.tp_container[0], Value.make_any())
+            self.tp_dict.write_local_value(self.tp_container[1], Value.make_any())
 
 
 class SuperAnalysisInstance(AnalysisInstance):

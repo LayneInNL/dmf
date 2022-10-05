@@ -19,6 +19,7 @@ import astor
 
 from dmf.analysis.namespace import Namespace
 from dmf.analysis.special_types import Any
+from dmf.analysis.symbol_table import LocalVar
 from dmf.analysis.typeshed import get_stub_file
 from dmf.analysis.value import type_2_value, Value
 
@@ -67,10 +68,6 @@ class Typeshed(metaclass=UniqueTypeshedObject):
         value.inject(self)
         return value
 
-    # used to extract type information
-    def extract_type(self):
-        raise NotImplementedError
-
 
 class TypeshedModule(Typeshed):
     def __init__(
@@ -87,9 +84,6 @@ class TypeshedModule(Typeshed):
 
     def __repr__(self):
         return f"typeshed module object {self.tp_name}"
-
-    def extract_type(self):
-        return f"module {self.tp_qualname}"
 
 
 class TypeshedAssign(Typeshed):
@@ -123,9 +117,6 @@ class TypeshedClass(Typeshed):
         value.inject(an_object)
         return value
 
-    def extract_type(self):
-        return f"Any"
-
 
 class TypeshedFunction(Typeshed):
     def __init__(self, tp_name, tp_module, tp_qualname):
@@ -138,9 +129,6 @@ class TypeshedFunction(Typeshed):
     def __repr__(self):
         return f"typeshed function {self.tp_qualname}"
 
-    def extract_type(self):
-        return f"function {self.tp_qualname}"
-
 
 class TypeshedDescriptorGetter(Typeshed):
     def __init__(self, tp_name, tp_module, tp_qualname):
@@ -149,9 +137,6 @@ class TypeshedDescriptorGetter(Typeshed):
 
     def add_one_function(self, function: ast.FunctionDef):
         self.functions.append(function)
-
-    # def extract_type(self):
-    #     return self.tp_qualname
 
 
 class TypeshedImportedModule(Typeshed):
@@ -172,21 +157,16 @@ class TypeshedImportedName(Typeshed):
 # typeshed instance
 class TypeshedInstance(Typeshed):
     def __init__(self, tp_name: str, tp_module: str, tp_qualname: str, tp_class):
-        tp_name = tp_name
-        tp_qualname = tp_qualname
         super().__init__(tp_name, tp_module, tp_qualname)
         self.tp_class: TypeshedClass = tp_class
-        self.tp_dict: Namespace = Namespace()
+        self.tp_dict: Namespace = Any
 
     def __repr__(self):
         return f"typeshed object {self.tp_qualname}"
 
-    def extract_type(self):
-        return f"class {self.tp_class.tp_qualname}"
-
 
 def parse_typeshed_module(module: str):
-    if module in sys.analysis_typeshed_modules:
+    if sys.analysis_typeshed_modules.contains(module):
         return sys.analysis_typeshed_modules.read_value(module)
 
     # find stub file
@@ -231,7 +211,7 @@ class ModuleVisitor(ast.NodeVisitor):
                 break
 
         # no function named function_name detected
-        if function_name not in self.module_dict:
+        if not self.module_dict.contains(function_name):
             if is_property:
                 func_class = TypeshedDescriptorGetter
             else:

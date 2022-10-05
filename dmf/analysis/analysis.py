@@ -148,6 +148,9 @@ class Analysis(AnalysisBase):
     def iterate(self):
         # as long as there are flows in work_list
         while self.work_list:
+            logger.warning(
+                f"worklist: {len(self.work_list)}, analysis list {len(self.analysis_list)}"
+            )
             # get the leftmost one
             program_point1, program_point2 = self.work_list.popleft()
 
@@ -219,15 +222,6 @@ class Analysis(AnalysisBase):
 
     # deal with cases such as class xxx
     def _add_analysisclass_interflow(self, program_point: ProgramPoint):
-        """
-        prev
-        |
-        curr(call)
-                entry
-
-                exit
-        return
-        """
         call_lab, call_ctx = program_point
         entry_lab, exit_lab = self.add_sub_cfg(call_lab)
         ret_lab = self.get_classdef_return_label(call_lab)
@@ -265,7 +259,7 @@ class Analysis(AnalysisBase):
         # a pure function has no receiver object. We employ the approach Mixed-CFA described in
         # JSAI: A Static Analysis Platform for JavaScript
         # new_ctx: Tuple = merge(call_lab, type.tp_address, call_ctx)
-        new_ctx: Tuple = (call_lab,) + type.tp_address
+        new_ctx: Tuple = (call_lab,)
         self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
             None,
             None,
@@ -625,8 +619,13 @@ class Analysis(AnalysisBase):
         # special init
         # one case is user defined function
         # one case is artificial function
+        # one case is Any
+        # otherwise ignored
         for init in inits:
-            if isinstance(init, AnalysisMethod):
+            if init is Any:
+                dummy_value.inject(Any)
+                break
+            elif isinstance(init, AnalysisMethod):
                 self._add_analysismethod_interflow(program_point, init, ret_lab)
             elif isinstance(init, ArtificialMethod):
                 args, keywords = new_state.compute_func_args(
@@ -635,7 +634,7 @@ class Analysis(AnalysisBase):
                 one_direct_res = init(*args, **keywords)
                 dummy_value.inject(one_direct_res)
             else:
-                dummy_value.inject(init)
+                pass
 
         dummy_ret_stmt: ast.Name = self.get_stmt_by_label(dummy_ret_lab)
         new_stack.write_var(dummy_ret_stmt.id, Namespace_Local, dummy_value)
@@ -1270,6 +1269,17 @@ class Analysis(AnalysisBase):
 
         # short circuit
         if stmt.keywords:
+            new_stack.write_var(cls_name, Namespace_Local, Value.make_any())
+            return new_state
+
+        # no custom attribute access
+        if (
+            "__getattribute__" in f_locals
+            or "__getattr__" in f_locals
+            or "__setattr__" in f_locals
+            or "__delattr__" in f_locals
+            or "__init_subclass__" in f_locals
+        ):
             new_stack.write_var(cls_name, Namespace_Local, Value.make_any())
             return new_state
 

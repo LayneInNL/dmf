@@ -40,11 +40,15 @@ class UnionNamespace(SymbolTable):
             self[var] += other[var]
         return self
 
-    def __contains__(self, name: str):
-        for var in self:
-            if name == var.name:
-                return True
+    def contains(self, name: str):
+        if LocalVar(name) in self:
+            return True
         return False
+
+    def __contains__(self, item):
+        if isinstance(item, str):
+            raise NotImplementedError
+        return super().__contains__(item)
 
     def read_var_type(self, name: str) -> Var:
         for var, _ in self.items():
@@ -60,7 +64,7 @@ class UnionNamespace(SymbolTable):
 
     def write_local_value(self, name: str, value: Value):
         union_value = Value()
-        if name in self:
+        if self.contains(name):
             prev_value = self.read_value(name)
             union_value.inject(prev_value)
         union_value.inject(value)

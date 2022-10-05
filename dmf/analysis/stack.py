@@ -82,7 +82,7 @@ class Frame:
         raise AttributeError(name)
 
     def _read_local_namespace(self, name: str) -> Value:
-        if name in self.f_locals:
+        if self.f_locals.contains(name):
             var = self.f_locals.read_var_type(name)
             if isinstance(var, LocalVar):
                 return self.f_locals.read_value(name)
@@ -103,7 +103,7 @@ class Frame:
             # parent_frame.f_locals itself should not be module namespace
             and parent_frame.f_locals is not self.f_globals
         ):
-            if name in parent_frame.f_locals:
+            if parent_frame.f_locals.contains(name):
                 var = parent_frame.f_locals.read_var_type(name)
                 if isinstance(var, LocalVar):
                     return parent_frame.f_locals.read_value(name)
@@ -114,21 +114,21 @@ class Frame:
         raise AttributeError(name)
 
     def _read_global_namespace(self, name: str) -> Value:
-        if name in self.f_globals:
+        if self.f_globals.contains(name):
             return self.f_globals.read_value(name)
         raise AttributeError(name)
 
     def _read_builtin_namespace(self, name: str) -> Value:
-        if name in f_builtins1:
+        if f_builtins1.contains(name):
             return f_builtins1.read_value(name)
 
-        if name in f_builtins2:
+        if f_builtins2.contains(name):
             return f_builtins2.read_value(name)
 
         raise AttributeError(name)
 
     def write_var(self, name: str, scope: str, value: Value):
-        if name in self.f_locals:
+        if self.f_locals.contains(name):
             var = self.f_locals.read_var_type(name)
             if isinstance(var, LocalVar):
                 self.f_locals.write_local_value(name, value)
@@ -151,7 +151,7 @@ class Frame:
     def _find_nonlocal_namespace(self, name: str) -> Namespace:
         parent_frame: Frame = self.f_back
         while parent_frame is not None and parent_frame.f_globals is self.f_globals:
-            if name in parent_frame.f_locals:
+            if parent_frame.f_locals.contains(name):
                 (
                     var,
                     _,
@@ -165,7 +165,7 @@ class Frame:
         raise AttributeError
 
     def _find_global_namespace(self, name: str) -> Namespace:
-        if name not in self.f_globals:
+        if not self.f_globals.contains(name):
             self.f_globals.write_local_value(name, Value(any=True))
 
         return self.f_globals
@@ -176,7 +176,7 @@ class Frame:
             return
 
         # delete names in current scope
-        if name in self.f_locals:
+        if self.f_locals.contains(name):
             var: Var = self.f_locals.read_var_type(name)
             if not isinstance(var, LocalVar):
                 owner_namespace = self.f_locals.read_value(name)
@@ -217,9 +217,6 @@ class Stack:
 
     def top_frame(self) -> Frame:
         return self.frames[-1]
-
-    def top_namespace_contains(self, name):
-        return name in self.top_frame().f_locals
 
     def read_var(self, var: str):
         return self.top_frame().read_var(var)
