@@ -21,77 +21,6 @@ from typing import Dict, Tuple, Deque, List
 
 import astor
 
-from dmf.flows import construct_CFG
-
-# heap of state
-sys.heap = None
-# program_point
-sys.program_point = None
-
-# mimic sys.path
-sys.analysis_path = []
-# mimic sys.meta_path
-sys.analysis_meta_path = []
-# mimic sys.path_hooks
-sys.analysis_path_hooks = []
-# mimic sys.modules, as fake ones
-sys.analysis_modules = {}
-# mimic sys.modules, but used for typeshed
-sys.analysis_typeshed_modules = {}
-# mimic sys.modules
-sys.fake_analysis_modules = {}
-# mimic flows
-sys.analysis_flows = set()
-# mimic blocks
-sys.analysis_blocks = {}
-# mimic cfgs
-sys.analysis_cfgs = {}
-# mimic special flows
-sys.call_flow_tuples = set()
-sys.classdef_flow_tuples = set()
-sys.magic_right_inter_tuples = set()
-sys.magic_left_inter_tuples = set()
-sys.magic_del_inter_tuples = set()
-sys.special_init_inter_flows = set()
-sys.module_entry_labels = set()
-sys.module_exit_labels = set()
-sys.prepend_flows = []
-# mimic labels
-sys.dummy_labels = set()
-sys.call_labels = set()
-sys.return_labels = set()
-
-
-def merge_cfg_info(cfg):
-    sys.analysis_flows.update(cfg.flows)
-    sys.analysis_blocks.update(cfg.blocks)
-    sys.analysis_cfgs.update(cfg.sub_cfgs)
-
-    sys.call_flow_tuples.update(cfg.call_return_inter_flows)
-    sys.classdef_flow_tuples.update(cfg.classdef_inter_flows)
-    sys.magic_right_inter_tuples.update(cfg.magic_right_inter_flows)
-    sys.magic_left_inter_tuples.update(cfg.magic_left_inter_flows)
-    sys.magic_del_inter_tuples.update(cfg.magic_del_inter_flows)
-    sys.special_init_inter_flows.update(cfg.special_init_inter_flows)
-    sys.module_entry_labels.update(cfg.module_entry_labels)
-    sys.module_exit_labels.update(cfg.module_exit_labels)
-
-    sys.dummy_labels.update(cfg.dummy_labels)
-    sys.call_labels.update(cfg.call_labels)
-    sys.return_labels.update(cfg.return_labels)
-
-    return cfg.start_block.bid, cfg.final_block.bid
-
-
-sys.merge_cfg_info = merge_cfg_info
-
-# use global variables to store all cfg information
-def synthesis_cfg(file_path):
-    cfg = construct_CFG(file_path)
-    return cfg
-
-
-sys.synthesis_cfg = synthesis_cfg
 from dmf.analysis.analysis_types import (
     ArtificialFunction,
     AnalysisFunction,
@@ -101,6 +30,7 @@ from dmf.analysis.analysis_types import (
     AnalysisInstance,
     Generator_Type,
     AnalysisDescriptor,
+    AnalysisModule,
 )
 from dmf.analysis.analysis_types import (
     Constructor,
@@ -168,8 +98,20 @@ AdditionalEntryInfo = namedtuple(
 
 
 class Analysis(AnalysisBase):
-    def __init__(self):
+    def _setup_main(self, main_abs_file_path: str):
+        # prepare information for __main__ module
+        cfg = self.synthesis_cfg(main_abs_file_path)
+        entry_label, exit_label = self.merge_cfg_info(cfg)
+        main_module = AnalysisModule(
+            tp_name="__main__", tp_package="", tp_code=(entry_label, exit_label)
+        )
+        sys.analysis_modules["__main__"] = type_2_value(main_module)
+        main_module_dict = main_module.tp_dict
+        self.module_entry_info[self.extremal_point] = main_module_dict
+
+    def __init__(self, main_abs_file_path: str):
         super().__init__()
+        self.module_entry_info: Dict[ProgramPoint, UnionNamespace] = {}
         # work list
         self.work_list: Deque[Tuple[ProgramPoint, ProgramPoint]] = deque()
         # extremal value
@@ -177,14 +119,15 @@ class Analysis(AnalysisBase):
         self.heap = Heap()
         # start point
         self.extremal_point: ProgramPoint = (1, ())
-
         self.entry_program_point_info: Dict[ProgramPoint, AdditionalEntryInfo] = {}
         # record module name so that the analysis can execute exec
-        self.module_entry_info: Dict[ProgramPoint, UnionNamespace] = {}
         self.analysis_list: defaultdict[ProgramPoint, State | BOTTOM] = defaultdict(
             lambda: BOTTOM
         )
+        self.analysis_list[self.extremal_point] = self.extremal_value
         self.analysis_effect_list: Dict[ProgramPoint, State] = {}
+
+        self._setup_main(main_abs_file_path)
 
     def compute_fixed_point(self):
         self.initialize()
@@ -194,11 +137,6 @@ class Analysis(AnalysisBase):
     def initialize(self):
         self.work_list.extendleft(self.generate_flow(self.extremal_point))
         self.extremal_value = deepcopy_state(self.extremal_value, self.extremal_point)
-        main_modules = sys.analysis_modules["__main__"]
-        main_module = main_modules.extract_1_elt()
-        main_module_dict = main_module.tp_dict
-        self.module_entry_info[self.extremal_point] = main_module_dict
-        self.analysis_list[self.extremal_point] = self.extremal_value
 
         sys.heap = self.heap
         sys.analysis = self

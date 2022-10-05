@@ -12,23 +12,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import argparse
+import os.path
 import sys
+
+from dmf.analysis.analysis import Analysis
+from dmf.log.logger import logger
 
 if sys.platform == "linux":
     import resource
 
     resource.setrlimit(resource.RLIMIT_STACK, (2**30, -1))
-
-from dmf.log.logger import logger
-
 # https://docs.python.org/3.7/library/sys.html#sys.setrecursionlimit
 sys.setrecursionlimit(10**8)
-
-from dmf.analysis.value import type_2_value
-import argparse
-import os.path
-from dmf.analysis.analysis import Analysis
-from dmf.analysis.analysis_types import AnalysisModule
 
 parser = argparse.ArgumentParser()
 parser.add_argument("main", help="the main file path")
@@ -50,11 +46,5 @@ if __name__ == "__main__":
 
     # main file location
     main_abs_file_path = os.path.abspath(main_path)
-    cfg = sys.synthesis_cfg(main_abs_file_path)
-    entry_label, exit_label = sys.merge_cfg_info(cfg)
-    main_module = AnalysisModule(
-        tp_name="__main__", tp_package="", tp_code=(entry_label, exit_label)
-    )
-    sys.analysis_modules["__main__"] = type_2_value(main_module)
-    analysis = Analysis()
+    analysis = Analysis(main_abs_file_path)
     analysis.compute_fixed_point()
