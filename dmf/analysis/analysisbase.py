@@ -16,7 +16,6 @@ from typing import Set, Tuple, Dict
 
 from dmf.flows import CFG
 from dmf.flows.flows import BasicBlock
-from dmf.log.logger import logger
 
 ProgramPoint = Tuple[int, Tuple]
 

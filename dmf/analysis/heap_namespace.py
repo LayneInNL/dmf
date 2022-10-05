@@ -48,7 +48,10 @@ class SizedHeapNamespace:
 
         if name not in self.types:
             raise AttributeError(name)
-        return self.types[name]
+
+        value = Value()
+        value.inject(self.types[name])
+        return value
 
     def write_local_value(self, name: str, value: Value):
         assert isinstance(value, Value), value

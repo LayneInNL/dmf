@@ -28,6 +28,7 @@ from dmf.analysis.analysis_types import (
     Object_Type,
     Int_Type,
 )
+from dmf.analysis.artificial_basic_types import Artificial
 from dmf.analysis.exceptions import ParsingDefaultsError, ParsingKwDefaultsError
 from dmf.analysis.gets_sets import analysis_getattr
 from dmf.analysis.implicit_names import POS_ARG_LEN
@@ -199,20 +200,20 @@ class State:
         return computed_args, computed_keywords
 
     def compute_bases(self, node: ast.ClassDef) -> List[List]:
+        if not node.bases:
+            return [[Object_Type]]
+
         # should I use state at call label or state at return label?
         base_types: List[List] = []
-        if node.bases:
-            for base in node.bases:
-                cls_types = self.compute_value_of_expr(base)
-                cls_type_list = cls_types.value_2_list()
-                base_types.append(cls_type_list)
-        else:
-            base_types.append([Object_Type])
+        for base in node.bases:
+            cls_types = self.compute_value_of_expr(base)
+            cls_type_list = cls_types.value_2_list()
+            base_types.append(cls_type_list)
 
         for base_list in base_types:
             for base in base_list:
-                if isinstance(base, Typeshed):
-                    return [[Any]]
+                if isinstance(base, (Typeshed, Artificial)):
+                    return Any
         return base_types
 
     def parse_positional_args(self, start_pos: int, arguments: ast.arguments):
@@ -253,7 +254,7 @@ class State:
         for idx, elt in enumerate(arg_flags):
             arg_name = arguments.args[idx].arg
             if not elt:
-                if arg_name in f_locals:
+                if f_locals.contains(arg_name):
                     arg_flags[idx] = True
         return arg_flags
 

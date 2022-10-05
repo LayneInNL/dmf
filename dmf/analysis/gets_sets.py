@@ -70,11 +70,10 @@ def _find_name_in_mro(obj_type, name, mros=None) -> Value:
                     if hasattr(cls, "tp_fallback"):
                         fallback_clses = cls.tp_fallback
                         for one_fallback in fallback_clses:
-                            if name in one_fallback.tp_dict:
+                            if one_fallback.tp_dict.contains(name):
                                 curr_mro_value = one_fallback.tp_dict.read_value(name)
                                 all_mro_value.inject(curr_mro_value)
                                 break
-
                 else:
                     curr_mro_value = cls.tp_dict.read_value(name)
                     all_mro_value.inject(curr_mro_value)

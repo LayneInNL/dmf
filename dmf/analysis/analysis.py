@@ -21,6 +21,77 @@ from typing import Dict, Tuple, Deque, List
 
 import astor
 
+from dmf.flows import construct_CFG
+
+# heap of state
+sys.heap = None
+# program_point
+sys.program_point = None
+
+# mimic sys.path
+sys.analysis_path = []
+# mimic sys.meta_path
+sys.analysis_meta_path = []
+# mimic sys.path_hooks
+sys.analysis_path_hooks = []
+# mimic sys.modules, as fake ones
+sys.analysis_modules = {}
+# mimic sys.modules, but used for typeshed
+sys.analysis_typeshed_modules = {}
+# mimic sys.modules
+sys.fake_analysis_modules = {}
+# mimic flows
+sys.analysis_flows = set()
+# mimic blocks
+sys.analysis_blocks = {}
+# mimic cfgs
+sys.analysis_cfgs = {}
+# mimic special flows
+sys.call_flow_tuples = set()
+sys.classdef_flow_tuples = set()
+sys.magic_right_inter_tuples = set()
+sys.magic_left_inter_tuples = set()
+sys.magic_del_inter_tuples = set()
+sys.special_init_inter_flows = set()
+sys.module_entry_labels = set()
+sys.module_exit_labels = set()
+sys.prepend_flows = []
+# mimic labels
+sys.dummy_labels = set()
+sys.call_labels = set()
+sys.return_labels = set()
+
+
+def merge_cfg_info(cfg):
+    sys.analysis_flows.update(cfg.flows)
+    sys.analysis_blocks.update(cfg.blocks)
+    sys.analysis_cfgs.update(cfg.sub_cfgs)
+
+    sys.call_flow_tuples.update(cfg.call_return_inter_flows)
+    sys.classdef_flow_tuples.update(cfg.classdef_inter_flows)
+    sys.magic_right_inter_tuples.update(cfg.magic_right_inter_flows)
+    sys.magic_left_inter_tuples.update(cfg.magic_left_inter_flows)
+    sys.magic_del_inter_tuples.update(cfg.magic_del_inter_flows)
+    sys.special_init_inter_flows.update(cfg.special_init_inter_flows)
+    sys.module_entry_labels.update(cfg.module_entry_labels)
+    sys.module_exit_labels.update(cfg.module_exit_labels)
+
+    sys.dummy_labels.update(cfg.dummy_labels)
+    sys.call_labels.update(cfg.call_labels)
+    sys.return_labels.update(cfg.return_labels)
+
+    return cfg.start_block.bid, cfg.final_block.bid
+
+
+sys.merge_cfg_info = merge_cfg_info
+
+# use global variables to store all cfg information
+def synthesis_cfg(file_path):
+    cfg = construct_CFG(file_path)
+    return cfg
+
+
+sys.synthesis_cfg = synthesis_cfg
 from dmf.analysis.analysis_types import (
     ArtificialFunction,
     AnalysisFunction,
@@ -1008,16 +1079,6 @@ class Analysis(AnalysisBase):
     def transfer_entry(
         self, program_point: ProgramPoint, old_state: State, new_state: State
     ):
-        """
-        entry node could be ast.arguments or ast.Pass
-        the former is used in a function definition
-        the latter is used in a class definition or other stuff
-        :param program_point:
-        :param old_state:
-        :param new_state:
-        :return:
-        """
-
         stmt = self.get_stmt_by_point(program_point)
 
         new_stack = new_state.stack
@@ -1274,17 +1335,22 @@ class Analysis(AnalysisBase):
 
         # no custom attribute access
         if (
-            "__getattribute__" in f_locals
-            or "__getattr__" in f_locals
-            or "__setattr__" in f_locals
-            or "__delattr__" in f_locals
-            or "__init_subclass__" in f_locals
+            f_locals.contains("__getattribute__")
+            or f_locals.contains("__getattr__")
+            or f_locals.contains("__setattr__")
+            or f_locals.contains("__delattr__")
+            or f_locals.contains("__init_subclass__")
         ):
             new_stack.write_var(cls_name, Namespace_Local, Value.make_any())
             return new_state
 
-        value: Value = Value()
+        # we only want AnalysisClass as bases
         bases = new_state.compute_bases(stmt)
+        if bases is Any:
+            new_stack.write_var(cls_name, Namespace_Local, Value.make_any())
+            return new_state
+
+        value: Value = Value()
         # call_lab is the allocation label of this class
         call_lab = self.get_classdef_call_label(return_lab)
         # tp_address is an OS context

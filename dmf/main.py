@@ -24,12 +24,7 @@ from dmf.log.logger import logger
 # https://docs.python.org/3.7/library/sys.html#sys.setrecursionlimit
 sys.setrecursionlimit(10**8)
 
-import init
-from dmf.analysis.builtin_functions import _setup
 from dmf.analysis.value import type_2_value
-
-init.print_status()
-
 import argparse
 import os.path
 from dmf.analysis.analysis import Analysis
@@ -41,8 +36,6 @@ parser.add_argument("project", help="the project path")
 
 
 if __name__ == "__main__":
-    _setup()
-
     args = parser.parse_args()
     main_path = args.main
     project_path = args.project

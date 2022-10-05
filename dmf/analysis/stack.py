@@ -29,7 +29,7 @@ Namespace_Global = "global"
 Namespace_Nonlocal = "nonlocal"
 Namespace_Local = "local"
 
-builtin_modules = sys.analysis_typeshed_modules.read_value("builtins")
+builtin_modules = sys.analysis_typeshed_modules["builtins"]
 assert len(builtin_modules) == 1
 builtin_module = builtin_modules.value_2_list()[0]
 f_builtins2 = builtin_module.tp_dict

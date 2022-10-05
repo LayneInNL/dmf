@@ -18,8 +18,7 @@ from types import FunctionType
 from dmf.analysis.analysis_types import (
     AnalysisFunction,
     None_Instance,
-    List_Type,
-    Dict_Type,
+    Dict_Instance,
     AnalysisDescriptor,
     Str_Type,
     Int_Type,
@@ -27,28 +26,20 @@ from dmf.analysis.analysis_types import (
     ByteArray_Type,
     Bytes_Type,
     Float_Type,
+    List_Instance,
+    artificial_namespace,
 )
 from dmf.analysis.artificial_basic_types import (
     ArtificialFunction,
 )
-from dmf.analysis.context_sensitivity import record
 from dmf.analysis.gets_sets import analysis_getattr
-from dmf.analysis.namespace import Namespace
+from dmf.analysis.special_types import Any
 from dmf.analysis.typeshed_types import (
-    parse_typeshed_module,
-    extract_1value,
     import_a_module_from_typeshed,
     TypeshedFunction,
 )
 from dmf.analysis.value import Value, type_2_value
 from dmf.importer import import_module
-from dmf.log.logger import logger
-
-# since we use static analysis, builtin_module is a set of modules
-# but in fact there will only be one module
-builtin_modules: Value = parse_typeshed_module("builtins")
-builtin_module = extract_1value(builtin_modules)
-builtin_module_dict: Namespace = builtin_module.tp_dict
 
 
 def _setup():
@@ -96,12 +87,8 @@ def _setup():
     # dict is in another file
 
     def dir(object=None):
-        program_point = sys.program_point
-        logger.critical(f"The program point is {program_point}")
-        label, context = program_point
-        tp_address = record(label, context)
-        value = type_2_value(Str_Type())
-        return List_Type(tp_address, List_Type, value)
+        value = type_2_value(List_Instance)
+        return value
 
     def enumerate(iterable, start=None):
         return Value.make_any()
@@ -127,13 +114,9 @@ def _setup():
         return Value.make_any()
 
     def globals():
-        program_point = sys.program_point
-        logger.critical(f"The program point is {program_point}")
-        label, context = program_point
-        heap = label
-        value1 = type_2_value(Str_Type())
-        value2 = Value.make_any()
-        return Dict_Type(heap, Dict_Type, value1, value2)
+        value = Value()
+        value.inject(Dict_Instance)
+        return value
 
     def hasattr(object, name):
         return type_2_value(Bool_Type())
@@ -168,13 +151,15 @@ def _setup():
             obj_type = obj.tp_class
             direct_res = analysis_getattr(obj_type, "__iter__")
             for one_direct_res in direct_res:
-                if isinstance(one_direct_res, ArtificialFunction):
+                if one_direct_res is Any:
+                    value.inject(Any)
+                elif builtins.isinstance(one_direct_res, ArtificialFunction):
                     one_res = one_direct_res(objs)
                     value.inject(one_res)
-                elif isinstance(one_direct_res, AnalysisFunction):
+                elif builtins.isinstance(one_direct_res, AnalysisFunction):
                     one_res = AnalysisDescriptor(one_direct_res, type_2_value(obj))
                     value.inject(one_res)
-                elif isinstance(one_direct_res, TypeshedFunction):
+                elif builtins.isinstance(one_direct_res, TypeshedFunction):
                     one_res = one_direct_res.refine_self_to_value()
                     value.inject(one_res)
         return value
@@ -185,13 +170,9 @@ def _setup():
     # list is in another file
 
     def locals():
-        program_point = sys.program_point
-        logger.critical(f"The program point is {program_point}")
-        label, context = program_point
-        tp_address = record(label, context)
-        value1 = type_2_value(Str_Type())
-        value2 = Value.make_any()
-        return Dict_Type(tp_address, Dict_Type, value1, value2)
+        value = Value()
+        value.inject(Dict_Instance)
+        return value
 
     def map(*args, **kwargs):
         return Value.make_any()
@@ -207,15 +188,17 @@ def _setup():
         for obj in objs:
             direct_res = analysis_getattr(obj, "__next__")
             for one_direct_res in direct_res:
-                if isinstance(one_direct_res, ArtificialFunction):
+                if one_direct_res is Any:
+                    value.inject(Any)
+                elif builtins.isinstance(one_direct_res, ArtificialFunction):
                     one_res = one_direct_res(type_2_value(obj))
                     value.inject(one_res)
-                elif isinstance(one_direct_res, AnalysisFunction):
+                elif builtins.isinstance(one_direct_res, AnalysisFunction):
                     descriptor = AnalysisDescriptor(
                         tp_function=one_direct_res
                     ), type_2_value(obj)
                     value.inject(descriptor)
-                elif isinstance(one_direct_res, TypeshedFunction):
+                elif builtins.isinstance(one_direct_res, TypeshedFunction):
                     one_res = one_direct_res.refine_self_to_value()
                     value.inject(one_res)
 
@@ -273,13 +256,9 @@ def _setup():
     # type same
 
     def vars(object=None):
-        program_point = sys.program_point
-        logger.critical(f"The program point is {program_point}")
-        label, context = program_point
-        tp_address = record(label, context)
-        value1 = type_2_value(Str_Type())
-        value2 = Value.make_any()
-        return Dict_Type(tp_address, Dict_Type, value1, value2)
+        value = Value()
+        value.inject(Dict_Instance)
+        return value
 
     def zip(*iterables):
         return Value.make_any()
@@ -288,13 +267,14 @@ def _setup():
         return Value.make_any()
 
     methods = builtins.filter(
-        lambda symbol: isinstance(symbol, FunctionType), builtins.locals().values()
+        lambda symbol: builtins.isinstance(symbol, FunctionType),
+        builtins.locals().values(),
     )
     for method in methods:
         arti_method = ArtificialFunction(
             tp_function=method, tp_qualname=f"builtins.{method.__name__}"
         )
-        builtin_module_dict.write_local_value(
+        artificial_namespace.write_local_value(
             method.__name__, type_2_value(arti_method)
         )
 
@@ -315,9 +295,6 @@ def import_a_module(name, package=None, level=0) -> Value:
     import isort
 
     value = Value()
-    # package is needed
-    # if level > 0:
-    #     name = _resolve_name(name, package, level)
     category = isort.place_module(name)
     # DEFAULT: Tuple[str, ...] = (FUTURE, STDLIB, THIRDPARTY, FIRSTPARTY, LOCALFOLDER)
     if category == "FUTURE":

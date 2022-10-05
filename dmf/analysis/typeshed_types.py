@@ -77,7 +77,8 @@ class TypeshedModule(Typeshed):
         self.tp_dict: Namespace = tp_dict
 
     def __contains__(self, item):
-        return item in self.tp_dict
+        assert isinstance(item, str)
+        return LocalVar(item) in self.tp_dict
 
     def custom_getattr(self, name):
         raise NotImplementedError
@@ -166,8 +167,8 @@ class TypeshedInstance(Typeshed):
 
 
 def parse_typeshed_module(module: str):
-    if sys.analysis_typeshed_modules.contains(module):
-        return sys.analysis_typeshed_modules.read_value(module)
+    if module in sys.analysis_typeshed_modules:
+        return sys.analysis_typeshed_modules[module]
 
     # find stub file
     path = get_stub_file(module)
@@ -184,8 +185,8 @@ def parse_typeshed_module(module: str):
 
     # write to sys.analysis_typeshed_modules
     value = type_2_value(typeshed_module)
-    sys.analysis_typeshed_modules.write_local_value(module, value)
-    return sys.analysis_typeshed_modules.read_value(module)
+    sys.analysis_typeshed_modules[module] = value
+    return value
 
 
 class ModuleVisitor(ast.NodeVisitor):
@@ -321,6 +322,13 @@ class ModuleVisitor(ast.NodeVisitor):
 
     def visit_ImportFrom(self, node: ast.ImportFrom):
         source_module = self._resolve_name(node)
+        if source_module in ("_typeshed", "typing", "typing_extensions"):
+            for alias in node.names:
+                if alias.asname:
+                    self.module_dict.write_local_value(alias.asname, Value.make_any())
+                else:
+                    self.module_dict.write_local_value(alias.name, Value.make_any())
+            return
 
         for alias in node.names:
             if alias.asname is not None:

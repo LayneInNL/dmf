@@ -59,30 +59,31 @@ from dmf.log.logger import logger
 artificial_namespace = Namespace()
 artificial_namespace.write_local_value("type", type_2_value(Type_Type))
 artificial_namespace.write_local_value("object", type_2_value(Object_Type))
+artificial_namespace.write_local_value("specialany", Value.make_any())
 
 # since we use static analysis, builtin_module is a set of modules
 # but in fact there will only be one module
 builtin_modules: Value = parse_typeshed_module("builtins")
-builtin_module: TypeshedModule = extract_1value(builtin_modules)
+builtin_module: TypeshedModule = builtin_modules.extract_1_elt()
 builtin_module_dict: Namespace = builtin_module.tp_dict
 
 types_modules: Value = parse_typeshed_module("types")
-types_module: TypeshedModule = extract_1value(types_modules)
+types_module: TypeshedModule = types_modules.extract_1_elt()
 types_module_dict: Namespace = types_module.tp_dict
 
 Module_Types: Value = types_module_dict.read_value("ModuleType")
-Module_Type: TypeshedClass = extract_1value(Module_Types)
+Module_Type: TypeshedClass = Module_Types.extract_1_elt()
 TypeshedModule.tp_class = Module_Type
 
 Function_Types: Value = types_module_dict.read_value("FunctionType")
-Function_Type: TypeshedClass = extract_1value(Function_Types)
+Function_Type: TypeshedClass = Function_Types.extract_1_elt()
 
 Int_Types: Value = builtin_module_dict.read_value("int")
-Int_Type = extract_1value(Int_Types)
+Int_Type = Int_Types.extract_1_elt()
 Int_Instance = Int_Type()
 
 Float_Types: Value = builtin_module_dict.read_value("float")
-Float_Type = extract_1value(Float_Types)
+Float_Type = Float_Types.extract_1_elt()
 Float_Instance = Float_Type()
 
 Complex_Types: Value = builtin_module_dict.read_value("complex")
@@ -105,6 +106,14 @@ Bool_Types: Value = builtin_module_dict.read_value("bool")
 Bool_Type = extract_1value(Bool_Types)
 Bool_Instance = Bool_Type()
 
+List_Types: Value = builtin_module_dict.read_value("list")
+List_Type = List_Types.extract_1_elt()
+List_Instance = List_Type()
+
+Dict_Types: Value = builtin_module_dict.read_value("dict")
+Dict_Type = Dict_Types.extract_1_elt()
+Dict_Instance = Dict_Type()
+
 NotImplemented_Types = builtin_module_dict.read_value("_NotImplementedType")
 NotImplemented_Type = extract_1value(NotImplemented_Types)
 NotImplemented_Instance = NotImplemented_Type()
@@ -124,11 +133,9 @@ builtin_module_dict.write_local_value("None", type_2_value(None_Instance))
 
 Typeshed_Type_Type: Value = builtin_module_dict.read_value("type")
 Type_Type.tp_fallback = Typeshed_Type_Type
-# builtin_module_dict.write_local_value("type", type_2_value(Type_Type))
 
 Typeshed_Object_Type: Value = builtin_module_dict.read_value("object")
 Object_Type.tp_fallback = Typeshed_Object_Type
-# builtin_module_dict.write_local_value("object", type_2_value(Object_Type))
 
 
 # special attribute __name__
@@ -158,9 +165,6 @@ class Constructor:
     def __repr__(self):
         return "object.__new__"
 
-    def extract_type(self):
-        return "builtins.object.__new__"
-
 
 def _setup_Object_Type():
     def __init__(self):
@@ -183,8 +187,6 @@ class SuperArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args, **kwargs):
         # super(type1, type2)
         type1_value, type2_value, *_ = args
-        assert len(type1_value) == 1, type1_value
-        assert len(type2_value) == 1, type2_value
         type1 = extract_1value(type1_value)
         type2 = extract_1value(type2_value)
 
@@ -211,7 +213,6 @@ class SuperArtificialClass(ArtificialClass):
 Super_Type = SuperArtificialClass("builtins.super")
 Typeshed_Super_Type: Value = builtin_module_dict.read_value("super")
 Super_Type.tp_fallback = Typeshed_Super_Type
-# builtin_module_dict.write_local_value("super", type_2_value(Super_Type))
 artificial_namespace.write_local_value("super", type_2_value(Super_Type))
 
 
@@ -226,7 +227,6 @@ class PropertyArtificialClass(ArtificialClass):
 Property_Type = PropertyArtificialClass("builtins.property")
 Typeshed_Property_Type: Value = builtin_module_dict.read_value("property")
 Property_Type.tp_fallback = Typeshed_Property_Type
-# builtin_module_dict.write_local_value("property", type_2_value(Property_Type))
 artificial_namespace.write_local_value("property", type_2_value(Property_Type))
 
 # mimic builtins.classmethod
@@ -240,7 +240,6 @@ class ClassmethodArtificialClass(ArtificialClass):
 Classmethod_Type = ClassmethodArtificialClass("builtins.classmethod")
 Typeshed_Classmethod_Type: Value = builtin_module_dict.read_value("classmethod")
 Classmethod_Type.tp_fallback = Typeshed_Classmethod_Type
-# builtin_module_dict.write_local_value("classmethod", type_2_value(Classmethod_Type))
 artificial_namespace.write_local_value("classmethod", type_2_value(Classmethod_Type))
 
 # mimic builtins.staticmethod
@@ -306,7 +305,6 @@ Range_Type = RangeArtificialClass("builtins.range")
 
 Typeshed_Range_Type: Value = builtin_module_dict.read_value("range")
 Range_Type.tp_fallback = Typeshed_Range_Type
-# builtin_module_dict.write_local_value("range", type_2_value(Range_Type))
 artificial_namespace.write_local_value("range", type_2_value(Range_Type))
 
 
@@ -368,9 +366,6 @@ def _setup_List_Type():
             one_self.tp_dict.write_local_value(one_self.tp_contaier, value)
         return type_2_value(None_Instance)
 
-    def remove(self, x):
-        return type_2_value(None_Instance)
-
     def pop(self, i=None):
         value = Value()
         for one_self in self:
@@ -378,33 +373,12 @@ def _setup_List_Type():
             value.inject(prev_value)
         return value
 
-    def clear(self):
-        for one_self in self:
-            one_self.tp_dict.write_local_value(one_self.tp_container, Value())
-        return type_2_value(None_Instance)
-
-    def index(self, x, start=None, end=None):
-        return type_2_value(Int_Instance)
-
-    def count(self, x):
-        return type_2_value(Int_Instance)
-
-    def sort(self, *args, **kwargs):
-        return type_2_value(None_Instance)
-
-    def reverse(self):
-        return type_2_value(None_Instance)
-
-    def copy(self):
-        return type_2_value(self)
+    # def copy(self):
+    #     return type_2_value(self)
 
     def __setitem__(self, key, value):
         for one_self in self:
-            merged_value = Value()
-            merged_value.inject(value)
-            prev_value = one_self.tp_dict.read_value(one_self.tp_container)
-            merged_value.inject(prev_value)
-            one_self.tp_dict.write_local_value(one_self.tp_container, merged_value)
+            one_self.tp_dict.write_local_value(one_self.tp_container, value)
         return type_2_value(None_Instance)
 
     def __getitem__(self, key):
@@ -444,7 +418,6 @@ class TupleArtificialClass(ArtificialClass):
 Tuple_Type = TupleArtificialClass("builtins.tuple")
 Typeshed_Tuple_Type: Value = builtin_module_dict.read_value("tuple")
 Tuple_Type.tp_fallback = Typeshed_Tuple_Type
-# builtin_module_dict.write_local_value("tuple", type_2_value(Tuple_Type))
 artificial_namespace.write_local_value("tuple", type_2_value(Tuple_Type))
 
 
@@ -458,12 +431,6 @@ def _setup_Tuple_Type():
             value.inject(prev_value)
             one_self.tp_dict.write_local_value(one_self.tp_container, value)
         return type_2_value(None_Instance)
-
-    def index(self, x, start=None, end=None):
-        return type_2_value(Int_Instance)
-
-    def count(self, x):
-        return type_2_value(Int_Instance)
 
     def __iter__(self):
         value = Value()
@@ -517,30 +484,6 @@ artificial_namespace.write_local_value("frozenset", type_2_value(Frozenset_Type)
 
 
 def _setup_Set_Type():
-    def copy(self):
-        return self
-
-    def difference(self, *args, **kwargs):
-        return Value.make_any()
-
-    def intersection(self, *args, **kwargs):
-        return Value.make_any()
-
-    def isdisjoint(self, *args, **kwargs):
-        return type_2_value(Bool_Instance)
-
-    def issubset(self, *args, **kwargs):
-        return type_2_value(Bool_Instance)
-
-    def issuperset(self, *args, **kwargs):
-        return type_2_value(Bool_Instance)
-
-    def symmetric_difference(self, *args, **kwargs):
-        return Value.make_any()
-
-    def union(self, *args, **kwargs):
-        return Value.make_any()
-
     def add(self, x):
         for one_self in self:
             value = Value()
@@ -550,35 +493,12 @@ def _setup_Set_Type():
             one_self.tp_dict.write_local_value(one_self.tp_container, value)
         return type_2_value(None_Instance)
 
-    def clear(self):
-        for one_self in self:
-            one_self.tp_dict.write_local_value(one_self.tp_container, Value())
-        return type_2_value(None_Instance)
-
-    def discard(self):
-        return type_2_value(None_Instance)
-
-    def difference_update(self, *args, **kwargs):
-        return Value.make_any()
-
-    def intersection_update(self, *args, **kwargs):
-        return Value.make_any()
-
     def pop(self, *args, **kwargs):
         value = Value()
         for one_self in self:
             one_value = one_self.tp_dict.read_value(one_self.tp_container)
             value.inject(one_value)
         return value
-
-    def remove(self, *args, **kwargs):
-        return type_2_value(None_Instance)
-
-    def symmetric_difference(self, *args, **kwargs):
-        return Value.make_any()
-
-    def symmetric_difference_update(self, *args, **kwargs):
-        return Value.make_any()
 
     def __iter__(self):
         value = Value()
@@ -615,30 +535,6 @@ def _setup_FrozenSet_Type():
             one_self.tp_dict.write_local_value(one_self.tp_container, value)
         return type_2_value(None_Instance)
 
-    def copy(self):
-        return self
-
-    def difference(self, *args, **kwargs):
-        return Value.make_any()
-
-    def intersection(self, *args, **kwargs):
-        return Value.make_any()
-
-    def isdisjoint(self, *args, **kwargs):
-        return type_2_value(Bool_Instance)
-
-    def issubset(self, *args, **kwargs):
-        return type_2_value(Bool_Instance)
-
-    def issuperset(self, *args, **kwargs):
-        return type_2_value(Bool_Instance)
-
-    def symmetric_difference(self, *args, **kwargs):
-        return Value.make_any()
-
-    def union(self, *args, **kwargs):
-        return Value.make_any()
-
     def __iter__(self):
         value = Value()
         for one_self in self:
@@ -669,120 +565,6 @@ _setup_FrozenSet_Type()
 class DictArtificialClass(ArtificialClass):
     def __call__(self, tp_address, tp_class, *args, **kwargs):
         return DictAnalysisInstance(tp_address, tp_class, *args, **kwargs)
-
-
-Dict_Type = DictArtificialClass("builtins.dict")
-Typeshed_Dict_Type: Value = builtin_module_dict.read_value("dict")
-Dict_Type.tp_fallback = Typeshed_Dict_Type
-# builtin_module_dict.write_local_value("dict", type_2_value(Dict_Type))
-artificial_namespace.write_local_value("dict", type_2_value(Dict_Type))
-
-
-def _setup_Dict_Type():
-    def get(self, key, default=None):
-        value = Value()
-        for one_self in self:
-            prev_value = one_self.tp_dict.read_value(one_self.tp_container[1])
-            value.inject(prev_value)
-
-        if default is not None:
-            value.inject(default)
-        return value
-
-    def setdefault(self, key, default=None):
-        value = Value()
-        for one_self in self:
-            prev_value = one_self.tp_dict.read_value(one_self.tp_container[1])
-            value.inject(prev_value)
-
-        if default is not None:
-            value.inject(default)
-
-        return value
-
-    def pop(self, key, default=None):
-        value = Value()
-        for one_self in self:
-            prev_value = one_self.tp_dict.read_value(one_self.tp_container[1])
-            value.inject(prev_value)
-
-        if default is not None:
-            value.inject(default)
-
-        return value
-
-    def popitem(self):
-        value = Value()
-        for one_self in self:
-            key_value = one_self.tp_dict.read_value(one_self.tp_container[0])
-            value.inject(key_value)
-            value_value = one_self.tp_dict.read_value(one_self.tp_container[1])
-            value.inject(value_value)
-        program_point = sys.program_point
-        tp_address = record(program_point[0], program_point[1])
-        one_tuple = Tuple_Type(f"{tp_address}", Tuple_Type, value)
-        return type_2_value(one_tuple)
-
-    def keys(self):
-        value = Value()
-        for one_self in self:
-            key_value = one_self.tp_dict.read_value(one_self.tp_container[0])
-            program_point = sys.program_point
-            heap_address = record(program_point[0], program_point[1])
-            tp_address = f"{one_self.tp_address}-{heap_address}"
-            one_iterator = Iterator_Type(tp_address, Iterator_Type, key_value)
-            value.inject(one_iterator)
-        return value
-
-    def __iter__(self):
-        return keys(self)
-
-    def items(self):
-        return Value.make_any()
-
-    def values(self):
-        value = Value()
-        for one_self in self:
-            value_value = one_self.tp_dict.read_value(one_self.tp_container[1])
-            program_point = sys.program_point
-            heap_address = record(program_point[0], program_point[1])
-            tp_address = f"{one_self.tp_address}-{heap_address}"
-            one_iterator = Iterator_Type(tp_address, Iterator_Type, value_value)
-            value.inject(one_iterator)
-        return value
-
-    def update(self, other):
-        # other could be AnalysisInstance
-        for one_self in self:
-            one_self.tp_dict.write_local_value(
-                one_self.tp_container[0], Value.make_any()
-            )
-            one_self.tp_dict.write_local_value(
-                one_self.tp_container[1], Value.make_any()
-            )
-        return type_2_value(None_Instance)
-
-    def fromkeys(self, iterable, value=None):
-        return Value.make_any()
-
-    def clear(self):
-        for one_self in self:
-            one_self.tp_dict.write_local_value(one_self.tp_container[0], Value())
-            one_self.tp_dict.write_local_value(one_self.tp_container[1], Value())
-        return type_2_value(None_Instance)
-
-    def copy(self):
-        return self
-
-    methods = filter(lambda symbol: isinstance(symbol, FunctionType), locals().values())
-    for method in methods:
-        arti_method = ArtificialFunction(
-            tp_function=method, tp_qualname=f"builtins.dict.{method.__name__}"
-        )
-        Dict_Type.tp_dict.write_local_value(method.__name__, type_2_value(arti_method))
-
-
-_setup_Dict_Type()
 
 
 class IteratorArtificialClass(ArtificialClass):
@@ -845,9 +627,6 @@ class Analysis:
     def __iadd__(self, other):
         return self
 
-    def extract_type(self):
-        raise NotImplementedError
-
 
 class AnalysisInstance(Analysis):
     def __init__(self, tp_address: Tuple, tp_class: AnalysisClass):
@@ -861,9 +640,6 @@ class AnalysisInstance(Analysis):
 
     def __repr__(self):
         return f"{self.tp_address} object"
-
-    def extract_type(self):
-        return f"class {self.tp_class.tp_qualname}"
 
 
 class AnalysisClass(Analysis):
@@ -895,9 +671,6 @@ class AnalysisClass(Analysis):
 
     def __repr__(self):
         return f"analysis-class {self.tp_uuid}"
-
-    def extract_type(self):
-        return f"class builtins.type"
 
 
 def _typeshedmodule_custom_getattr(self, name):
@@ -947,7 +720,7 @@ class AnalysisModule(Analysis):
         return f"module {self.tp_name}"
 
     def custom_getattr(self, name):
-        if name not in self.tp_dict:
+        if not self.tp_dict.contains(name):
             raise AttributeError(name)
         value = Value()
         one_value = self.tp_dict.read_value(name)
@@ -1279,7 +1052,7 @@ class TypeExprVisitor(ast.NodeVisitor):
         # compute receiver value
         receiver_value = self.visit(node.value)
         for one_receiver in receiver_value:
-            if node.attr in one_receiver.tp_dict:
+            if one_receiver.tp_dict.contains(node.attr):
                 attr_value = one_receiver.tp_dict.read_value(node.attr)
                 value.inject(attr_value)
             else:
@@ -1316,7 +1089,7 @@ class TypeExprVisitor(ast.NodeVisitor):
         # get typeshed module
         modules: Value = parse_typeshed_module(self.typeshed.tp_module)
         for module in modules:
-            if id in module.tp_dict:
+            if module.tp_dict.contains(id):
                 name_value = module.tp_dict.read_value(id)
                 value.inject(name_value)
             else:

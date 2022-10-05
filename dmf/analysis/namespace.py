@@ -86,6 +86,3 @@ class Namespace(SymbolTable):
 
     def del_local_var(self, name: str):
         del self[LocalVar(name)]
-
-
-sys.analysis_typeshed_modules = Namespace()
