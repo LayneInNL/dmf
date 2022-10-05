@@ -107,6 +107,8 @@ class Analysis(AnalysisBase):
         )
         sys.analysis_modules["__main__"] = type_2_value(main_module)
         main_module_dict = main_module.tp_dict
+
+        self.extremal_point: ProgramPoint = (entry_label, ())
         self.module_entry_info[self.extremal_point] = main_module_dict
 
     def __init__(self, main_abs_file_path: str):
@@ -118,21 +120,23 @@ class Analysis(AnalysisBase):
         self.extremal_value: State = State(Stack())
         self.heap = Heap()
         # start point
-        self.extremal_point: ProgramPoint = (1, ())
         self.entry_program_point_info: Dict[ProgramPoint, AdditionalEntryInfo] = {}
         # record module name so that the analysis can execute exec
         self.analysis_list: defaultdict[ProgramPoint, State | BOTTOM] = defaultdict(
             lambda: BOTTOM
         )
-        self.analysis_list[self.extremal_point] = self.extremal_value
         self.analysis_effect_list: Dict[ProgramPoint, State] = {}
 
         self._setup_main(main_abs_file_path)
+        self.analysis_list[self.extremal_point] = self.extremal_value
 
     def compute_fixed_point(self):
         self.initialize()
         self.iterate()
         self.present()
+
+    def get_analysis_effect_list(self):
+        return self.analysis_effect_list
 
     def initialize(self):
         self.work_list.extendleft(self.generate_flow(self.extremal_point))

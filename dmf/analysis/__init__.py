@@ -15,8 +15,6 @@ import sys
 
 # heap of state
 sys.heap = None
-# program_point
-sys.program_point = None
 
 # mimic sys.path
 sys.analysis_path = []

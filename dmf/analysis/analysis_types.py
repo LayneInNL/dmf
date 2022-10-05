@@ -29,7 +29,6 @@ from dmf.analysis.artificial_basic_types import (
     Object_Type,
     c3,
 )
-from dmf.analysis.context_sensitivity import record
 from dmf.analysis.exceptions import IteratingError
 from dmf.analysis.implicit_names import (
     MODULE_PACKAGE_FLAG,
@@ -391,9 +390,7 @@ def _setup_List_Type():
     def __iter__(self):
         value = Value()
         for one_self in self:
-            program_point = sys.program_point
-            heap_address = record(program_point[0], program_point[1])
-            iterator_tp_address = f"{one_self.tp_address}-{heap_address}"
+            iterator_tp_address = f"{one_self.tp_address}-list-iterator"
             list_value = one_self.tp_dict.read_value(one_self.tp_container)
             one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
             value.inject(one_type)
@@ -436,9 +433,7 @@ def _setup_Tuple_Type():
         value = Value()
         for one_self in self:
             if isinstance(one_self, TupleAnalysisInstance):
-                program_point = sys.program_point
-                heap_address = record(program_point[0], program_point[1])
-                iterator_tp_address = f"{one_self.tp_address}-{heap_address}"
+                iterator_tp_address = f"{one_self.tp_address}-tuple-iterator"
                 list_value = one_self.tp_dict.read_value(one_self.tp_container)
                 one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
                 value.inject(one_type)
@@ -504,9 +499,7 @@ def _setup_Set_Type():
         value = Value()
         for one_self in self:
             if isinstance(one_self, SetAnalysisInstance):
-                program_point = sys.program_point
-                heap_address = record(program_point[0], program_point[1])
-                iterator_tp_address = f"{one_self.tp_address}-{heap_address}"
+                iterator_tp_address = f"{one_self.tp_address}-set-iterator"
                 list_value = one_self.tp_dict.read_value(one_self.tp_container)
                 one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
                 value.inject(one_type)
@@ -539,9 +532,7 @@ def _setup_FrozenSet_Type():
         value = Value()
         for one_self in self:
             if isinstance(one_self, FrozenSetAnalysisInstance):
-                program_point = sys.program_point
-                heap_address = record(program_point[0], program_point[1])
-                iterator_tp_address = f"{one_self.tp_address}-{heap_address}"
+                iterator_tp_address = f"{one_self.tp_address}-frozenset-iterator"
                 list_value = one_self.tp_dict.read_value(one_self.tp_container)
                 one_type = Iterator_Type(iterator_tp_address, Iterator_Type, list_value)
                 value.inject(one_type)

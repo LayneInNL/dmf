@@ -302,8 +302,6 @@ def deepcopy_state(state: State, program_point) -> State:
 
     # sync state
     sys.state = new_state
-    # sync program point
-    sys.program_point = program_point
     return new_state
 
 

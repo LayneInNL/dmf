@@ -98,8 +98,8 @@ class ArtificialClass(Artificial):
     def __repr__(self):
         return self.tp_uuid
 
-    def extract_type(self):
-        return f"class builtins.type"
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError
 
 
 # mimic builtins.type

@@ -46,5 +46,24 @@ if __name__ == "__main__":
 
     # main file location
     main_abs_file_path = os.path.abspath(main_path)
+
+    # crude semantics
     analysis = Analysis(main_abs_file_path)
     analysis.compute_fixed_point()
+    crude = analysis.analysis_effect_list
+
+    # re-init these attributes
+    # mimic sys.modules, as fake ones
+    sys.analysis_modules = {}
+    # mimic sys.modules, but used for typeshed
+    sys.analysis_typeshed_modules = {}
+    # mimic sys.modules
+    sys.fake_analysis_modules = {}
+
+    # mimic exec(module)
+    sys.prepend_flows = []
+
+    # path-sensitive semantics
+    analysis = Analysis(main_abs_file_path)
+    analysis.compute_fixed_point()
+    refined = analysis.analysis_effect_list
