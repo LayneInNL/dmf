@@ -22,8 +22,12 @@ ProgramPoint = Tuple[int, Tuple]
 
 class AnalysisBase:
     @staticmethod
-    def synthesis_cfg(file_path):
-        cfg = construct_CFG(file_path)
+    def synthesis_cfg(file_path) -> CFG:
+        if file_path in sys.analysis_cfgs:
+            cfg = sys.analysis_cfgs[file_path]
+        else:
+            cfg = construct_CFG(file_path)
+            sys.analysis_cfgs[file_path] = cfg
         return cfg
 
     def merge_cfg_info(self, cfg):

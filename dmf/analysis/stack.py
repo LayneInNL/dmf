@@ -240,3 +240,9 @@ class Stack:
             f_globals=new_f_globals,
         )
         self.push_frame(new_frame)
+
+    def get_curr_namespace(self):
+        if self.frames:
+            return self.frames[-1].f_locals
+        else:
+            return Namespace()

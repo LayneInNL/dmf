@@ -2,7 +2,13 @@ from __future__ import annotations
 
 
 class SymbolTable(dict):
-    pass
+    def extract_local_nontemps(self):
+        local_values = {}
+        for var, value in self.items():
+            if not var.is_temp() and var.is_local():
+                local_values[var.name] = value
+
+        return local_values
 
 
 class Var:
@@ -17,6 +23,9 @@ class Var:
 
     def is_temp(self):
         return self.name.startswith("_var")
+
+    def is_local(self):
+        return isinstance(self, LocalVar)
 
 
 class LocalVar(Var):

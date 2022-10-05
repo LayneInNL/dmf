@@ -30,5 +30,7 @@ sys.analysis_typeshed_modules = {}
 # mimic sys.modules
 sys.fake_analysis_modules = {}
 
+# store all control flow graphs
+sys.analysis_cfgs = {}
 # mimic exec(module)
 sys.prepend_flows = []

@@ -67,3 +67,27 @@ if __name__ == "__main__":
     analysis = Analysis(main_abs_file_path)
     analysis.compute_fixed_point()
     refined = analysis.analysis_effect_list
+
+    total: int = 0
+    difference: int = 0
+    for program_point in refined:
+        crude_ns = crude[program_point].stack.get_curr_namespace()
+        crude_ns_locals = crude_ns.extract_local_nontemps()
+        refined_ns = refined[program_point].stack.get_curr_namespace()
+        refined_ns_locals = refined_ns.extract_local_nontemps()
+        local_names = set(crude_ns_locals.keys()) | set(refined_ns_locals.keys())
+
+        for name in local_names:
+            if name in crude_ns_locals and name not in refined_ns_locals:
+                raise NotImplementedError
+            elif name not in crude_ns_locals and name in refined_ns_locals:
+                raise NotImplementedError
+            else:
+                print(name)
+                crude_value = crude_ns_locals[name]
+                refined_value = refined_ns_locals[name]
+                if not (crude_value <= refined_value <= crude_value):
+                    difference += 1
+                total += 1
+
+    logger.critical(f"{difference}, {total}")
