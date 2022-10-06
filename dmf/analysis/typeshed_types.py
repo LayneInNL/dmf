@@ -160,7 +160,7 @@ class TypeshedInstance(Typeshed):
     def __init__(self, tp_name: str, tp_module: str, tp_qualname: str, tp_class):
         super().__init__(tp_name, tp_module, tp_qualname)
         self.tp_class: TypeshedClass = tp_class
-        self.tp_dict: Namespace = Any
+        self.tp_dict: Namespace = Namespace()
 
     def __repr__(self):
         return f"typeshed object {self.tp_qualname}"

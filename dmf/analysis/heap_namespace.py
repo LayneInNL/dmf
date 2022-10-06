@@ -21,7 +21,7 @@ class HeapNamespace(dict):
 
 
 class SizedHeapNamespace:
-    threshold = 5
+    threshold = 10
 
     def threshold_check(self):
         if self.types is Any:
@@ -63,5 +63,15 @@ class SizedHeapNamespace:
         if name in self.types:
             old_value = self.types[name]
             new_value.inject(old_value)
+        self.types[name] = new_value
+        self.threshold_check()
+
+    def overwirte_local_value(self, name: str, value: Value):
+        assert isinstance(value, Value), value
+        if self.types is Any:
+            return
+
+        new_value = Value()
+        new_value.inject(value)
         self.types[name] = new_value
         self.threshold_check()

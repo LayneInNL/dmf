@@ -30,6 +30,9 @@ class Value:
     def make_any(cls) -> Value:
         return cls(any=True)
 
+    def is_any(self):
+        return self.types is Any
+
     def __init__(self, *, any=False):
         self.types: Any | dict
         if any:

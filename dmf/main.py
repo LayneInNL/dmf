@@ -48,6 +48,7 @@ if __name__ == "__main__":
     main_abs_file_path = os.path.abspath(main_path)
 
     # crude semantics
+    sys.analysis_type = "crude"
     analysis = Analysis(main_abs_file_path)
     analysis.compute_fixed_point()
     crude = analysis.analysis_effect_list
@@ -64,6 +65,7 @@ if __name__ == "__main__":
     sys.prepend_flows = []
 
     # path-sensitive semantics
+    sys.analysis_type = "refined"
     analysis = Analysis(main_abs_file_path)
     analysis.compute_fixed_point()
     refined = analysis.analysis_effect_list
@@ -83,7 +85,6 @@ if __name__ == "__main__":
             elif name not in crude_ns_locals and name in refined_ns_locals:
                 raise NotImplementedError
             else:
-                print(name)
                 crude_value = crude_ns_locals[name]
                 refined_value = refined_ns_locals[name]
                 if not (crude_value <= refined_value <= crude_value):
