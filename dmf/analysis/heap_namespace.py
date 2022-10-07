@@ -42,6 +42,9 @@ class SizedHeapNamespace:
             return True
         return False
 
+    def contains(self, name: str):
+        return self.__contains__(name)
+
     def read_value(self, name: str) -> Value:
         if self.types is Any:
             return Value.make_any()
@@ -66,7 +69,7 @@ class SizedHeapNamespace:
         self.types[name] = new_value
         self.threshold_check()
 
-    def overwirte_local_value(self, name: str, value: Value):
+    def overwrite_local_value(self, name: str, value: Value):
         assert isinstance(value, Value), value
         if self.types is Any:
             return

@@ -11,4 +11,14 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-result = list()
+
+
+class Test:
+    # def __getattr__(self, item):
+    #     pass
+    def __init_subclass__(cls, **kwargs):
+        pass
+
+
+r = Test()
+xxx = set(r)

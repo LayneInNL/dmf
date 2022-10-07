@@ -111,7 +111,9 @@ def setattrs(objs: Value, name: str, value: Value | None) -> Value:
 
 
 def analysis_getattr(obj, name: str) -> Value:
-    if isinstance(obj, (AnalysisModule, TypeshedModule)):
+    if obj is Any:
+        return Value.make_any()
+    elif isinstance(obj, (AnalysisModule, TypeshedModule)):
         one_return = obj.custom_getattr(name)
         return one_return
     elif isinstance(obj, (AnalysisInstance, TypeshedInstance)):
@@ -125,6 +127,17 @@ def analysis_getattr(obj, name: str) -> Value:
         return obj.tp_dict.read_value(name)
     else:
         raise NotImplementedError(f"analysis_getattr ({obj},{name})")
+
+
+def type_getattro(obj, name: str):
+    if sys.analysis_type == "crude":
+        return type_getattro_Crude(obj, name)
+    elif sys.analysis_type == "refined":
+        res, kind = type_getattro_Refined(obj, name)
+        if kind == -1:
+            return type_getattro_Crude(obj, name)
+        else:
+            return res
 
 
 def GenericGetAttr(obj, name: str) -> Value:
@@ -148,8 +161,8 @@ def GenericGetAttr_Refined(obj, name: str):
     # super is like a proxy object
     mros = None
     if isinstance(obj, SuperAnalysisInstance):
-        obj = obj.tp_self
         mros = obj.tp_mro
+        obj = obj.tp_self
         obj_type = _py_type(obj)
 
     return_value = Value()
@@ -173,16 +186,7 @@ def GenericGetAttr_Refined(obj, name: str):
                 break
             elif isinstance(cls_var, PropertyAnalysisInstance):
                 fgets = cls_var.tp_dict.read_value(cls_var.tp_container[0])
-                fsets, fdels = cls_var.tp_dict.read_value(
-                    cls_var, cls_var.tp_container[1]
-                ), cls_var.tp_dict.read_value(cls_var, cls_var.tp_container[2])
-                fset = fsets.extract_1_elt(fsets)
-                fdel = fdels.extract_1_elt(fdels)
-                if fset is None_Instance and fdel is None_Instance:
-                    break
-                fget = fgets.extract_1_elt(fgets)
-                if fget is None_Instance:
-                    break
+                fget = fgets.extract_1_elt()
                 obj_value = type_2_value(obj)
                 one_value = AnalysisDescriptor(fget, obj_value)
                 return_value.inject(one_value)
@@ -262,8 +266,8 @@ def GenericGetAttr_Crude(obj, name):
     # super is like a proxy object
     mros = None
     if isinstance(obj, SuperAnalysisInstance):
-        obj = obj.tp_self
         mros = obj.tp_mro
+        obj = obj.tp_self
         obj_type = _py_type(obj)
 
     # try finding descriptors
@@ -470,6 +474,8 @@ def GenericSetAttr_Refined(obj, name: str, value: Value | None):
                         value_value = value
                         one_value = AnalysisDescriptor(fset, obj_value, value_value)
                         possible_descriptors.inject(one_value)
+                    elif fset is None_Instance:
+                        pass
                     else:
                         raise NotImplementedError
             else:
@@ -539,6 +545,10 @@ def GenericDelAttr_Uniform(obj, name: str):
                     obj_value = type_2_value(obj)
                     one_value = AnalysisDescriptor(fdel, obj_value)
                     possible_descriptors.inject(one_value)
+                elif fdel is None_Instance:
+                    pass
+                else:
+                    raise NotImplementedError
 
     # return descriptors
     return possible_descriptors, 1

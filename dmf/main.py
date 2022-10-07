@@ -15,6 +15,7 @@
 import argparse
 import os.path
 import sys
+import timeit
 
 from dmf.analysis.analysis import Analysis
 from dmf.log.logger import logger
@@ -32,6 +33,9 @@ parser.add_argument("project", help="the project path")
 
 
 if __name__ == "__main__":
+    start = timeit.default_timer()
+    sys.open_graph = False
+
     args = parser.parse_args()
     main_path = args.main
     project_path = args.project
@@ -49,9 +53,9 @@ if __name__ == "__main__":
 
     # crude semantics
     sys.analysis_type = "crude"
-    analysis = Analysis(main_abs_file_path)
-    analysis.compute_fixed_point()
-    crude = analysis.analysis_effect_list
+    analysis1 = Analysis(main_abs_file_path)
+    analysis1.compute_fixed_point()
+    crude = analysis1.analysis_effect_list
 
     # re-init these attributes
     # mimic sys.modules, as fake ones
@@ -66,9 +70,9 @@ if __name__ == "__main__":
 
     # path-sensitive semantics
     sys.analysis_type = "refined"
-    analysis = Analysis(main_abs_file_path)
-    analysis.compute_fixed_point()
-    refined = analysis.analysis_effect_list
+    analysis2 = Analysis(main_abs_file_path)
+    analysis2.compute_fixed_point()
+    refined = analysis2.analysis_effect_list
 
     total: int = 0
     difference: int = 0
@@ -92,3 +96,6 @@ if __name__ == "__main__":
                 total += 1
 
     logger.critical(f"{difference}, {total}")
+    end = timeit.default_timer()
+    time_diff = end - start
+    logger.critical(f"{time_diff}")

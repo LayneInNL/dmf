@@ -14,6 +14,7 @@
 
 import ast
 import os
+import sys
 
 import autopep8
 
@@ -29,7 +30,8 @@ def construct_CFG(file_path) -> flows.CFG:
         cfg = visitor.build(base_name, ast.parse(source))
         logger.debug("Previous edges: {}".format(sorted(cfg.edges.keys())))
         logger.debug("Refactored flows: {}".format(visitor.cfg.flows))
-        left_base_name = base_name.partition(".")[0]
-        cfg.show(name=left_base_name)
+        if sys.open_graph:
+            left_base_name = base_name.partition(".")[0]
+            cfg.show(name=left_base_name)
 
         return cfg

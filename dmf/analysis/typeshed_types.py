@@ -115,8 +115,9 @@ class TypeshedClass(Typeshed):
             tp_qualname=f"{self.tp_qualname}.object",
             tp_class=self,
         )
-        value.inject(an_object)
-        return value
+        # value.inject(an_object)
+        # return value
+        return an_object
 
 
 class TypeshedFunction(Typeshed):

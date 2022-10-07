@@ -11,11 +11,29 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-a = 1
 
 
-class Test:
-    pass
-
-
-instance = Test()
+# class Test(list):
+#     pass
+#
+#
+# instance = Test()
+# res = instance.pop(0)
+# a = list()
+# if True:
+#     a.append(1)
+# else:
+#     a.append("hello")
+# res = specialany
+#
+# el = 1
+# a = {}
+# a[el] = 1
+# res1 = a[el]
+# a = []
+# b = dict()
+# # length = len(b)
+# for y in b:
+#     a.append(y)
+res = dir()
+xxx = res.pop()
