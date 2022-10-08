@@ -431,7 +431,8 @@ def analysis_setattr(obj, name: str, value: Value | None) -> Value:
     elif isinstance(obj, AnalysisClass):
         return type_setattro(obj, name, value)
     elif isinstance(obj, AnalysisFunction):
-        return obj.tp_dict.write_local_value(name, value)
+        obj.tp_dict.write_local_value(name, value)
+        return Value()
     # elif isinstance(obj, Typeshed):
     #     return result_value
     raise NotImplementedError(f"analysis_setattr ({obj},{name},{value})")

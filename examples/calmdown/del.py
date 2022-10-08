@@ -11,29 +11,3 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
-del a, b[c], d.e
-# a = 1
-# del a
-# # del x.y
-# # del a[1]
-# # a = 1
-# #
-# #
-# class test:
-#     @property
-#     def name(self):
-#         return self._name
-#
-#     @name.deleter
-#     def name(self):
-#         self._name = "hello"
-#
-#     def __delitem__(self, key):
-#         self.x = 1
-#         return None
-#
-#
-# t = test()
-# del t[1]
-# del t.name

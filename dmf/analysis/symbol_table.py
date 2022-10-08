@@ -10,6 +10,14 @@ class SymbolTable(dict):
 
         return local_values
 
+    def extract_locals(self):
+        local_values = {}
+        for var, value in self.items():
+            if var.is_local():
+                local_values[var.name] = value
+
+        return local_values
+
 
 class Var:
     def __init__(self, name: str):

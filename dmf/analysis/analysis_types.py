@@ -28,6 +28,7 @@ from dmf.analysis.artificial_basic_types import (
     Type_Type,
     Object_Type,
     c3,
+    ObjectArtificialClass,
 )
 from dmf.analysis.exceptions import IteratingError
 from dmf.analysis.implicit_names import (
@@ -1150,4 +1151,4 @@ def _object_call(self, tp_address, tp_class, *args, **kwargs):
     return AnalysisInstance(tp_address=tp_address, tp_class=tp_class)
 
 
-Object_Type.__call__ = _object_call
+ObjectArtificialClass.__call__ = _object_call

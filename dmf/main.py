@@ -32,6 +32,54 @@ parser.add_argument("main", help="the main file path")
 parser.add_argument("project", help="the project path")
 
 
+def with_temps(crude, refined):
+    total: int = 0
+    difference: int = 0
+    for program_point in refined:
+        crude_ns = crude[program_point].stack.get_curr_namespace()
+        crude_ns_locals = crude_ns.extract_locals()
+        refined_ns = refined[program_point].stack.get_curr_namespace()
+        refined_ns_locals = refined_ns.extract_locals()
+        local_names = set(crude_ns_locals.keys()) | set(refined_ns_locals.keys())
+
+        for name in local_names:
+            if name in crude_ns_locals and name not in refined_ns_locals:
+                raise NotImplementedError
+            elif name not in crude_ns_locals and name in refined_ns_locals:
+                raise NotImplementedError
+            else:
+                crude_value = crude_ns_locals[name]
+                refined_value = refined_ns_locals[name]
+                if not (crude_value <= refined_value <= crude_value):
+                    difference += 1
+                total += 1
+    logger.critical("with temps: {} {}".format(difference, total))
+
+
+def without_temps(crude, refined):
+    total: int = 0
+    difference: int = 0
+    for program_point in refined:
+        crude_ns = crude[program_point].stack.get_curr_namespace()
+        crude_ns_locals = crude_ns.extract_local_nontemps()
+        refined_ns = refined[program_point].stack.get_curr_namespace()
+        refined_ns_locals = refined_ns.extract_local_nontemps()
+        local_names = set(crude_ns_locals.keys()) | set(refined_ns_locals.keys())
+
+        for name in local_names:
+            if name in crude_ns_locals and name not in refined_ns_locals:
+                raise NotImplementedError
+            elif name not in crude_ns_locals and name in refined_ns_locals:
+                raise NotImplementedError
+            else:
+                crude_value = crude_ns_locals[name]
+                refined_value = refined_ns_locals[name]
+                if not (crude_value <= refined_value <= crude_value):
+                    difference += 1
+                total += 1
+    logger.critical("without temps: {} {}".format(difference, total))
+
+
 if __name__ == "__main__":
     start = timeit.default_timer()
     sys.open_graph = False
@@ -56,7 +104,11 @@ if __name__ == "__main__":
     analysis1 = Analysis(main_abs_file_path)
     analysis1.compute_fixed_point()
     crude = analysis1.analysis_effect_list
+    end = timeit.default_timer()
+    time_diff = end - start
+    # logger.critical(f"crude analysis {time_diff}")
 
+    start2 = timeit.default_timer()
     # re-init these attributes
     # mimic sys.modules, as fake ones
     sys.analysis_modules = {}
@@ -73,29 +125,11 @@ if __name__ == "__main__":
     analysis2 = Analysis(main_abs_file_path)
     analysis2.compute_fixed_point()
     refined = analysis2.analysis_effect_list
+    end2 = timeit.default_timer()
+    time_diff2 = end2 - start2
+    # logger.critical(f"refine analysis {time_diff2}")
 
-    total: int = 0
-    difference: int = 0
-    for program_point in refined:
-        crude_ns = crude[program_point].stack.get_curr_namespace()
-        crude_ns_locals = crude_ns.extract_local_nontemps()
-        refined_ns = refined[program_point].stack.get_curr_namespace()
-        refined_ns_locals = refined_ns.extract_local_nontemps()
-        local_names = set(crude_ns_locals.keys()) | set(refined_ns_locals.keys())
-
-        for name in local_names:
-            if name in crude_ns_locals and name not in refined_ns_locals:
-                raise NotImplementedError
-            elif name not in crude_ns_locals and name in refined_ns_locals:
-                raise NotImplementedError
-            else:
-                crude_value = crude_ns_locals[name]
-                refined_value = refined_ns_locals[name]
-                if not (crude_value <= refined_value <= crude_value):
-                    difference += 1
-                total += 1
-
-    logger.critical(f"{difference}, {total}")
-    end = timeit.default_timer()
-    time_diff = end - start
-    logger.critical(f"{time_diff}")
+    with_temps(crude, refined)
+    without_temps(crude, refined)
+    logger.critical(f"crude analysis {time_diff}")
+    logger.critical(f"refine analysis {time_diff2}")
