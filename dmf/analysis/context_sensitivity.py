@@ -15,7 +15,7 @@
 """
 In this thesis we are gonna use object sensitivity.
 """
-
+import sys
 from typing import Tuple
 
 # The context grows from left to right, since in this way it's simpler to implement in Python.
@@ -34,4 +34,9 @@ def record(heap: int, ctx: Tuple) -> Tuple:
 
 def merge(heap: int, hctx: Tuple, ctx: Tuple) -> Tuple:
     # return hctx[-2:]
-    return hctx[-1:]
+    if sys.depth == 1:
+        return hctx[-1:]
+    elif sys.depth == 2:
+        return hctx[-2:]
+    else:
+        raise NotImplementedError

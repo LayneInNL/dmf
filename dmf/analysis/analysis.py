@@ -272,7 +272,12 @@ class Analysis(AnalysisBase):
         # a pure function has no receiver object. We employ the approach Mixed-CFA described in
         # JSAI: A Static Analysis Platform for JavaScript
         # new_ctx: Tuple = merge(call_lab, type.tp_address, call_ctx)
-        new_ctx: Tuple = (call_lab,)
+        if sys.depth == 1:
+            new_ctx: Tuple = (call_lab,)
+        elif sys.depth == 2:
+            new_ctx: Tuple = type.tp_address + (call_lab,)
+        else:
+            raise NotImplementedError
         self.entry_program_point_info[(entry_lab, new_ctx)] = AdditionalEntryInfo(
             None,
             None,
@@ -436,9 +441,7 @@ class Analysis(AnalysisBase):
 
         if isinstance(expr, ast.BinOp):
             # retrieve magic methods
-            operator_name = numeric_methods[type(expr.op)]
-            # retrieve reversed magic methods
-            reversed_operator_name = reversed_numeric_methods[type(expr.op)]
+            normal_operator_name = numeric_methods[type(expr.op)]
             # retrieve augmented magic methods
             augmented_operator_name = augmented_numeric_methods[type(expr.op)]
 
@@ -446,8 +449,7 @@ class Analysis(AnalysisBase):
             lhs = expr.left
             # left expr value
             lhs_value = new_state.compute_value_of_expr(lhs)
-            rhs = expr.right
-            rhs_value = new_state.compute_value_of_expr(rhs)
+            rhs_value = new_state.compute_value_of_expr(expr.right)
 
             # for instance
             # x + y
@@ -455,22 +457,24 @@ class Analysis(AnalysisBase):
             # dummy return node
             for one_receiver in lhs_value:
                 one_receiver_type = one_receiver.tp_class
-                direct_res = analysis_getattr(one_receiver_type, operator_name)
-                for one_direct_res in direct_res:
-                    # typeshed function
-                    if isinstance(one_direct_res, TypeshedFunction):
-                        one_value = one_direct_res.refine_self_to_value()
-                        dummy_value.inject(one_value)
-                    elif isinstance(one_direct_res, AnalysisFunction):
-                        analysis_method = AnalysisMethod(
-                            tp_function=one_direct_res, tp_instance=one_receiver
-                        )
-                        self._add_analysismethod_interflow(
-                            program_point, analysis_method, ret_lab
-                        )
-                    elif isinstance(one_direct_res, ArtificialFunction):
-                        one_value = one_direct_res(one_receiver, rhs_value)
-                        dummy_value.inject(one_value)
+                for operator_name in [normal_operator_name]:
+                    # for operator_name in [normal_operator_name, augmented_operator_name]:
+                    direct_res = analysis_getattr(one_receiver_type, operator_name)
+                    for one_direct_res in direct_res:
+                        # typeshed function
+                        if isinstance(one_direct_res, TypeshedFunction):
+                            one_value = one_direct_res.refine_self_to_value()
+                            dummy_value.inject(one_value)
+                        elif isinstance(one_direct_res, AnalysisFunction):
+                            analysis_method = AnalysisMethod(
+                                tp_function=one_direct_res, tp_instance=one_receiver
+                            )
+                            self._add_analysismethod_interflow(
+                                program_point, analysis_method, ret_lab
+                            )
+                        elif isinstance(one_direct_res, ArtificialFunction):
+                            one_value = one_direct_res(one_receiver, rhs_value)
+                            dummy_value.inject(one_value)
 
         elif isinstance(expr, ast.UnaryOp):
             if isinstance(expr.op, ast.Not):
@@ -877,7 +881,8 @@ class Analysis(AnalysisBase):
         new_state.stack.add_new_frame()
         # get expr
         assign_stmt: ast.Assign = self.get_stmt_by_point(program_point)
-        if isinstance(assign_stmt.targets[0], ast.Attribute):
+        target = assign_stmt.targets[0]
+        if isinstance(target, ast.Attribute):
             attribute: ast.Attribute = assign_stmt.targets[0]
             receiver_value = new_state.compute_value_of_expr(attribute.value)
             rhs_value = new_state.compute_value_of_expr(assign_stmt.value)
@@ -885,6 +890,8 @@ class Analysis(AnalysisBase):
                 descriptor_result = analysis_setattr(
                     receiver_type, attribute.attr, rhs_value
                 )
+                if not descriptor_result.is_any():
+                    assert len(descriptor_result) <= 1
                 for descriptor in descriptor_result:
                     if isinstance(descriptor, AnalysisDescriptor):
                         args = descriptor.tp_args
@@ -893,6 +900,15 @@ class Analysis(AnalysisBase):
                         setattr(
                             new_state.stack.frames[-1].f_locals, POS_ARG_LEN, len(args)
                         )
+            return new_state
+        elif isinstance(target, ast.Subscript):
+            # object.__getitem__(self, key)
+            key_value = new_state.compute_value_of_expr(target.slice)
+            rhs_value = new_state.compute_value_of_expr(assign_stmt.value)
+            args = [key_value, rhs_value]
+            for idx, arg in enumerate(args, 1):
+                new_state.stack.write_var(str(idx), Namespace_Local, arg)
+            setattr(new_state.stack.frames[-1].f_locals, POS_ARG_LEN, len(args))
             return new_state
         else:
             raise NotImplementedError(program_point)
@@ -918,6 +934,8 @@ class Analysis(AnalysisBase):
         elif isinstance(call_expr, ast.Attribute):
             receiver_value = new_state.compute_value_of_expr(call_expr.value)
             descriptor_result = getattrs(receiver_value, call_expr.attr)
+            # if not descriptor_result.is_any():
+            #     assert len(descriptor_result) <= 1
             for descriptor in descriptor_result:
                 if isinstance(descriptor, AnalysisDescriptor):
                     args = descriptor.tp_args
