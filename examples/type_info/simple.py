@@ -13,13 +13,27 @@
 #  limitations under the License.
 
 
-class Test:
-    @property
-    def test(self):
-        return 1
-
-
-t = Test()
-res = t.test
-
-a = [[1]]
+# class Test(list):
+#     pass
+#
+#
+# instance = Test()
+# res = instance.pop(0)
+# a = list()
+# if True:
+#     a.append(1)
+# else:
+#     a.append("hello")
+# res = specialany
+#
+# el = 1
+# a = {}
+# a[el] = 1
+# res1 = a[el]
+# a = []
+# b = dict()
+# # length = len(b)
+# for y in b:
+#     a.append(y)
+res = dir()
+xxx = res.pop()

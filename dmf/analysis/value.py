@@ -14,36 +14,42 @@
 
 from __future__ import annotations
 
-import sys
-from typing import Union
-
 from dmf.analysis.special_types import Any
 
 
 class Value:
-    threshold = 2
+    threshold = 5
+
+    def threshold_check(self):
+        if self.types is Any:
+            return
+        elif len(self.types) > self.threshold:
+            self.types = Any
 
     @classmethod
     def make_any(cls) -> Value:
         return cls(any=True)
 
+    def is_any(self):
+        return self.types is Any
+
     def __init__(self, *, any=False):
-        self.types: Union[Any, dict]
+        self.types: Any | dict
         if any:
             self.types = Any
         else:
             self.types = {}
 
     def __len__(self):
-        if self.is_Any():
+        if self.types is Any:
             return self.threshold + 1
         else:
             return len(self.types)
 
     def __le__(self, other: Value) -> bool:
-        if other.is_Any():
+        if other.types is Any:
             return True
-        if self.is_Any():
+        if self.types is Any:
             return False
         for k in self.types:
             if k not in other.types:
@@ -53,24 +59,24 @@ class Value:
         return True
 
     def __iadd__(self, other: Value) -> Value:
-        if self.is_Any() or other.is_Any():
-            self.transform_to_Any()
+        if self.types is Any:
             return self
-
-        for k in other.types:
-            if k not in self.types:
-                self.types[k] = other.types[k]
-            else:
-                self.types[k] += other.types[k]
-
-        if len(self.types) > self.threshold:
-            self.transform_to_Any()
-        return self
+        elif other.types is Any:
+            self.types = Any
+            return self
+        else:
+            for k in other.types:
+                if k not in self.types:
+                    self.types[k] = other.types[k]
+                else:
+                    self.types[k] += other.types[k]
+            self.threshold_check()
+            return self
 
     def __repr__(self):
         # return self.types.__repr__()
         if self.types is Any:
-            return "Any"
+            return repr(Any)
         else:
             formatted = list(self.types.values())
             return repr(formatted)
@@ -85,19 +91,28 @@ class Value:
             self.inject_type(other)
 
     def inject_type(self, type):
-        # insert Any
-        if type is Any:
-            self.transform_to_Any()
-        elif self.is_Any():
+        # itself is Any, do nothing
+        if self.types is Any:
             return
-        elif len(self.types) > self.threshold:
-            self.transform_to_Any()
+
+        # want to insert Any
+        if type is Any:
+            self.types = Any
+            return
+
+        if type.tp_uuid in self.types:
+            self.types[type.tp_uuid] += type
         else:
             self.types[type.tp_uuid] = type
 
+        self.threshold_check()
+
     def inject_value(self, value: Value):
-        if self.is_Any() or value.is_Any():
-            self.transform_to_Any()
+        if self.types is Any:
+            return
+
+        if value.types is Any:
+            self.types = Any
             return
 
         for label, type in value.types.items():
@@ -106,36 +121,17 @@ class Value:
             else:
                 self.types[label] += type
 
-        if len(self.types) > self.threshold:
-            self.transform_to_Any()
-
-    def values(self):
-        return self.types.values()
+        self.threshold_check()
 
     def value_2_list(self):
         return list(self.types.values())
 
-    def is_Any(self) -> bool:
-        return self.types is Any
-
-    def transform_to_Any(self):
-        self.types = Any
-
-
-sys.Value = Value
+    def extract_1_elt(self):
+        assert len(self) == 1
+        return self.value_2_list()[0]
 
 
 def type_2_value(type) -> Value:
-    if not isinstance(type, Value):
-        value = Value()
-        assert hasattr(type, "tp_uuid"), type
-        value.inject(type)
-        return value
-    else:
-        return type
-
-
-def create_value_with_type(typ) -> Value:
     value = Value()
-    value.inject_type(typ)
+    value.inject(type)
     return value

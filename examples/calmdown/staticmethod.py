@@ -19,5 +19,6 @@ class Test:
         return x
 
 
-t = Test()
-res = t.test(1)
+# t = Test()
+# res = t.test(1)
+res = Test.test(1)

@@ -14,32 +14,69 @@
 import sys
 from typing import Set, Tuple, Dict
 
-from dmf.flows import CFG
+from dmf.flows import CFG, construct_CFG
 from dmf.flows.flows import BasicBlock
-from dmf.log.logger import logger
 
 ProgramPoint = Tuple[int, Tuple]
 
 
 class AnalysisBase:
-    def __init__(self):
-        self.flows: Set[Tuple[int, int]] = sys.analysis_flows
-        self.blocks: Dict[int, BasicBlock] = sys.analysis_blocks
-        self.sub_cfgs: Dict[int, CFG] = sys.analysis_cfgs
+    @staticmethod
+    def synthesis_cfg(file_path) -> CFG:
+        if file_path in sys.analysis_cfgs:
+            cfg = sys.analysis_cfgs[file_path]
+        else:
+            cfg = construct_CFG(file_path)
+            sys.analysis_cfgs[file_path] = cfg
+        return cfg
 
-        self.dummy_labels = sys.dummy_labels
-        self.call_labels = sys.call_labels
-        self.return_labels = sys.return_labels
-        self.call_return_inter_flows = sys.call_flow_tuples
-        self.classdef_inter_flows = sys.classdef_flow_tuples
-        self.magic_right_inter_flows = sys.magic_right_inter_tuples
-        self.magic_left_inter_flows = sys.magic_left_inter_tuples
-        self.magic_del_inter_flows = sys.magic_del_inter_tuples
-        self.special_init_flows = sys.special_init_inter_flows
+    def merge_cfg_info(self, cfg):
+        self.flows.update(cfg.flows)
+        self.blocks.update(cfg.blocks)
+        self.sub_cfgs.update(cfg.sub_cfgs)
+
+        self.call_return_inter_flows.update(cfg.call_return_inter_flows)
+        self.classdef_inter_flows.update(cfg.classdef_inter_flows)
+        self.magic_right_inter_flows.update(cfg.magic_right_inter_flows)
+        self.magic_left_inter_flows.update(cfg.magic_left_inter_flows)
+        self.magic_del_inter_flows.update(cfg.magic_del_inter_flows)
+        self.special_init_flows.update(cfg.special_init_inter_flows)
+
+        self.dummy_labels.update(cfg.dummy_labels)
+        self.call_labels.update(cfg.call_labels)
+        self.return_labels.update(cfg.return_labels)
+        self.module_entry_labels.update(cfg.module_entry_labels)
+        self.module_exit_labels.update(cfg.module_exit_labels)
+
+        return cfg.start_block.bid, cfg.final_block.bid
+
+    def __init__(self):
+        self._setup()
+
+        self.flows: Set[Tuple[int, int]] = set()
+        self.blocks: Dict[int, BasicBlock] = {}
+        self.sub_cfgs: Dict[int, CFG] = {}
+
+        self.dummy_labels = set()
+        self.call_labels = set()
+        self.return_labels = set()
+        self.module_entry_labels = set()
+        self.module_exit_labels = set()
+
+        self.call_return_inter_flows = set()
+        self.classdef_inter_flows = set()
+        self.magic_right_inter_flows = set()
+        self.magic_left_inter_flows = set()
+        self.magic_del_inter_flows = set()
+        self.special_init_flows = set()
 
         self.inter_flows: Set[
             Tuple[ProgramPoint, ProgramPoint, ProgramPoint, ProgramPoint]
         ] = set()
+
+    def _setup(self):
+        sys.synthesis_cfg = self.synthesis_cfg
+        sys.merge_cfg_info = self.merge_cfg_info
 
     def get_stmt_by_label(self, label: int):
         return self.blocks[label].stmt[0]
@@ -179,15 +216,39 @@ class AnalysisBase:
         raise KeyError
 
     def get_special_new_return_label(self, label):
-        for l1, l2, l3, l4, l5, l6, l7, l8, l9 in self.call_return_inter_flows:
-            if label == l1:
-                return l2, l3
+        for (
+            new,
+            new_return,
+            new_dummy_return,
+            init_lookup,
+            init_lookup_return,
+            init_lookup_dummy_return,
+            deleted_first_var,
+            init_call,
+            init_call_return,
+            init_call_dummy_return,
+            deleted_second_var,
+        ) in self.call_return_inter_flows:
+            if label == new:
+                return new_return, new_dummy_return
         raise KeyError
 
     def get_func_return_label(self, label):
-        for l1, l2, l3, l4, l5, l6, l7, l8, l9 in self.call_return_inter_flows:
-            if label == l1:
-                return l8, l9
+        for (
+            new,
+            new_return,
+            new_dummy_return,
+            init_lookup,
+            init_lookup_return,
+            init_lookup_dummy_return,
+            deleted_first_var,
+            init_call,
+            init_call_return,
+            init_call_dummy_return,
+            deleted_second_var,
+        ) in self.call_return_inter_flows:
+            if label == new:
+                return init_call_return, init_call_dummy_return
         raise KeyError
 
     def get_special_init_return_label(self, label):
@@ -198,11 +259,11 @@ class AnalysisBase:
 
     def add_sub_cfg(self, lab: int):
         cfg: CFG = self.sub_cfgs[lab]
-        sys.merge_cfg_info(cfg)
+        self.merge_cfg_info(cfg)
         return cfg.start_block.bid, cfg.final_block.bid
 
     def checkout_cfg(self, lab: int):
-        cfg: CFG = sys.analysis_cfgs[lab]
+        cfg: CFG = self.sub_cfgs[lab]
         return cfg
 
     def generate_flow(self, program_point: ProgramPoint):

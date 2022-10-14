@@ -22,6 +22,10 @@ work. One should use importlib as the public-facing version of this module.
 
 # Bootstrap-related code ######################################################
 import _thread, _warnings, _weakref
+from copy import deepcopy
+
+from dmf.analysis.value import type_2_value
+
 
 # https://stackoverflow.com/questions/2790828/python-cant-pickle-module-objects-error
 # use duck typing to avoid this
@@ -342,8 +346,9 @@ class _installed_safely:
             spec = self._spec
             if any(arg is not None for arg in args):
                 try:
+                    ...
                     # del sys.modules[spec.name]
-                    del sys.fake_analysis_modules[spec.name]
+                    # del sys.fake_analysis_modules[spec.name]
                 except KeyError:
                     pass
             else:
@@ -703,12 +708,12 @@ def _load_backward_compatible(spec):
 
 
 def _load_unlocked(spec):
-    # A helper for direct use by the import system.
-    if spec.loader is not None:
-        # raise NotImplementedError(spec)
-        # not a namespace package
-        if not hasattr(spec.loader, "exec_module"):
-            return _load_backward_compatible(spec)
+    # # A helper for direct use by the import system.
+    # if spec.loader is not None:
+    #     # raise NotImplementedError(spec)
+    #     # not a namespace package
+    #     if not hasattr(spec.loader, "exec_module"):
+    #         return _load_backward_compatible(spec)
 
     module = module_from_spec(spec)
     with _installed_safely(module):
@@ -724,9 +729,22 @@ def _load_unlocked(spec):
                 tp_package=module.__package__,
                 tp_code=(entry_lab, exit_lab),
             )
-            sys.analysis_modules[module.__name__] = real_analysis_module
-            analysis = sys.Analysis(real_analysis_module.tp_name)
-            analysis.compute_fixed_point()
+            if module.__name__ in sys.analysis_modules:
+                raise NotImplementedError(module)
+            sys.analysis_modules[module.__name__] = type_2_value(real_analysis_module)
+
+            # module namespace
+            module_namespace = real_analysis_module.tp_dict
+            module_start_state = deepcopy(sys.state)
+            # add a new frame for this module
+            # module_start_state.exec_a_module(module_namespace)
+            # start program point
+            start_program_point = (entry_lab, ())
+            sys.analysis.module_entry_info[start_program_point] = module_namespace
+            # add flows related to this module
+            module_flows = sys.analysis.generate_flow(start_program_point)
+            sys.prepend_flows.extend(module_flows)
+            sys.analysis.analysis_list[start_program_point] = module_start_state
             # spec.loader.exec_module(module)
 
     # We don't ensure that the import-related module attributes get
@@ -1034,9 +1052,10 @@ def _find_and_load_unlocked(name, import_):
     if parent:
         # Set the module as an attribute on its parent.
         # parent_module = sys.modules[parent]
-        parent_module = sys.analysis_modules[parent]
+        parent_modules = sys.analysis_modules[parent]
         # setattr(parent_module, name.rpartition(".")[2], module)
-        parent_module.tp_dict.write_local_value(name.rpartition(".")[2], module)
+        for parent_module in parent_modules:
+            parent_module.tp_dict.write_local_value(name.rpartition(".")[2], module)
     return module
 
 

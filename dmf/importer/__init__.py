@@ -125,9 +125,6 @@ def import_module(name, package=None, level=0):
     relative import to an absolute import.
 
     """
-    _bootstrap._sanity_check(name, package, level)
-    if level > 0:
-        name = _bootstrap._resolve_name(name, package, level)
     # analysis_module = _bootstrap._gcd_import(name, package, level)
     analysis_module = _bootstrap._gcd_import(name)
     return analysis_module

@@ -114,54 +114,54 @@ if __name__ == "__main__":
     sys.open_graph = False
     sys.depth = 1
 
-    args = parser.parse_args()
-    main_path = args.main
-    project_path = args.project
-    if not main_path or not project_path:
-        exit()
-
+    main_dir = "/home/layne/Desktop/example_projects/eulerlib"
+    project_path = main_dir
     # project root directory
     project_abs_path = os.path.abspath(project_path)
     sys.analysis_path.append(project_path)
     sys.first_party = os.path.basename(project_abs_path)
     logger.info(f"first party: {sys.first_party}")
 
-    # main file location
-    main_abs_file_path = os.path.abspath(main_path)
+    pyfiles = [f for f in os.listdir(main_dir) if os.path.isfile(f)]
+    sum_time_diff1 = 0
+    sum_time_diff2 = 0
+    for f in pyfiles:
+        main_path = f
+        # main file location
+        main_abs_file_path = os.path.abspath(main_path)
 
-    # crude semantics
-    sys.analysis_type = "crude"
-    analysis1 = Analysis(main_abs_file_path)
-    analysis1.compute_fixed_point()
-    crude = analysis1.analysis_effect_list
-    del crude[2, ()]
-    end = timeit.default_timer()
-    time_diff = end - start
-    # logger.critical(f"crude analysis {time_diff}")
+        # crude semantics
+        sys.analysis_type = "crude"
+        analysis1 = Analysis(main_abs_file_path)
+        analysis1.compute_fixed_point()
+        crude = analysis1.analysis_effect_list
+        del crude[2, ()]
+        end = timeit.default_timer()
+        time_diff = end - start
+        sum_time_diff1 += time_diff
 
-    start2 = timeit.default_timer()
-    # re-init these attributes
-    # mimic sys.modules, as fake ones
-    sys.analysis_modules = {}
-    # mimic sys.modules, but used for typeshed
-    sys.analysis_typeshed_modules = {}
-    # mimic sys.modules
-    sys.fake_analysis_modules = {}
+        start2 = timeit.default_timer()
+        # re-init these attributes
+        # mimic sys.modules, as fake ones
+        sys.analysis_modules = {}
+        # mimic sys.modules, but used for typeshed
+        sys.analysis_typeshed_modules = {}
+        # mimic sys.modules
+        sys.fake_analysis_modules = {}
+        # mimic exec(module)
+        sys.prepend_flows = []
 
-    # mimic exec(module)
-    sys.prepend_flows = []
+        # path-sensitive semantics
+        sys.analysis_type = "refined"
+        analysis2 = Analysis(main_abs_file_path)
+        analysis2.compute_fixed_point()
+        refined = analysis2.analysis_effect_list
+        del refined[2, ()]
+        end2 = timeit.default_timer()
+        time_diff2 = end2 - start2
+        sum_time_diff2 += time_diff2
 
-    # path-sensitive semantics
-    sys.analysis_type = "refined"
-    analysis2 = Analysis(main_abs_file_path)
-    analysis2.compute_fixed_point()
-    refined = analysis2.analysis_effect_list
-    del refined[2, ()]
-    end2 = timeit.default_timer()
-    time_diff2 = end2 - start2
-    # logger.critical(f"refine analysis {time_diff2}")
-
-    with_temps(crude, refined)
-    without_temps(crude, refined)
-    logger.critical(f"crude analysis {time_diff}")
-    logger.critical(f"refine analysis {time_diff2}")
+        with_temps(crude, refined)
+        without_temps(crude, refined)
+        logger.critical(f"crude analysis {time_diff}")
+        logger.critical(f"refine analysis {time_diff2}")

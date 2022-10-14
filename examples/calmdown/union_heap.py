@@ -13,13 +13,23 @@
 #  limitations under the License.
 
 
-class Test:
-    @property
-    def test(self):
-        return 1
+# class Test:
+#     pass
+#
+#
+# t = Test()
+# if True:
+#     t.field = 1
+# else:
+#     t.field = "hello"
+
+import abc
+
+
+class Test(abc.ABC):
+    pass
 
 
 t = Test()
-res = t.test
-
-a = [[1]]
+t.x = 1
+res = t.x

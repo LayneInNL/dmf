@@ -11,3 +11,26 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import sys
+
+# heap of state
+sys.heap = None
+
+# mimic sys.path
+sys.analysis_path = []
+# mimic sys.meta_path
+sys.analysis_meta_path = []
+# mimic sys.path_hooks
+sys.analysis_path_hooks = []
+
+# mimic sys.modules, as fake ones
+sys.analysis_modules = {}
+# mimic sys.modules, but used for typeshed
+sys.analysis_typeshed_modules = {}
+# mimic sys.modules
+sys.fake_analysis_modules = {}
+
+# store all control flow graphs
+sys.analysis_cfgs = {}
+# mimic exec(module)
+sys.prepend_flows = []

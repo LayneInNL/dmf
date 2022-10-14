@@ -13,31 +13,29 @@
 #  limitations under the License.
 
 
-class SingletonInstance(type):
-    _instances = {}
+class _TypeAny:
+    def __init__(self):
+        self.tp_uuid = -1024
+        self.tp_class = self
+        self.tp_bases = [[self]]
 
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(SingletonInstance, cls).__call__(
-                *args, **kwargs
-            )
-        return cls._instances[cls]
-
-
-class SingletonInstanceWithDeepcopy:
     def __deepcopy__(self, memo):
         if id(self) not in memo:
             memo[id(self)] = self
         return memo[id(self)]
 
-
-class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
-    def __init__(self):
-        self.tp_uuid = -1024
-        self.tp_class = self
-
     def __repr__(self):
         return "Any"
+
+    def __le__(self, other):
+        return True
+
+    def __iadd__(self, other):
+        return self
+
+    # Any[xxx]
+    def __getitem__(self, item):
+        return self
 
     def __getattr__(self, item):
         return self
@@ -48,27 +46,9 @@ class _TypeAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
     def values(self):
         return [self]
 
+    def __iter__(self):
+        return iter([self])
 
+
+# mimic typing.Any
 Any = _TypeAny()
-
-
-class _MROAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
-    def __init__(self):
-        self.tp_uuid = id(self)
-
-    def __repr__(self):
-        return "MRO_Any"
-
-
-MRO_Any = _MROAny()
-
-
-class _BasesAny(SingletonInstanceWithDeepcopy, metaclass=SingletonInstance):
-    def __init__(self):
-        self.tp_uuid = id(self)
-
-    def __repr__(self):
-        return "Bases_Any"
-
-
-Bases_Any = _BasesAny()

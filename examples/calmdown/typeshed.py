@@ -11,15 +11,15 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+# import math
+#
+# res = math.acos(1)
 
+x = "str"
+if 1:
+    x = 1
 
-class Test:
-    @property
-    def test(self):
-        return 1
+res = x
 
-
-t = Test()
-res = t.test
-
-a = [[1]]
+# import xxx.yyy
+# import zzz

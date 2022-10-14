@@ -15,36 +15,31 @@ from __future__ import annotations
 
 import sys
 
+from dmf.analysis.symbol_table import Var, NonlocalVar, GlobalVar, LocalVar, SymbolTable
 from dmf.analysis.value import Value
 
 
-class Var:
-    def __init__(self, name: str):
-        self.name: str = name
+class Namespace(SymbolTable):
+    def __contains__(self, item):
+        if isinstance(item, str):
+            raise NotImplementedError
+        return super().__contains__(item)
 
-    def __hash__(self):
-        return hash(self.name)
+    def contains(self, name: str):
+        if (
+            LocalVar(name) in self
+            or NonlocalVar(name) in self
+            or GlobalVar(name) in self
+        ):
+            return True
+        return False
 
-    def __eq__(self, other: Var):
-        return self.name == other.name
-
-
-class LocalVar(Var):
     def __repr__(self):
-        return f"({self.name}, local)"
+        filtered_dict = {
+            key: value for key, value in self.items() if not key.name.startswith("_var")
+        }
+        return repr(filtered_dict)
 
-
-class NonlocalVar(Var):
-    def __repr__(self):
-        return f"({self.name}, nonlocal)"
-
-
-class GlobalVar(Var):
-    def __repr__(self):
-        return f"({self.name}, global)"
-
-
-class Namespace(dict):
     def __missing__(self, key):
         self[key] = value = Value.make_any()
         return value
@@ -60,21 +55,24 @@ class Namespace(dict):
             self[var] += other[var]
         return self
 
-    def __contains__(self, name: str):
-        for var in self:
-            if name == var.name:
-                return True
-        return False
-
     def read_var_type(self, name: str) -> Var:
-        for var, _ in self.items():
-            if name == var.name:
-                return var
+        if LocalVar(name) in self:
+            return LocalVar(name)
+        if NonlocalVar(name) in self:
+            return NonlocalVar(name)
+        if GlobalVar(name) in self:
+            return GlobalVar(name)
+
+        raise AttributeError(name)
 
     def read_value(self, name: str) -> Value:
-        for var, val in self.items():
-            if name == var.name:
-                return val
+        if LocalVar(name) in self:
+            return self[LocalVar(name)]
+        if NonlocalVar(name) in self:
+            return self[NonlocalVar(name)]
+        if GlobalVar(name) in self:
+            return self[GlobalVar(name)]
+        raise AttributeError(name)
 
     def write_local_value(self, name: str, value: Value):
         assert isinstance(value, Value), value
@@ -88,6 +86,3 @@ class Namespace(dict):
 
     def del_local_var(self, name: str):
         del self[LocalVar(name)]
-
-
-sys.analysis_typeshed_modules = Namespace()

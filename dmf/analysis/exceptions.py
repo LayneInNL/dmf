@@ -23,3 +23,15 @@ class AnalysisAttributeError(Exception):
 
 class TypeshedModuleAttributeError(Exception):
     pass
+
+
+class IteratingError(Exception):
+    pass
+
+
+class ParsingDefaultsError(Exception):
+    pass
+
+
+class ParsingKwDefaultsError(Exception):
+    pass

@@ -14,12 +14,11 @@
 
 
 class Test:
-    @property
-    def test(self):
-        return 1
+    # def __getattr__(self, item):
+    #     pass
+    def __init_subclass__(cls, **kwargs):
+        pass
 
 
-t = Test()
-res = t.test
-
-a = [[1]]
+r = Test()
+xxx = set(r)
